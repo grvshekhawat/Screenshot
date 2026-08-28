@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react"
-import { isSupabaseConfigured } from "../config"
+import { isSupabaseConfigured, appOrigin } from "../config"
 import { getSupabase } from "../lib/supabase"
 import {
   localGetProfile,
@@ -119,9 +119,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return
       }
       const supabase = getSupabase()!
+      const redirectTo = `${appOrigin().replace(/\/$/, "")}/app`
       const { error } = await supabase.auth.signInWithOtp({
         email: nextEmail.trim(),
-        options: { emailRedirectTo: window.location.origin + "/app" },
+        options: { emailRedirectTo: redirectTo },
       })
       if (error) throw error
     },

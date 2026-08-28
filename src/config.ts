@@ -23,5 +23,14 @@ export function isSupabaseConfigured(): boolean {
 }
 
 export function appOrigin(): string {
-  return config.appUrl ?? (typeof window !== "undefined" ? window.location.origin : "")
+  const configured = (config.appUrl ?? "").replace(/\/$/, "")
+  const live =
+    configured && !/localhost|127\.0\.0\.1/i.test(configured) ? configured : ""
+  const origin =
+    typeof window !== "undefined" ? window.location.origin.replace(/\/$/, "") : ""
+  const originIsLocal = /localhost|127\.0\.0\.1/i.test(origin)
+  // Prefer configured production URL so magic links never fall back to localhost.
+  if (live) return live
+  if (origin && !originIsLocal) return origin
+  return origin || configured || ""
 }
