@@ -2695,10 +2695,13 @@ function rangeFillStyle(
   value: number,
   min: number,
   max: number,
-): CSSProperties {
+): import("react").CSSProperties {
   const span = max - min
-  const pct = span <= 0 ? 0 : ((Math.min(max, Math.max(min, value)) - min) / span) * 100
-  return { ["--range-fill"]: `${pct}%` } as CSSProperties
+  const pct =
+    span <= 0
+      ? 0
+      : ((Math.min(max, Math.max(min, value)) - min) / span) * 100
+  return { ["--range-fill"]: `${pct}%` } as import("react").CSSProperties
 }
 
 function RangeValueField({
