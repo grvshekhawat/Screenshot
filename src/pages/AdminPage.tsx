@@ -1,0 +1,321 @@
+import { useEffect, useState, type FormEvent } from "react"
+import { Link, Navigate } from "react-router-dom"
+import {
+  deleteLibraryClipart,
+  deleteTemplate,
+  listAllCliparts,
+  listAllTemplates,
+  listProjects,
+  publishProjectAsTemplate,
+  upsertLibraryClipart,
+  upsertTemplate,
+} from "../api/projects"
+import { useAuth } from "../auth/AuthProvider"
+import { createSampleProject } from "../constants"
+import { IMAGE_ACCEPT, isImageFile, normalizeImageFile } from "../image-upload"
+import { renderTemplatePreviewDataUrl } from "../template-preview"
+import type {
+  LibraryClipartRecord,
+  ProjectRecord,
+  TemplateRecord,
+} from "../types/cloud"
+import { TemplateThumbnail } from "../components/TemplateThumbnail"
+
+export function AdminPage() {
+  const { ready, userId, isAdmin, usingLocalBackend } = useAuth()
+  const [templates, setTemplates] = useState<TemplateRecord[]>([])
+  const [cliparts, setCliparts] = useState<LibraryClipartRecord[]>([])
+  const [projects, setProjects] = useState<ProjectRecord[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const [message, setMessage] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  const reload = async () => {
+    const [t, c, p] = await Promise.all([
+      listAllTemplates(),
+      listAllCliparts(),
+      listProjects(),
+    ])
+    setTemplates(t)
+    setCliparts(c)
+    setProjects(p)
+  }
+
+  useEffect(() => {
+    if (!isAdmin) return
+    void reload().catch((err) =>
+      setError(err instanceof Error ? err.message : "Failed to load admin data"),
+    )
+  }, [isAdmin])
+
+  if (ready && !userId) return <Navigate to="/login" replace />
+  if (ready && !isAdmin) {
+    return (
+      <div className="flex min-h-full items-center justify-center bg-[#0c0c10] text-sm text-zinc-400">
+        Admin only.{usingLocalBackend ? " Sign in as you@admin.local" : null}
+      </div>
+    )
+  }
+
+  const onPublishFromProject = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setError(null)
+    setMessage(null)
+    const formEl = event.currentTarget
+    const form = new FormData(formEl)
+    const projectId = String(form.get("projectId") || "")
+    const title = String(form.get("title") || "").trim()
+    const description = String(form.get("description") || "").trim()
+    if (!projectId) {
+      setError("Pick a project to publish")
+      return
+    }
+    setBusy(true)
+    try {
+      const published = await publishProjectAsTemplate({
+        projectId,
+        title,
+        description,
+        published: true,
+      })
+      setMessage(`Template “${published.title}” published`)
+      formEl.reset()
+      await reload()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Publish failed")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const publishFromCurrentSample = async () => {
+    setError(null)
+    setMessage(null)
+    setBusy(true)
+    try {
+      const sample = createSampleProject()
+      await upsertTemplate({
+        slug: `template-${Date.now()}`,
+        title: sample.name,
+        description: "Built-in sample layout",
+        preview_path: await renderTemplatePreviewDataUrl(sample),
+        data: sample,
+        sort_order: templates.length,
+        published: true,
+      })
+      setMessage("Sample template published")
+      await reload()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const onClipartUpload = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setError(null)
+    setMessage(null)
+    const formEl = event.currentTarget
+    const form = new FormData(formEl)
+    const name = String(form.get("name") || "Clipart")
+    const category = String(form.get("category") || "general")
+    const file = form.get("file")
+    if (!(file instanceof File) || !file.size || !isImageFile(file)) {
+      setError("Choose an image file (PNG, JPEG, WebP, or HEIC)")
+      return
+    }
+    try {
+      const normalized = await normalizeImageFile(file)
+      await upsertLibraryClipart({
+        name,
+        category,
+        sort_order: cliparts.length,
+        published: true,
+        file: normalized,
+      })
+      setMessage("Clipart added")
+      formEl.reset()
+      await reload()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Upload failed")
+    }
+  }
+
+  return (
+    <div className="min-h-full bg-[#0c0c10] text-zinc-100">
+      <header className="flex h-14 items-center justify-between border-b border-zinc-800 px-4">
+        <Link to="/app" className="text-sm font-semibold">
+          Admin
+        </Link>
+        <Link to="/app" className="text-xs text-zinc-400 hover:text-white">
+          Back to projects
+        </Link>
+      </header>
+      <main className="mx-auto max-w-4xl space-y-10 px-4 py-8">
+        {error ? <p className="text-sm text-red-400">{error}</p> : null}
+        {message ? <p className="text-sm text-emerald-400">{message}</p> : null}
+
+        <section>
+          <h1 className="text-lg font-semibold">Templates</h1>
+          <p className="mt-1 text-sm text-zinc-400">
+            Design a layout in the editor, then publish that project here for
+            users to clone.
+          </p>
+
+          <form
+            onSubmit={(e) => void onPublishFromProject(e)}
+            className="mt-4 space-y-3 rounded-xl border border-zinc-800 bg-zinc-950 p-4"
+          >
+            <label className="block text-xs text-zinc-400">
+              Project to publish
+              <select
+                name="projectId"
+                required
+                className="mt-1 block w-full rounded border border-zinc-800 bg-zinc-900 px-2 py-2 text-sm text-white"
+                defaultValue=""
+              >
+                <option value="" disabled>
+                  {projects.length ? "Select a project…" : "No projects yet — create one in /app"}
+                </option>
+                {projects.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block text-xs text-zinc-400">
+              Template title
+              <input
+                name="title"
+                required
+                placeholder="Clean gradient hero"
+                className="mt-1 block w-full rounded border border-zinc-800 bg-zinc-900 px-2 py-2 text-sm text-white"
+              />
+            </label>
+            <label className="block text-xs text-zinc-400">
+              Description
+              <input
+                name="description"
+                placeholder="Short blurb for the gallery"
+                className="mt-1 block w-full rounded border border-zinc-800 bg-zinc-900 px-2 py-2 text-sm text-white"
+              />
+            </label>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="submit"
+                disabled={busy || projects.length === 0}
+                className="rounded-lg bg-violet-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40"
+              >
+                {busy ? "Publishing…" : "Publish as template"}
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void publishFromCurrentSample()}
+                className="rounded-lg border border-zinc-700 px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-900 disabled:opacity-40"
+              >
+                Or publish built-in sample
+              </button>
+            </div>
+          </form>
+
+          <ul className="mt-4 space-y-2">
+            {templates.map((template) => (
+              <li
+                key={template.id}
+                className="flex items-center gap-3 rounded-lg border border-zinc-800 px-3 py-2 text-sm"
+              >
+                <TemplateThumbnail
+                  template={template}
+                  className="aspect-[16/10] h-14 w-24 shrink-0"
+                />
+                <span className="min-w-0 flex-1">
+                  {template.title}{" "}
+                  <span className="text-zinc-500">
+                    ({template.published ? "published" : "draft"})
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  className="text-xs text-red-400"
+                  onClick={() =>
+                    void deleteTemplate(template.id).then(reload)
+                  }
+                >
+                  Delete
+                </button>
+              </li>
+            ))}
+            {templates.length === 0 ? (
+              <li className="text-sm text-zinc-500">No templates yet.</li>
+            ) : null}
+          </ul>
+        </section>
+
+        <section>
+          <h2 className="text-lg font-semibold">Clipart library</h2>
+          <form onSubmit={(e) => void onClipartUpload(e)} className="mt-3 flex flex-wrap items-end gap-2">
+            <label className="text-xs text-zinc-400">
+              Name
+              <input
+                name="name"
+                className="mt-1 block rounded border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-sm text-white"
+              />
+            </label>
+            <label className="text-xs text-zinc-400">
+              Category
+              <input
+                name="category"
+                defaultValue="general"
+                className="mt-1 block rounded border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-sm text-white"
+              />
+            </label>
+            <label className="text-xs text-zinc-400">
+              File
+              <input
+                name="file"
+                type="file"
+                accept={IMAGE_ACCEPT}
+                className="mt-1 block text-sm"
+              />
+            </label>
+            <button
+              type="submit"
+              className="rounded-lg bg-zinc-100 px-3 py-2 text-xs font-semibold text-zinc-900"
+            >
+              Upload
+            </button>
+          </form>
+          <div className="mt-4 grid grid-cols-3 gap-3 sm:grid-cols-5">
+            {cliparts.map((clipart) => (
+              <div
+                key={clipart.id}
+                className="rounded-lg border border-zinc-800 p-2 text-center"
+              >
+                {clipart.url ? (
+                  <img
+                    src={clipart.url}
+                    alt={clipart.name}
+                    className="mx-auto h-16 w-16 object-contain"
+                  />
+                ) : null}
+                <div className="mt-1 truncate text-[11px]">{clipart.name}</div>
+                <button
+                  type="button"
+                  className="text-[10px] text-red-400"
+                  onClick={() =>
+                    void deleteLibraryClipart(clipart.id).then(reload)
+                  }
+                >
+                  Delete
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+      </main>
+    </div>
+  )
+}

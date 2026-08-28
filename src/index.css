@@ -1,0 +1,103 @@
+@import "tailwindcss";
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: #09090b;
+  color: #fafafa;
+  font-family: Inter, system-ui, sans-serif;
+}
+
+input[type="color"] {
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+input[type="color"]::-webkit-color-swatch {
+  border: 1px solid rgb(63 63 70);
+  border-radius: 4px;
+}
+
+/* Thin range sliders — clean track + compact thumb; fill via --range-fill */
+input[type="range"].range-thin {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 14px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  --range-fill: 0%;
+}
+
+input[type="range"].range-thin:focus {
+  outline: none;
+}
+
+input[type="range"].range-thin:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 2px #09090b, 0 0 0 3.5px rgb(167 139 250 / 0.55);
+}
+
+input[type="range"].range-thin:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 2px #09090b, 0 0 0 3.5px rgb(167 139 250 / 0.55);
+}
+
+input[type="range"].range-thin::-webkit-slider-runnable-track {
+  height: 2px;
+  border-radius: 9999px;
+  background: linear-gradient(
+    to right,
+    #8b5cf6 0%,
+    #8b5cf6 var(--range-fill),
+    #3f3f46 var(--range-fill),
+    #3f3f46 100%
+  );
+}
+
+input[type="range"].range-thin::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 11px;
+  height: 11px;
+  margin-top: -4.5px;
+  border: none;
+  border-radius: 9999px;
+  background: #a78bfa;
+  box-shadow: 0 0 0 1px rgb(24 24 27);
+}
+
+input[type="range"].range-thin::-moz-range-track {
+  height: 2px;
+  border: none;
+  border-radius: 9999px;
+  background: #3f3f46;
+}
+
+input[type="range"].range-thin::-moz-range-progress {
+  height: 2px;
+  border: none;
+  border-radius: 9999px;
+  background: #8b5cf6;
+}
+
+input[type="range"].range-thin::-moz-range-thumb {
+  width: 11px;
+  height: 11px;
+  border: none;
+  border-radius: 9999px;
+  background: #a78bfa;
+  box-shadow: 0 0 0 1px rgb(24 24 27);
+}
+
+
