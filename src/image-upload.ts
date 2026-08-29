@@ -8,6 +8,9 @@ const MAX_EDGE = 2400
 /** WebP quality: strong size cut with little visible loss on UI screenshots. */
 const WEBP_QUALITY = 0.8
 const JPEG_QUALITY = 0.82
+/** Library stickers: sharp enough on phones, much smaller than raw gpt-image PNG. */
+const CLIPART_MAX_EDGE = 512
+const CLIPART_WEBP_QUALITY = 0.82
 
 export { IMAGE_ACCEPT }
 
@@ -35,10 +38,14 @@ function fileFromBlob(blob: Blob, sourceName: string, ext: string, type: string)
   })
 }
 
-function scaledSize(width: number, height: number): { width: number; height: number } {
+function scaledSize(
+  width: number,
+  height: number,
+  maxEdge = MAX_EDGE,
+): { width: number; height: number } {
   const edge = Math.max(width, height)
-  if (edge <= MAX_EDGE) return { width, height }
-  const scale = MAX_EDGE / edge
+  if (edge <= maxEdge) return { width, height }
+  const scale = maxEdge / edge
   return {
     width: Math.max(1, Math.round(width * scale)),
     height: Math.max(1, Math.round(height * scale)),
@@ -49,8 +56,9 @@ function canvasFromBitmap(
   source: ImageBitmap | HTMLImageElement,
   width: number,
   height: number,
+  maxEdge = MAX_EDGE,
 ): HTMLCanvasElement {
-  const size = scaledSize(width, height)
+  const size = scaledSize(width, height, maxEdge)
   const canvas = document.createElement("canvas")
   canvas.width = size.width
   canvas.height = size.height
@@ -62,12 +70,15 @@ function canvasFromBitmap(
   return canvas
 }
 
-async function canvasFromFile(file: File): Promise<HTMLCanvasElement> {
+async function canvasFromFile(
+  file: File,
+  maxEdge = MAX_EDGE,
+): Promise<HTMLCanvasElement> {
   if (typeof createImageBitmap === "function") {
     try {
       const bitmap = await createImageBitmap(file)
       try {
-        return canvasFromBitmap(bitmap, bitmap.width, bitmap.height)
+        return canvasFromBitmap(bitmap, bitmap.width, bitmap.height, maxEdge)
       } finally {
         bitmap.close()
       }
@@ -84,7 +95,7 @@ async function canvasFromFile(file: File): Promise<HTMLCanvasElement> {
       el.onerror = () => reject(new Error("Could not decode image"))
       el.src = url
     })
-    return canvasFromBitmap(img, img.naturalWidth, img.naturalHeight)
+    return canvasFromBitmap(img, img.naturalWidth, img.naturalHeight, maxEdge)
   } finally {
     URL.revokeObjectURL(url)
   }
@@ -204,4 +215,24 @@ export async function normalizeImageFile(file: File): Promise<File> {
     return file
   }
   return optimized
+}
+
+/**
+ * Downscale + WebP (keeps transparency) for AI / library stickers.
+ * Raw gpt-image PNGs are often multi‑MB; this targets tens–hundreds of KB.
+ */
+export async function normalizeClipartFile(file: File): Promise<File> {
+  const canvas = await canvasFromFile(file, CLIPART_MAX_EDGE)
+  const webp = await toBlob(canvas, "image/webp", CLIPART_WEBP_QUALITY)
+  if (webp && webp.size > 0) {
+    const optimized = fileFromBlob(webp, file.name, "webp", "image/webp")
+    return file.size > 0 && file.size <= optimized.size ? file : optimized
+  }
+  // Rare: browser can't encode WebP — keep PNG but still downscaled.
+  const png = await toBlob(canvas, "image/png", 1)
+  if (png && png.size > 0) {
+    const optimized = fileFromBlob(png, file.name, "png", "image/png")
+    return file.size > 0 && file.size <= optimized.size ? file : optimized
+  }
+  return file
 }

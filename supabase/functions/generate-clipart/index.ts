@@ -68,9 +68,10 @@ serve(async (req) => {
       prompt: fullPrompt,
       n: 1,
       size: "1024x1024",
-      quality: "medium",
+      quality: "low",
       background: "transparent",
-      output_format: "png",
+      // WebP keeps alpha and is far smaller than PNG for stickers.
+      output_format: "webp",
     }),
   })
 
@@ -93,10 +94,11 @@ serve(async (req) => {
     data?: Array<{ b64_json?: string; revised_prompt?: string; url?: string }>
   }
   const item = result.data?.[0]
-  let pngBase64 = item?.b64_json
+  let imageBase64 = item?.b64_json
+  let mime = "image/webp"
 
   // Some responses return a URL instead of b64_json — fetch and encode.
-  if (!pngBase64 && item?.url) {
+  if (!imageBase64 && item?.url) {
     const imgRes = await fetch(item.url)
     if (!imgRes.ok) {
       return textResponse("Failed to download generated image", 502)
@@ -106,15 +108,22 @@ serve(async (req) => {
     for (let i = 0; i < bytes.length; i += 1) {
       binary += String.fromCharCode(bytes[i]!)
     }
-    pngBase64 = btoa(binary)
+    imageBase64 = btoa(binary)
+    const ct = (imgRes.headers.get("content-type") || "").toLowerCase()
+    if (ct.includes("png")) mime = "image/png"
+    else if (ct.includes("jpeg") || ct.includes("jpg")) mime = "image/jpeg"
+    else mime = "image/webp"
   }
 
-  if (!pngBase64) {
+  if (!imageBase64) {
     return textResponse("No image data in OpenAI response", 502)
   }
 
   return jsonResponse({
-    pngBase64,
+    // Keep legacy key for older clients; prefer imageBase64 + mime.
+    pngBase64: imageBase64,
+    imageBase64,
+    mime,
     revisedPrompt: item?.revised_prompt ?? null,
     name: body.name ? String(body.name).trim() : null,
   })

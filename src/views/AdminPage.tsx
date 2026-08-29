@@ -48,6 +48,7 @@ export function AdminPage() {
   const [genName, setGenName] = useState("")
   const [genCategory, setGenCategory] = useState("general")
   const [genPreviewBase64, setGenPreviewBase64] = useState<string | null>(null)
+  const [genPreviewMime, setGenPreviewMime] = useState("image/webp")
   const [genBusy, setGenBusy] = useState(false)
   const [storeQuery, setStoreQuery] = useState("")
   const [storeBusy, setStoreBusy] = useState(false)
@@ -192,7 +193,8 @@ export function AdminPage() {
         prompt: genPrompt,
         name: genName || undefined,
       })
-      setGenPreviewBase64(result.pngBase64)
+      setGenPreviewBase64(result.imageBase64 || result.pngBase64)
+      setGenPreviewMime(result.mime || "image/webp")
       if (result.name && !genName.trim()) setGenName(result.name)
       setMessage("Preview ready — publish to add it to the library.")
     } catch (err) {
@@ -208,9 +210,15 @@ export function AdminPage() {
     setMessage(null)
     setBusy(true)
     try {
+      const ext = genPreviewMime.includes("webp")
+        ? "webp"
+        : genPreviewMime.includes("jpeg") || genPreviewMime.includes("jpg")
+          ? "jpg"
+          : "png"
       const file = pngBase64ToFile(
         genPreviewBase64,
-        `${(genName || "clipart").replace(/[^\w.\-]+/g, "_")}.png`,
+        `${(genName || "clipart").replace(/[^\w.\-]+/g, "_")}.${ext}`,
+        genPreviewMime,
       )
       await upsertLibraryClipart({
         name: genName.trim() || genPrompt.trim().slice(0, 40) || "Clipart",
@@ -221,6 +229,7 @@ export function AdminPage() {
       })
       setMessage("Generated clipart published")
       setGenPreviewBase64(null)
+      setGenPreviewMime("image/webp")
       setGenPrompt("")
       setGenName("")
       await reload()
@@ -616,7 +625,10 @@ export function AdminPage() {
                     <button
                       type="button"
                       disabled={genBusy}
-                      onClick={() => setGenPreviewBase64(null)}
+                      onClick={() => {
+                        setGenPreviewBase64(null)
+                        setGenPreviewMime("image/webp")
+                      }}
                       className="rounded-lg border border-zinc-700 px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-900"
                     >
                       Discard
@@ -637,7 +649,7 @@ export function AdminPage() {
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={`data:image/png;base64,${genPreviewBase64}`}
+                    src={`data:${genPreviewMime};base64,${genPreviewBase64}`}
                     alt="Generated clipart preview"
                     className="h-40 w-40 object-contain"
                   />
