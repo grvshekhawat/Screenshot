@@ -46,6 +46,7 @@ Ship order: **Supabase → billing → front-end → verify → announce**.
 ## C. Front-end deploy
 
 - [x] Host on Vercel as **Next.js** (Framework Preset: Next.js). Do **not** use an SPA catch-all rewrite to `index.html`.
+- [ ] In Vercel → Project Settings → General / Build & Development: **Framework Preset = Next.js**, clear **Output Directory** (must not be `dist` — that was Vite). `vercel.json` sets `"framework": "nextjs"`.
 - [x] Custom domain (e.g. `screenshot.design`) + HTTPS
 - [ ] Production env vars (from `.env.example` — **`NEXT_PUBLIC_*`**):
   - [ ] `NEXT_PUBLIC_APP_URL=https://<your-domain>`
