@@ -764,47 +764,62 @@ export async function publishProjectAsTemplate(input: {
   if (!user) throw new Error("Not signed in")
 
   const assetIds = assetIdsFromProject(projectData)
-  for (const assetId of assetIds) {
-    const { data: blob, error: downloadError } = await supabase.storage
-      .from("project-assets")
-      .download(`${user.id}/${assetId}`)
-    if (downloadError || !blob) continue
-    const { error: uploadError } = await supabase.storage
-      .from("templates")
-      .upload(`${templateId}/${assetId}`, blob, {
-        upsert: true,
-        contentType: blob.type || "image/png",
-      })
-    if (uploadError) throw uploadError
-  }
+  const signedUrls = await resolveAssetUrls(assetIds)
+  const objectUrls: Record<string, string> = {}
+  const revokeLater: string[] = []
 
-  let preview_path: string | null = null
   try {
-    const previewBlob = await renderTemplatePreviewBlob(projectData, {
-      assetUrls: await resolvePreviewAssetUrls(projectData),
-    })
-    const previewStoragePath = `${templateId}/preview.webp`
-    const { error: previewError } = await supabase.storage
-      .from("templates")
-      .upload(previewStoragePath, previewBlob, {
-        upsert: true,
-        contentType: previewBlob.type || "image/webp",
-      })
-    if (!previewError) preview_path = previewStoragePath
-  } catch {
-    preview_path = null
-  }
+    await Promise.all(
+      assetIds.map(async (assetId) => {
+        const signed = signedUrls[assetId]
+        if (!signed) return
+        // One Storage fetch per asset — reuse for template copy + preview.
+        const res = await fetch(signed)
+        if (!res.ok) return
+        const blob = await res.blob()
+        const { error: uploadError } = await supabase.storage
+          .from("templates")
+          .upload(`${templateId}/${assetId}`, blob, {
+            upsert: true,
+            contentType: blob.type || "image/png",
+          })
+        if (uploadError) throw uploadError
+        const objectUrl = URL.createObjectURL(blob)
+        objectUrls[assetId] = objectUrl
+        revokeLater.push(objectUrl)
+      }),
+    )
 
-  return upsertTemplate({
-    id: templateId,
-    slug: `${slugify(title)}-${Date.now()}`,
-    title,
-    description,
-    preview_path,
-    data: projectData,
-    sort_order: 0,
-    published: input.published ?? true,
-  })
+    let preview_path: string | null = null
+    try {
+      const previewBlob = await renderTemplatePreviewBlob(projectData, {
+        assetUrls: objectUrls,
+      })
+      const previewStoragePath = `${templateId}/preview.webp`
+      const { error: previewError } = await supabase.storage
+        .from("templates")
+        .upload(previewStoragePath, previewBlob, {
+          upsert: true,
+          contentType: previewBlob.type || "image/webp",
+        })
+      if (!previewError) preview_path = previewStoragePath
+    } catch {
+      preview_path = null
+    }
+
+    return upsertTemplate({
+      id: templateId,
+      slug: `${slugify(title)}-${Date.now()}`,
+      title,
+      description,
+      preview_path,
+      data: projectData,
+      sort_order: 0,
+      published: input.published ?? true,
+    })
+  } finally {
+    for (const url of revokeLater) URL.revokeObjectURL(url)
+  }
 }
 
 async function remapProjectAssetsFromTemplate(

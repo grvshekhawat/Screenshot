@@ -67,13 +67,12 @@ function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n))
 }
 
-/** Crop a normalized (0–1) box from a source image URL → PNG blob. */
-export async function cropImageBox(
-  sourceUrl: string,
+/** Crop a normalized (0–1) box from an already-loaded image → blob. */
+function cropImageElement(
+  img: HTMLImageElement,
   box: AnalyzedBox,
   mime: "image/jpeg" | "image/png" = "image/png",
 ): Promise<Blob> {
-  const img = await loadImage(sourceUrl)
   const sx = Math.floor(clamp(box.x, 0, 1) * img.naturalWidth)
   const sy = Math.floor(clamp(box.y, 0, 1) * img.naturalHeight)
   const sw = Math.max(1, Math.floor(clamp(box.w, 0.01, 1) * img.naturalWidth))
@@ -82,34 +81,46 @@ export async function cropImageBox(
   canvas.width = sw
   canvas.height = sh
   const ctx = canvas.getContext("2d")
-  if (!ctx) throw new Error("Canvas unavailable for crop")
+  if (!ctx) return Promise.reject(new Error("Canvas unavailable for crop"))
   ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh)
   const quality = mime === "image/jpeg" ? 0.92 : undefined
-  const blob = await new Promise<Blob | null>((resolve) =>
-    canvas.toBlob((b) => resolve(b), mime, quality),
-  )
-  if (!blob) throw new Error("Crop export failed")
-  return blob
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (b) => (b ? resolve(b) : reject(new Error("Crop export failed"))),
+      mime,
+      quality,
+    )
+  })
 }
 
-/** Soft-blurred full-frame backdrop so photo backgrounds survive reconstruction. */
-async function blurredBackgroundBlob(sourceUrl: string): Promise<Blob> {
-  const img = await loadImage(sourceUrl)
+/** Soft-blurred backdrop from an already-loaded image. */
+function blurredBackgroundFromImage(img: HTMLImageElement): Promise<Blob> {
   const w = Math.min(720, img.naturalWidth)
   const h = Math.round((w / img.naturalWidth) * img.naturalHeight)
   const canvas = document.createElement("canvas")
   canvas.width = w
   canvas.height = h
   const ctx = canvas.getContext("2d")
-  if (!ctx) throw new Error("Canvas unavailable for blur")
+  if (!ctx) return Promise.reject(new Error("Canvas unavailable for blur"))
   ctx.filter = "blur(28px) saturate(1.05) brightness(0.92)"
-  // Oversample draw so blur edges don't show empty bands
   ctx.drawImage(img, -20, -20, w + 40, h + 40)
-  const blob = await new Promise<Blob | null>((resolve) =>
-    canvas.toBlob((b) => resolve(b), "image/jpeg", 0.85),
-  )
-  if (!blob) throw new Error("Blur export failed")
-  return blob
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (b) => (b ? resolve(b) : reject(new Error("Blur export failed"))),
+      "image/jpeg",
+      0.85,
+    )
+  })
+}
+
+/** @deprecated Prefer cropImageElement with a cached HTMLImageElement. */
+export async function cropImageBox(
+  sourceUrl: string,
+  box: AnalyzedBox,
+  mime: "image/jpeg" | "image/png" = "image/png",
+): Promise<Blob> {
+  const img = await loadImage(sourceUrl)
+  return cropImageElement(img, box, mime)
 }
 
 function placementFromDeviceBox(
@@ -180,9 +191,16 @@ export async function buildProjectFromStoreAnalysis(input: {
     }
 
     let backgroundImageId: string | null = null
-    if (layout.background.type === "photo") {
+    let sourceImg: HTMLImageElement | null = null
+    try {
+      sourceImg = await loadImage(sourceUrl)
+    } catch (err) {
+      console.warn("source image load failed", err)
+    }
+
+    if (layout.background.type === "photo" && sourceImg) {
       try {
-        const blurred = await blurredBackgroundBlob(sourceUrl)
+        const blurred = await blurredBackgroundFromImage(sourceImg)
         backgroundImageId = crypto.randomUUID()
         await uploadProjectAsset(backgroundImageId, blurred)
       } catch (err) {
@@ -216,8 +234,12 @@ export async function buildProjectFromStoreAnalysis(input: {
         screenBox.w >= 0.96 &&
         screenBox.h >= 0.96
       try {
-        if (!isFull) {
-          const cropped = await cropImageBox(sourceUrl, screenBox, "image/jpeg")
+        if (!isFull && sourceImg) {
+          const cropped = await cropImageElement(
+            sourceImg,
+            screenBox,
+            "image/jpeg",
+          )
           const cropId = crypto.randomUUID()
           await uploadProjectAsset(cropId, cropped)
           screenshotId = cropId
@@ -254,12 +276,12 @@ export async function buildProjectFromStoreAnalysis(input: {
 
     const cliparts = []
     for (const clip of layout.cliparts ?? []) {
+      if (!sourceImg) break
       try {
-        const cropped = await cropImageBox(sourceUrl, clip.box, "image/png")
+        const cropped = await cropImageElement(sourceImg, clip.box, "image/png")
         const assetId = crypto.randomUUID()
         await uploadProjectAsset(assetId, cropped)
-        const aspect =
-          clip.box.h > 0 ? clip.box.w / clip.box.h : 1
+        const aspect = clip.box.h > 0 ? clip.box.w / clip.box.h : 1
         cliparts.push(
           createClipart({
             assetId,

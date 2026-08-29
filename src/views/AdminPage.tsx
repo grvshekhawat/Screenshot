@@ -238,15 +238,20 @@ export function AdminPage() {
     setStoreBusy(true)
     setStoreImport(null)
     try {
-      setMessage("Scraping store listing…")
+      setMessage("Importing listing & analyzing layouts…")
       const listing = await importStoreApp({ query: storeQuery })
-      setMessage(
-        `Analyzing ${listing.assetIds.length} screens with AI (layout → components)…`,
-      )
-      const { layouts } = await analyzeStoreLayout({
-        assetIds: listing.assetIds,
-      })
-      setMessage("Building editable project from analysis…")
+      let layouts = listing.layouts ?? []
+      if (layouts.length !== listing.assetIds.length) {
+        // Older function deploy or missing OPENAI key — fall back once.
+        setMessage(
+          `Finishing analysis for ${listing.assetIds.length} screens…`,
+        )
+        const analyzed = await analyzeStoreLayout({
+          assetIds: listing.assetIds,
+        })
+        layouts = analyzed.layouts
+      }
+      setMessage("Building editable project…")
       const project = await buildProjectFromStoreAnalysis({
         title: listing.title,
         store: listing.store,

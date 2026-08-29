@@ -1,6 +1,7 @@
 import { config, isSupabaseConfigured } from "../config"
 import { getSupabase } from "../lib/supabase"
 import type { ArtboardOrientation } from "../orientation"
+import type { AnalyzedLayout } from "./analyze-store-layout"
 
 export type StoreImportResult = {
   title: string
@@ -9,9 +10,11 @@ export type StoreImportResult = {
   store: "apple" | "google"
   orientation: ArtboardOrientation
   assetIds: string[]
+  /** Present when Edge analyzed screenshots in-memory (no Storage re-download). */
+  layouts?: AnalyzedLayout[]
 }
 
-/** Admin-only: scrape App Store / Play listing and upload screenshots. */
+/** Admin-only: scrape listing, upload screenshots, AI-analyze layouts in one call. */
 export async function importStoreApp(input: {
   query: string
   country?: string

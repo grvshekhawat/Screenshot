@@ -63,9 +63,9 @@ supabase functions deploy import-store-app
 supabase functions deploy analyze-store-layout
 ```
 
-- Admin-only. Paste App Store / Play Store URL (or Apple app name) on `/admin` → scrape screenshots → vision analysis rebuilds slides as text + phone frames + optional lenses (crops UI via `screenBox`) → **Open in editor** or **Publish**.
+- Admin-only. Paste App Store / Play Store URL (or Apple app name) on `/admin` → scrape + upload + **in-memory vision analysis** (no Storage download for AI) → client rebuilds slides (one fetch per source for crops) → **Open in editor** or **Publish** (one fetch per asset for copy+preview).
 - Apple: iTunes Lookup + App Store HTML fallback. Play: details page scrape (Play **name search not supported** — use a `play.google.com/...details?id=` URL). Cap 6 screens. Play CDN `=wN-hM` params are layout sizes — importer requests `=w1080-rw` and filters by **decoded** WebP/JPEG dimensions (rejects icons).
-- Vision model: `gpt-4o` (~$0.01–0.05 per screen). Analysis failures fall back to a simple centered phone.
+- Vision model: `gpt-4o` (~$0.01–0.05 per screen). Analysis failures fall back to a simple centered phone. Standalone `analyze-store-layout` kept only as fallback (does download — prefer import path).
 - Store HTML can change; treat scrape failures as scraper breakage. Admin tool only — respect store ToS.
 
 

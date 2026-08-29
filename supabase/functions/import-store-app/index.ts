@@ -1,5 +1,10 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+import {
+  analyzeLayoutsFromBytes,
+  mimeFromContentType,
+  type AnalyzedLayout,
+} from "../_shared/analyze-layout.ts"
 import { handleCors, jsonResponse, textResponse } from "../_shared/cors.ts"
 
 const MAX_SCREENSHOTS = 6
@@ -503,6 +508,7 @@ serve(async (req) => {
 
   const assetIds: string[] = []
   const keptSizes: Array<{ width: number; height: number }> = []
+  const pendingAnalyze: Array<{ bytes: Uint8Array; mime: string }> = []
 
   for (let i = 0; i < urls.length && assetIds.length < MAX_SCREENSHOTS; i += 1) {
     const url = urls[i]!
@@ -523,9 +529,10 @@ serve(async (req) => {
     const contentType = (imgRes.headers.get("content-type") || "image/webp")
       .split(";")[0]!
       .trim()
-    const ext = contentType.includes("png")
+    const mime = mimeFromContentType(contentType)
+    const ext = mime.includes("png")
       ? "png"
-      : contentType.includes("jpeg") || contentType.includes("jpg")
+      : mime.includes("jpeg")
         ? "jpg"
         : "webp"
     const assetId = crypto.randomUUID()
@@ -534,7 +541,7 @@ serve(async (req) => {
       .from("project-assets")
       .upload(path, buffer, {
         upsert: true,
-        contentType: contentType || `image/${ext}`,
+        contentType: contentType || mime,
       })
     if (uploadError) {
       console.error("upload failed", uploadError.message)
@@ -542,6 +549,8 @@ serve(async (req) => {
     }
     assetIds.push(assetId)
     keptSizes.push(size)
+    // Keep bytes for vision — never re-download from Storage.
+    pendingAnalyze.push({ bytes: buffer, mime })
   }
 
   if (assetIds.length === 0) {
@@ -556,6 +565,19 @@ serve(async (req) => {
   const landscapeCount = keptSizes.filter((s) => s.width >= s.height * 1.15).length
   if (landscapeCount > portraitCount) orientation = "landscape"
 
+  let layouts: AnalyzedLayout[] = []
+  const openaiKey = Deno.env.get("OPENAI_API_KEY")
+  if (openaiKey) {
+    try {
+      layouts = await analyzeLayoutsFromBytes(openaiKey, pendingAnalyze)
+    } catch (err) {
+      console.error("batch analyze failed", err)
+      layouts = []
+    }
+  } else {
+    console.warn("OPENAI_API_KEY missing — returning import without layouts")
+  }
+
   return jsonResponse({
     title: listing.title,
     description: listing.description.slice(0, 4000),
@@ -563,5 +585,6 @@ serve(async (req) => {
     store: listing.store,
     orientation,
     assetIds,
+    layouts,
   })
 })
