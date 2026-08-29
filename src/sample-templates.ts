@@ -684,4 +684,4 @@ export function builtInCatalogTemplates(): TemplateRecord[] {
 }
 
 /** Bump when seed templates or sample screens change. */
-export const CATALOG_SEED_VERSION = 10
+export const CATALOG_SEED_VERSION = 11

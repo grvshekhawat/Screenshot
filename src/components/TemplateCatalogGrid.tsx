@@ -2,7 +2,10 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
-import { listPublishedTemplates } from "@/api/projects"
+import {
+  hydratePublishedTemplatePreviews,
+  listPublishedTemplatesMeta,
+} from "@/api/projects"
 import type { SeoTemplate } from "@/lib/templates-seo"
 import { projectOrientation } from "@/orientation"
 
@@ -10,42 +13,64 @@ type Props = {
   initial: SeoTemplate[]
 }
 
+function pickPreviewUrl(url: string | null | undefined): string | null {
+  if (!url) return null
+  if (url.startsWith("blob:") || url.startsWith("http://") || url.startsWith("https://")) {
+    return url
+  }
+  if (url.startsWith("/") && !url.startsWith("//")) return url
+  if (url.startsWith("data:") && url.length < 80_000) return url
+  return null
+}
+
 /**
  * SSR ships title/description/links for SEO. Client fills missing seed
- * previews via the same catalog path as Home (canvas capture + IndexedDB).
+ * previews progressively (canvas paint + IndexedDB) so admin HTTPS cards
+ * stay visible while seeds generate.
  */
 export function TemplateCatalogGrid({ initial }: Props) {
   const [templates, setTemplates] = useState(initial)
 
   useEffect(() => {
     let cancelled = false
-    void listPublishedTemplates()
-      .then((rows) => {
+
+    const applyPreview = (slug: string, preview: string | null) => {
+      if (!preview || cancelled) return
+      setTemplates((prev) =>
+        prev.map((item) =>
+          item.slug === slug ? { ...item, preview_url: preview } : item,
+        ),
+      )
+    }
+
+    void (async () => {
+      try {
+        const rows = await listPublishedTemplatesMeta()
         if (cancelled) return
         const bySlug = new Map(rows.map((row) => [row.slug, row]))
         setTemplates((prev) =>
           prev.map((item) => {
             const live = bySlug.get(item.slug)
             if (!live) return item
-            const preview =
-              live.preview_url ??
-              (live.preview_path?.startsWith("data:") ||
-              live.preview_path?.startsWith("http")
-                ? live.preview_path
-                : null)
             return {
               ...item,
               title: live.title || item.title,
               description: live.description || item.description,
-              preview_url: preview ?? item.preview_url,
+              preview_url:
+                pickPreviewUrl(live.preview_url) ?? item.preview_url,
               orientation: projectOrientation(live.data),
             }
           }),
         )
-      })
-      .catch(() => {
+
+        await hydratePublishedTemplatePreviews(rows, (updated) => {
+          applyPreview(updated.slug, pickPreviewUrl(updated.preview_url))
+        })
+      } catch {
         /* keep SSR rows */
-      })
+      }
+    })()
+
     return () => {
       cancelled = true
     }

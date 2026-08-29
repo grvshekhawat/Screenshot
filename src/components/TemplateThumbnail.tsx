@@ -18,12 +18,16 @@ export function TemplateThumbnail({
   onClick,
   disabled = false,
 }: TemplateThumbnailProps) {
+  // Prefer preview_url (blob:/https). Avoid huge data: preview_path — Safari won't paint them.
   const src =
-    template.preview_url ??
-    (template.preview_path?.startsWith("data:") ||
-    template.preview_path?.startsWith("http")
-      ? template.preview_path
-      : null)
+    template.preview_url && !template.preview_url.startsWith("data:")
+      ? template.preview_url
+      : template.preview_path?.startsWith("http")
+        ? template.preview_path
+        : template.preview_url?.startsWith("data:") &&
+            template.preview_url.length < 80_000
+          ? template.preview_url
+          : null
   const layout = resolveThumbnailLayout(template.data)
   const aspect = thumbnailAspectClass(layout, template.data)
   const interactive = Boolean(onClick) && !disabled

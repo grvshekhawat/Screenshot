@@ -1,4 +1,4 @@
-import { get, set } from "idb-keyval"
+import { get, set, del } from "idb-keyval"
 import { isSupabaseConfigured } from "../config"
 import { assetIdsFromProject } from "../assets"
 import { createSampleProject, normalizeProject } from "../constants"
@@ -28,25 +28,57 @@ import * as local from "./local-backend"
 const SEED_PREVIEW_KEY = (id: string) =>
   `ss-seed-preview-v${CATALOG_SEED_VERSION}:${id}`
 
-async function readSeedPreviewCache(id: string): Promise<string | null> {
+async function readSeedPreviewCache(id: string): Promise<Blob | null> {
   try {
     const value = await get(SEED_PREVIEW_KEY(id))
-    return typeof value === "string" && value.startsWith("data:") ? value : null
+    if (value instanceof Blob && value.size > 0) return value
+    // Legacy string/data-URL caches — drop them. Migrating via fetch(dataUrl)
+    // can hang Safari/Chrome on multi‑MB strings and blocks the whole catalog.
+    if (value != null) {
+      try {
+        await del(SEED_PREVIEW_KEY(id))
+      } catch {
+        /* ignore */
+      }
+    }
+    return null
   } catch {
     return null
   }
 }
 
-async function writeSeedPreviewCache(id: string, dataUrl: string): Promise<void> {
+async function writeSeedPreviewCache(id: string, preview: Blob): Promise<void> {
   try {
-    await set(SEED_PREVIEW_KEY(id), dataUrl)
+    await set(SEED_PREVIEW_KEY(id), preview)
   } catch {
     /* quota — list still works with the in-memory url this visit */
   }
 }
 
+function seedPreviewDisplayUrl(blob: Blob): string {
+  return URL.createObjectURL(blob)
+}
+
+async function renderSeedPreviewBlob(project: Project): Promise<Blob> {
+  return renderTemplatePreviewBlob(project, {
+    assetUrls: await resolvePreviewAssetUrls(project),
+    // Canvas paint only — skip DOM capture queue (see export-slide lock).
+    paintOnly: true,
+  })
+}
+
 function isBuiltInSeedId(id: string): boolean {
   return builtInCatalogTemplates().some((seed) => seed.id === id)
+}
+
+function isUsablePreviewUrl(url: string | null | undefined): boolean {
+  if (!url) return false
+  if (url.startsWith("blob:") || url.startsWith("http://") || url.startsWith("https://")) {
+    return true
+  }
+  if (url.startsWith("/") && !url.startsWith("//")) return true
+  // Short data URLs only (SVG placeholders etc.) — never multi‑MB strips.
+  return url.startsWith("data:") && url.length < 80_000
 }
 
 function mapProject(row: Record<string, unknown>): ProjectRecord {
@@ -478,8 +510,11 @@ async function withTemplatePreview(
   }
 
   if (normalized.preview_path) {
-    const preview_url = await resolveTemplatePreviewUrl(normalized.preview_path)
-    if (preview_url) return { ...normalized, preview_url }
+    const resolved = await resolveTemplatePreviewUrl(normalized.preview_path)
+    if (resolved && isUsablePreviewUrl(resolved)) {
+      return { ...normalized, preview_url: resolved }
+    }
+    // Huge data: preview_path — ignore and regenerate below when possible.
   }
 
   if (isBuiltInSeedId(normalized.id)) {
@@ -487,8 +522,7 @@ async function withTemplatePreview(
     if (cached) {
       return {
         ...normalized,
-        preview_path: cached,
-        preview_url: cached,
+        preview_url: seedPreviewDisplayUrl(cached),
       }
     }
   }
@@ -497,25 +531,27 @@ async function withTemplatePreview(
     const assetUrls = await resolvePreviewAssetUrls(normalized.data)
 
     if (!isSupabaseConfigured()) {
-      const preview_url = await renderTemplatePreviewDataUrl(normalized.data, {
-        assetUrls,
-      })
+      const blob = isBuiltInSeedId(normalized.id)
+        ? await renderSeedPreviewBlob(normalized.data)
+        : await renderTemplatePreviewBlob(normalized.data, { assetUrls })
       if (isBuiltInSeedId(normalized.id)) {
-        await writeSeedPreviewCache(normalized.id, preview_url)
+        await writeSeedPreviewCache(normalized.id, blob)
       }
+      const preview_url = URL.createObjectURL(blob)
       await local.localUpsertTemplate({
         ...normalized,
-        preview_path: preview_url,
+        preview_path: normalized.preview_path,
       })
-      return { ...normalized, preview_path: preview_url, preview_url }
+      return { ...normalized, preview_url }
     }
 
     if (isBuiltInSeedId(normalized.id)) {
-      const preview_url = await renderTemplatePreviewDataUrl(normalized.data, {
-        assetUrls,
-      })
-      await writeSeedPreviewCache(normalized.id, preview_url)
-      return { ...normalized, preview_path: preview_url, preview_url }
+      const blob = await renderSeedPreviewBlob(normalized.data)
+      await writeSeedPreviewCache(normalized.id, blob)
+      return {
+        ...normalized,
+        preview_url: seedPreviewDisplayUrl(blob),
+      }
     }
 
     // Cloud catalog row missing preview — render once and persist to storage.
@@ -545,19 +581,80 @@ async function withTemplatePreview(
       }
     }
 
-    const preview_url = await renderTemplatePreviewDataUrl(normalized.data, {
-      assetUrls,
-    })
-    return { ...normalized, preview_path: preview_url, preview_url }
-  } catch {
+    const preview_url = URL.createObjectURL(previewBlob)
+    return { ...normalized, preview_url }
+  } catch (err) {
+    console.warn("template preview failed", normalized.id, err)
     return normalized
   }
+}
+
+/** Resolve storage / IndexedDB previews only — never runs canvas capture. */
+async function withCheapTemplatePreview(
+  template: TemplateRecord,
+): Promise<TemplateRecord> {
+  const normalized = {
+    ...template,
+    data: normalizeProject(template.data),
+  }
+
+  if (normalized.preview_path) {
+    const resolved = await resolveTemplatePreviewUrl(normalized.preview_path)
+    if (resolved && isUsablePreviewUrl(resolved)) {
+      return { ...normalized, preview_url: resolved }
+    }
+  }
+
+  if (isBuiltInSeedId(normalized.id)) {
+    const cached = await readSeedPreviewCache(normalized.id)
+    if (cached) {
+      return {
+        ...normalized,
+        preview_url: seedPreviewDisplayUrl(cached),
+      }
+    }
+  }
+
+  return normalized
 }
 
 async function withTemplatePreviews(
   templates: TemplateRecord[],
 ): Promise<TemplateRecord[]> {
-  return Promise.all(templates.map((template) => withTemplatePreview(template)))
+  // Phase 1: signed URLs + IDB (fast) so admin cards paint immediately.
+  const cheap = await Promise.all(
+    templates.map((template) => withCheapTemplatePreview(template)),
+  )
+  // Phase 2: generate missing seed/cloud previews one at a time.
+  const out = [...cheap]
+  for (let i = 0; i < out.length; i++) {
+    if (isUsablePreviewUrl(out[i].preview_url)) continue
+    out[i] = await withTemplatePreview(out[i])
+  }
+  return out
+}
+
+/**
+ * Attach cheap previews, then generate missing ones and call `onUpdate`
+ * as each finishes (for progressive catalog UI).
+ */
+export async function hydratePublishedTemplatePreviews(
+  templates: TemplateRecord[],
+  onUpdate?: (template: TemplateRecord) => void,
+): Promise<TemplateRecord[]> {
+  const cheap = await Promise.all(
+    templates.map((template) => withCheapTemplatePreview(template)),
+  )
+  for (const row of cheap) {
+    if (isUsablePreviewUrl(row.preview_url)) onUpdate?.(row)
+  }
+  const out = [...cheap]
+  for (let i = 0; i < out.length; i++) {
+    if (isUsablePreviewUrl(out[i].preview_url)) continue
+    out[i] = await withTemplatePreview(out[i])
+    onUpdate?.(out[i])
+  }
+  return out
 }
 
 /** Always include built-in gallery templates; keep extra published rows from the cloud. */
@@ -618,6 +715,32 @@ export async function listPublishedTemplates(): Promise<TemplateRecord[]> {
     return withBuiltIns([])
   }
   return withBuiltIns((data ?? []) as TemplateRecord[])
+}
+
+/** Fast catalog rows (storage/IDB only). Pair with hydratePublishedTemplatePreviews. */
+export async function listPublishedTemplatesMeta(): Promise<TemplateRecord[]> {
+  const hidden = await listHiddenTemplateIds()
+  const merge = (rows: TemplateRecord[]) =>
+    Promise.all(
+      mergeWithBuiltInCatalog(rows, hidden).map((row) =>
+        withCheapTemplatePreview(row),
+      ),
+    )
+
+  if (!isSupabaseConfigured()) {
+    return merge(await local.localListTemplates())
+  }
+  const supabase = getSupabase()!
+  const { data, error } = await supabase
+    .from("templates")
+    .select("*")
+    .eq("published", true)
+    .order("sort_order")
+  if (error) {
+    console.warn("listPublishedTemplatesMeta:", error.message)
+    return merge([])
+  }
+  return merge((data ?? []) as TemplateRecord[])
 }
 
 export async function listAllTemplates(): Promise<TemplateRecord[]> {

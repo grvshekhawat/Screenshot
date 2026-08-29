@@ -25,6 +25,12 @@ export type PreviewRenderOptions = {
   layout?: ThumbnailLayout
   /** Resolved asset id → object/data URL for screenshots and backgrounds. */
   assetUrls?: Record<string, string>
+  /**
+   * Skip DOM/`modern-screenshot` capture and paint on canvas only.
+   * Used for built-in seed catalog thumbs — avoids capture-lock queues that
+   * leave gallery cards stuck on “Loading preview…”.
+   */
+  paintOnly?: boolean
 }
 
 export function resolveThumbnailLayout(
@@ -834,6 +840,7 @@ export async function renderProjectPreviewCanvas(
       designScale,
       assetUrls,
       project.slides,
+      options.paintOnly === true,
     )
   }
 
@@ -851,6 +858,7 @@ async function paintPreviewCell(
   designScale = 1,
   assetUrls: Record<string, string> = {},
   allSlides: Slide[] = [slide],
+  paintOnly = false,
 ) {
   ctx.save()
   ctx.beginPath()
@@ -861,18 +869,7 @@ async function paintPreviewCell(
     0,
     allSlides.findIndex((entry) => entry.id === slide.id),
   )
-  try {
-    const captured = await captureSlideToCanvas(
-      slide,
-      slideIndex,
-      allSlides,
-      slideWidth,
-      slideH,
-      assetUrls,
-      true,
-    )
-    ctx.drawImage(captured, 0, 0, slideWidth, slideH)
-  } catch {
+  if (paintOnly) {
     paintSlideFallback(
       ctx,
       slide,
@@ -883,6 +880,30 @@ async function paintPreviewCell(
       allSlides,
       slideIndex,
     )
+  } else {
+    try {
+      const captured = await captureSlideToCanvas(
+        slide,
+        slideIndex,
+        allSlides,
+        slideWidth,
+        slideH,
+        assetUrls,
+        true,
+      )
+      ctx.drawImage(captured, 0, 0, slideWidth, slideH)
+    } catch {
+      paintSlideFallback(
+        ctx,
+        slide,
+        slideWidth,
+        slideH,
+        images,
+        designScale,
+        allSlides,
+        slideIndex,
+      )
+    }
   }
   ctx.restore()
 

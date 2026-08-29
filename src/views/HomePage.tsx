@@ -3,7 +3,10 @@
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { listPublishedTemplates } from "../api/projects"
+import {
+  hydratePublishedTemplatePreviews,
+  listPublishedTemplatesMeta,
+} from "../api/projects"
 import { useAuth } from "../auth/AuthProvider"
 import {
   projectOrientation,
@@ -23,13 +26,21 @@ export function HomePage() {
   useEffect(() => {
     if (!ready) return
     let cancelled = false
-    void listPublishedTemplates()
-      .then((rows) => {
-        if (!cancelled) setTemplates(rows)
-      })
-      .catch(() => {
+    void (async () => {
+      try {
+        const rows = await listPublishedTemplatesMeta()
+        if (cancelled) return
+        setTemplates(rows)
+        await hydratePublishedTemplatePreviews(rows, (updated) => {
+          if (cancelled) return
+          setTemplates((prev) =>
+            prev.map((row) => (row.id === updated.id ? updated : row)),
+          )
+        })
+      } catch {
         if (!cancelled) setTemplates([])
-      })
+      }
+    })()
     return () => {
       cancelled = true
     }
