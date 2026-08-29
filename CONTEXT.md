@@ -16,7 +16,7 @@ Cloud SaaS App Store / Play screenshot editor (Vite + React). Auth, projects, te
 
 ## Architecture
 
-- Auth: `src/auth/AuthProvider.tsx` — email magic link (Supabase) or email demo (local)
+- Auth: `src/auth/AuthProvider.tsx` — email + password (Supabase) or email demo (local). Magic links are not used.
 - Projects: `src/api/projects.ts` — cloud CRUD + 5-cap; editor at `/app/:projectId`. Local demo backend stores projects/assets in **IndexedDB** (migrates off `localStorage` to avoid ~5MB quota errors)
 - State: `src/project-store.tsx` — cloud autosave when `projectId` set; IndexedDB fallback when not
 - Billing: `src/billing/*` + Edge Functions under `supabase/functions/` (Stripe + PayPal webhooks → `profiles`)

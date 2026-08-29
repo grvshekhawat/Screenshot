@@ -27,7 +27,11 @@ type AuthContextValue = {
   isAdmin: boolean
   canExport: boolean
   usingLocalBackend: boolean
-  signInWithEmail: (email: string) => Promise<void>
+  signInWithPassword: (email: string, password: string) => Promise<void>
+  signUpWithPassword: (
+    email: string,
+    password: string,
+  ) => Promise<"signed-in" | "confirm-email">
   signOut: () => Promise<void>
   refreshProfile: () => Promise<void>
   /** Local/demo only: toggle subscription for testing paywall */
@@ -109,8 +113,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [refreshProfile, usingLocalBackend])
 
-  const signInWithEmail = useCallback(
-    async (nextEmail: string) => {
+  const signInWithPassword = useCallback(
+    async (nextEmail: string, password: string) => {
       if (usingLocalBackend) {
         const next = await localSignIn(nextEmail.trim())
         setProfile(next)
@@ -119,14 +123,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return
       }
       const supabase = getSupabase()!
-      const redirectTo = `${appOrigin().replace(/\/$/, "")}/app`
-      const { error } = await supabase.auth.signInWithOtp({
+      const { error } = await supabase.auth.signInWithPassword({
         email: nextEmail.trim(),
-        options: { emailRedirectTo: redirectTo },
+        password,
       })
       if (error) throw error
+      await refreshProfile()
     },
-    [usingLocalBackend],
+    [refreshProfile, usingLocalBackend],
+  )
+
+  const signUpWithPassword = useCallback(
+    async (nextEmail: string, password: string) => {
+      if (usingLocalBackend) {
+        await signInWithPassword(nextEmail, password)
+        return "signed-in" as const
+      }
+      const supabase = getSupabase()!
+      const { data, error } = await supabase.auth.signUp({
+        email: nextEmail.trim(),
+        password,
+        options: {
+          emailRedirectTo: `${appOrigin().replace(/\/$/, "")}/app`,
+        },
+      })
+      if (error) throw error
+      if (data.session) {
+        await refreshProfile()
+        return "signed-in" as const
+      }
+      return "confirm-email" as const
+    },
+    [refreshProfile, signInWithPassword, usingLocalBackend],
   )
 
   const signOut = useCallback(async () => {
@@ -168,7 +196,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAdmin: profile?.role === "admin",
       canExport: canExport(profile),
       usingLocalBackend,
-      signInWithEmail,
+      signInWithPassword,
+      signUpWithPassword,
       signOut,
       refreshProfile,
       setDemoSubscription,
@@ -179,7 +208,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       email,
       profile,
       usingLocalBackend,
-      signInWithEmail,
+      signInWithPassword,
+      signUpWithPassword,
       signOut,
       refreshProfile,
       setDemoSubscription,
