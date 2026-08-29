@@ -142,6 +142,9 @@ export function Artboard({
             : null,
         ]),
         ...slide.cliparts.map((clipart) => assetUrls[clipart.assetId] ?? null),
+        ...guestCliparts.map(
+          (guest) => assetUrls[guest.clipart.assetId] ?? null,
+        ),
         bgImageUrl,
       ].filter((url): url is string => Boolean(url))
       await Promise.all(
@@ -171,7 +174,16 @@ export function Artboard({
     return () => {
       cancelled = true
     }
-  }, [onReady, assetUrls, slide, guestFrames, width, height, bgImageUrl])
+  }, [
+    onReady,
+    assetUrls,
+    slide,
+    guestFrames,
+    guestCliparts,
+    width,
+    height,
+    bgImageUrl,
+  ])
 
   const split = templateSplit(slide.templateId)
   const colorBackground = split
@@ -372,6 +384,9 @@ export function Artboard({
           style={{
             position: "absolute",
             inset: 0,
+            // Wrapper spans the slide for guest offset; only the lens shape
+            // should capture hits so phones/clipart underneath stay draggable.
+            pointerEvents: "none",
             transform: offsetX
               ? `translateX(${(offsetX / 100) * width}px)`
               : undefined,

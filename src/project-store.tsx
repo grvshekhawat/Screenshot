@@ -186,6 +186,8 @@ type ProjectContextValue = {
   attachClipart: (slideId: string, file: File) => Promise<void>
   attachBackgroundImage: (slideId: string, file: File) => Promise<void>
   saveDraft: () => Promise<void>
+  /** Persist current draft + thumbnail immediately (e.g. leaving the editor). */
+  flushSave: () => Promise<void>
   undo: () => void
   redo: () => void
   canUndo: boolean
@@ -330,8 +332,12 @@ export function ProjectProvider({
   const historyCoalesceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const projectRef = useRef(project)
   const assetUrlsRef = useRef(assetUrls)
+  const readyRef = useRef(ready)
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const saveInFlightRef = useRef<Promise<void> | null>(null)
   projectRef.current = project
   assetUrlsRef.current = assetUrls
+  readyRef.current = ready
 
   const clearHistoryCoalesce = useCallback(() => {
     if (historyCoalesceRef.current) {
@@ -469,17 +475,70 @@ export function ProjectProvider({
   useEffect(() => {
     if (!ready) return
     setSaveState("unsaved")
-    const timer = window.setTimeout(() => {
-      void (async () => {
+    if (autosaveTimerRef.current) window.clearTimeout(autosaveTimerRef.current)
+    autosaveTimerRef.current = window.setTimeout(() => {
+      autosaveTimerRef.current = null
+      const run = (async () => {
         setSaveState("saving")
-        if (projectId) await saveProjectRecord(projectId, project)
-        else await saveProject(project)
+        const snapshot = projectRef.current
+        if (projectId) await saveProjectRecord(projectId, snapshot)
+        else await saveProject(snapshot)
         setSaveState("saved")
         setLastSavedAt(Date.now())
       })()
+      saveInFlightRef.current = run.then(
+        () => undefined,
+        () => undefined,
+      )
+      void run
     }, 400)
-    return () => window.clearTimeout(timer)
+    return () => {
+      if (autosaveTimerRef.current) {
+        window.clearTimeout(autosaveTimerRef.current)
+        autosaveTimerRef.current = null
+      }
+    }
   }, [project, ready, projectId])
+
+  const persistSnapshot = useCallback(async () => {
+    if (!readyRef.current) return
+    if (autosaveTimerRef.current) {
+      window.clearTimeout(autosaveTimerRef.current)
+      autosaveTimerRef.current = null
+    }
+    if (saveInFlightRef.current) await saveInFlightRef.current
+    setSaveState("saving")
+    const snapshot = projectRef.current
+    try {
+      if (projectId) await saveProjectRecord(projectId, snapshot)
+      else await saveProject(snapshot)
+      setSaveState("saved")
+      setLastSavedAt(Date.now())
+    } catch (err) {
+      setSaveState("unsaved")
+      throw err
+    }
+  }, [projectId])
+
+  const saveDraft = useCallback(async () => {
+    await persistSnapshot()
+  }, [persistSnapshot])
+
+  const flushSave = useCallback(async () => {
+    await persistSnapshot()
+  }, [persistSnapshot])
+
+  // Leaving the editor: flush any pending draft so the projects list thumbnail matches.
+  useEffect(() => {
+    return () => {
+      if (!readyRef.current || !projectId) return
+      if (autosaveTimerRef.current) {
+        window.clearTimeout(autosaveTimerRef.current)
+        autosaveTimerRef.current = null
+      }
+      void saveProjectRecord(projectId, projectRef.current)
+    }
+  }, [projectId])
 
   const storeAsset = useCallback(async (file: File) => {
     const { normalizeImageFile } = await import("./image-upload")
@@ -504,14 +563,6 @@ export function ProjectProvider({
     }
     return { id, file: normalized }
   }, [projectId])
-
-  const saveDraft = useCallback(async () => {
-    setSaveState("saving")
-    if (projectId) await saveProjectRecord(projectId, project)
-    else await saveProject(project)
-    setSaveState("saved")
-    setLastSavedAt(Date.now())
-  }, [project, projectId])
 
   const setName = useCallback((name: string) => {
     setProject((current) => ({ ...current, name }))
@@ -1865,6 +1916,7 @@ export function ProjectProvider({
       attachClipart,
       attachBackgroundImage,
       saveDraft,
+      flushSave,
       undo,
       redo,
       canUndo,
@@ -1935,6 +1987,7 @@ export function ProjectProvider({
       attachClipart,
       attachBackgroundImage,
       saveDraft,
+      flushSave,
       undo,
       redo,
       canUndo,

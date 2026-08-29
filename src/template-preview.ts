@@ -429,6 +429,51 @@ function paintClipart(
     typeof clipart.opacity === "number" && Number.isFinite(clipart.opacity)
       ? Math.min(1, Math.max(0, clipart.opacity))
       : 1
+  const recolor = clipart.recolor ?? "off"
+
+  const drawTinted = (
+    target: CanvasRenderingContext2D,
+    dw: number,
+    dh: number,
+  ) => {
+    if (recolor === "off") {
+      target.drawImage(img, -dw / 2, -dh / 2, dw, dh)
+      return
+    }
+    const color = clipart.color ?? "#fbbf24"
+    const color2 = clipart.color2 ?? "#f97316"
+    const colorAngle =
+      typeof clipart.colorAngle === "number" ? clipart.colorAngle : 135
+    const overlay = document.createElement("canvas")
+    overlay.width = Math.max(1, Math.round(dw))
+    overlay.height = Math.max(1, Math.round(dh))
+    const octx = overlay.getContext("2d")
+    if (!octx) {
+      target.drawImage(img, -dw / 2, -dh / 2, dw, dh)
+      return
+    }
+    if (recolor === "gradient") {
+      const rad = ((colorAngle - 90) * Math.PI) / 180
+      const cx = overlay.width / 2
+      const cy = overlay.height / 2
+      const len = Math.hypot(overlay.width, overlay.height) / 2
+      const gradient = octx.createLinearGradient(
+        cx - Math.cos(rad) * len,
+        cy - Math.sin(rad) * len,
+        cx + Math.cos(rad) * len,
+        cy + Math.sin(rad) * len,
+      )
+      gradient.addColorStop(0, color)
+      gradient.addColorStop(1, color2)
+      octx.fillStyle = gradient
+    } else {
+      octx.fillStyle = color
+    }
+    octx.fillRect(0, 0, overlay.width, overlay.height)
+    octx.globalCompositeOperation = "destination-in"
+    octx.drawImage(img, 0, 0, overlay.width, overlay.height)
+    target.drawImage(overlay, -dw / 2, -dh / 2, dw, dh)
+  }
 
   ctx.save()
   ctx.globalAlpha = opacity
@@ -450,7 +495,7 @@ function paintClipart(
       deviceH / 2 + (clipart.y / 100) * deviceH - clipartHeight / 2
     ctx.translate(localX + clipartWidth / 2, localY + clipartHeight / 2)
     ctx.rotate(((clipart.rotation ?? 0) * Math.PI) / 180)
-    ctx.drawImage(img, -clipartWidth / 2, -clipartHeight / 2, clipartWidth, clipartHeight)
+    drawTinted(ctx, clipartWidth, clipartHeight)
   } else {
     const clipartWidth = (clipart.width / 100) * width
     const clipartHeight = clipartWidth / aspect
@@ -458,7 +503,7 @@ function paintClipart(
     const cy = (clipart.y / 100) * height
     ctx.translate(cx, cy)
     ctx.rotate(((clipart.rotation ?? 0) * Math.PI) / 180)
-    ctx.drawImage(img, -clipartWidth / 2, -clipartHeight / 2, clipartWidth, clipartHeight)
+    drawTinted(ctx, clipartWidth, clipartHeight)
   }
 
   ctx.restore()

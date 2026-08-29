@@ -1,9 +1,15 @@
+import { get, set } from "idb-keyval"
 import { isSupabaseConfigured } from "../config"
 import { assetIdsFromProject } from "../assets"
 import { createSampleProject, normalizeProject } from "../constants"
-import { builtInCatalogTemplates } from "../sample-templates"
+import { blobUrlToDataUrl } from "../export-canvas"
+import {
+  builtInCatalogTemplates,
+  CATALOG_SEED_VERSION,
+} from "../sample-templates"
 import { sampleScreenDataUrl } from "../sample-screens"
 import { getSupabase } from "../lib/supabase"
+import { loadScreenshot } from "../storage"
 import {
   renderProjectPreviewBlob,
   renderProjectPreviewDataUrl,
@@ -18,6 +24,30 @@ import type {
 } from "../types/cloud"
 import type { Project } from "../types"
 import * as local from "./local-backend"
+
+const SEED_PREVIEW_KEY = (id: string) =>
+  `ss-seed-preview-v${CATALOG_SEED_VERSION}:${id}`
+
+async function readSeedPreviewCache(id: string): Promise<string | null> {
+  try {
+    const value = await get(SEED_PREVIEW_KEY(id))
+    return typeof value === "string" && value.startsWith("data:") ? value : null
+  } catch {
+    return null
+  }
+}
+
+async function writeSeedPreviewCache(id: string, dataUrl: string): Promise<void> {
+  try {
+    await set(SEED_PREVIEW_KEY(id), dataUrl)
+  } catch {
+    /* quota — list still works with the in-memory url this visit */
+  }
+}
+
+function isBuiltInSeedId(id: string): boolean {
+  return builtInCatalogTemplates().some((seed) => seed.id === id)
+}
 
 function mapProject(row: Record<string, unknown>): ProjectRecord {
   return {
@@ -63,33 +93,74 @@ async function resolvePreviewAssetUrls(
   const urls: Record<string, string> = {}
   await Promise.all(
     assetIdsFromProject(project).map(async (id) => {
-      const url = await resolveAssetUrl(id)
-      if (url) urls[id] = url
+      let url = await resolveAssetUrl(id)
+      if (!url) {
+        const blob = await loadScreenshot(id)
+        if (blob) {
+          const objectUrl = URL.createObjectURL(blob)
+          try {
+            url = await blobUrlToDataUrl(objectUrl)
+          } finally {
+            URL.revokeObjectURL(objectUrl)
+          }
+        }
+      }
+      if (!url) return
+      // Data URLs survive DOM capture without CORS / fetch failures.
+      if (url.startsWith("data:")) {
+        urls[id] = url
+        return
+      }
+      try {
+        urls[id] = await blobUrlToDataUrl(url)
+      } catch {
+        urls[id] = url
+      }
     }),
   )
   return urls
 }
 
+function withCacheBust(url: string, version: string | null | undefined): string {
+  if (!version) return url
+  if (url.startsWith("data:") || url.startsWith("blob:")) return url
+  const sep = url.includes("?") ? "&" : "?"
+  return `${url}${sep}v=${encodeURIComponent(version)}`
+}
+
 async function withProjectThumbnail(
   project: ProjectRecord,
 ): Promise<ProjectRecord> {
+  if (project.thumbnail_path) {
+    const resolved = await resolveProjectThumbnailUrl(project.thumbnail_path)
+    if (resolved) {
+      return {
+        ...project,
+        thumbnail_url: withCacheBust(resolved, project.updated_at),
+      }
+    }
+  }
+
   try {
     const data = normalizeProject(project.data)
-    const thumbnail_url = await renderProjectPreviewDataUrl(data, {
-      assetUrls: await resolvePreviewAssetUrls(data),
-    })
+    if (!isSupabaseConfigured()) {
+      const thumbnail_url = await renderProjectPreviewDataUrl(data, {
+        assetUrls: await resolvePreviewAssetUrls(data),
+      })
+      await local.localSetProjectThumbnail(project.id, thumbnail_url)
+      return { ...project, thumbnail_path: thumbnail_url, thumbnail_url }
+    }
+    const thumbnail_path = await buildProjectThumbnailPath(project.id, data)
+    if (!thumbnail_path) return project
+    const resolved = await resolveProjectThumbnailUrl(thumbnail_path)
     return {
       ...project,
-      thumbnail_path: project.thumbnail_path ?? thumbnail_url,
-      thumbnail_url,
+      thumbnail_path,
+      thumbnail_url: resolved
+        ? withCacheBust(resolved, project.updated_at)
+        : undefined,
     }
   } catch {
-    if (project.thumbnail_path) {
-      const thumbnail_url = await resolveProjectThumbnailUrl(
-        project.thumbnail_path,
-      )
-      if (thumbnail_url) return { ...project, thumbnail_url }
-    }
     return project
   }
 }
@@ -335,30 +406,79 @@ async function withTemplatePreview(
     data: normalizeProject(template.data),
   }
 
-  try {
-    // Always render from slide data so multi-slide strip stays current.
-    const preview_url = await renderTemplatePreviewDataUrl(normalized.data, {
-      assetUrls: await resolvePreviewAssetUrls(normalized.data),
-    })
-    if (!isSupabaseConfigured()) {
-      const needsPersist =
-        !normalized.preview_path ||
-        !normalized.preview_path.startsWith("data:image/")
-      if (needsPersist || normalized.preview_path !== preview_url) {
-        // Refresh local cached preview (cheap; few templates).
-        await local.localUpsertTemplate({
-          ...normalized,
-          preview_path: preview_url,
-        })
+  if (normalized.preview_path) {
+    const preview_url = await resolveTemplatePreviewUrl(normalized.preview_path)
+    if (preview_url) return { ...normalized, preview_url }
+  }
+
+  if (isBuiltInSeedId(normalized.id)) {
+    const cached = await readSeedPreviewCache(normalized.id)
+    if (cached) {
+      return {
+        ...normalized,
+        preview_path: cached,
+        preview_url: cached,
       }
+    }
+  }
+
+  try {
+    const assetUrls = await resolvePreviewAssetUrls(normalized.data)
+
+    if (!isSupabaseConfigured()) {
+      const preview_url = await renderTemplatePreviewDataUrl(normalized.data, {
+        assetUrls,
+      })
+      if (isBuiltInSeedId(normalized.id)) {
+        await writeSeedPreviewCache(normalized.id, preview_url)
+      }
+      await local.localUpsertTemplate({
+        ...normalized,
+        preview_path: preview_url,
+      })
       return { ...normalized, preview_path: preview_url, preview_url }
     }
-    return { ...normalized, preview_url }
-  } catch {
-    if (normalized.preview_path) {
-      const preview_url = await resolveTemplatePreviewUrl(normalized.preview_path)
-      if (preview_url) return { ...normalized, preview_url }
+
+    if (isBuiltInSeedId(normalized.id)) {
+      const preview_url = await renderTemplatePreviewDataUrl(normalized.data, {
+        assetUrls,
+      })
+      await writeSeedPreviewCache(normalized.id, preview_url)
+      return { ...normalized, preview_path: preview_url, preview_url }
     }
+
+    // Cloud catalog row missing preview — render once and persist to storage.
+    const previewBlob = await renderTemplatePreviewBlob(normalized.data, {
+      assetUrls,
+    })
+    const previewStoragePath = `${normalized.id}/preview.webp`
+    const supabase = getSupabase()!
+    const { error: uploadError } = await supabase.storage
+      .from("templates")
+      .upload(previewStoragePath, previewBlob, {
+        upsert: true,
+        contentType: previewBlob.type || "image/webp",
+      })
+    if (!uploadError) {
+      await supabase
+        .from("templates")
+        .update({ preview_path: previewStoragePath })
+        .eq("id", normalized.id)
+      const preview_url = await resolveTemplatePreviewUrl(previewStoragePath)
+      if (preview_url) {
+        return {
+          ...normalized,
+          preview_path: previewStoragePath,
+          preview_url,
+        }
+      }
+    }
+
+    const preview_url = await renderTemplatePreviewDataUrl(normalized.data, {
+      assetUrls,
+    })
+    return { ...normalized, preview_path: preview_url, preview_url }
+  } catch {
     return normalized
   }
 }

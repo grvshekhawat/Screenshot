@@ -116,6 +116,15 @@ export async function captureSlideToCanvas(
 
       await new Promise((resolve) => requestAnimationFrame(resolve))
       await new Promise((resolve) => requestAnimationFrame(resolve))
+
+      // Recolored cliparts bake to <img> asynchronously — wait so thumbnails
+      // don't capture empty placeholders.
+      const bakeDeadline = Date.now() + 4000
+      while (Date.now() < bakeDeadline) {
+        if (!host.querySelector("[data-clipart-baking]")) break
+        await new Promise((resolve) => setTimeout(resolve, 32))
+      }
+
       await Promise.all(
         [...host.querySelectorAll("img")].map((img) =>
           img.decode().catch(() => undefined),

@@ -15,7 +15,13 @@ export async function blobUrlToDataUrl(url: string): Promise<string> {
 }
 
 async function fetchAsset(url: string): Promise<string | false> {
-  if (url.startsWith("blob:")) return blobUrlToDataUrl(url)
+  if (url.startsWith("blob:") || url.startsWith("http")) {
+    try {
+      return await blobUrlToDataUrl(url)
+    } catch {
+      return false
+    }
+  }
   return false
 }
 
@@ -23,7 +29,7 @@ async function inlineImages(root: HTMLElement) {
   await Promise.all(
     [...root.querySelectorAll("img")].map(async (img) => {
       const src = img.currentSrc || img.src
-      if (!src.startsWith("blob:")) return
+      if (!src || src.startsWith("data:")) return
       try {
         img.src = await blobUrlToDataUrl(src)
         await img.decode()

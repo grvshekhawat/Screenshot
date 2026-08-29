@@ -66,8 +66,6 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
     updateText,
     updateClipart,
     updateLens,
-    addSlide,
-    insertSlideAt,
     duplicateSlide,
     deleteSlide,
     duplicateFrame,
@@ -188,8 +186,9 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
     const onWheel = (event: WheelEvent) => {
       if (!event.ctrlKey && !event.metaKey) return
       event.preventDefault()
-      const factor = event.deltaY < 0 ? 1.05 : 1 / 1.05
-      const next = Math.round(scale * factor * 100)
+      const base = Math.max(minZoomPercent, Math.round(scale * 100))
+      const step = Math.max(5, Math.round(base * 0.05))
+      const next = base + (event.deltaY < 0 ? step : -step)
       setZoomMode("manual")
       setZoomPercent(Math.min(maxZoomPercent, Math.max(minZoomPercent, next)))
     }
@@ -198,17 +197,17 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
   }, [scale, minZoomPercent, maxZoomPercent])
 
   const bumpZoom = (direction: 1 | -1) => {
-    const factor = direction > 0 ? 1.05 : 1 / 1.05
-    const next = Math.round(scale * factor * 100)
+    const base = Math.max(minZoomPercent, displayZoomPercent)
+    // At least 5 percentage points so Fit → Manual always feels responsive.
+    const step = Math.max(5, Math.round(base * 0.05))
+    const next = base + direction * step
     setZoomMode("manual")
     setZoomPercent(Math.min(maxZoomPercent, Math.max(minZoomPercent, next)))
   }
 
   const fitToView = () => {
     setZoomMode("fit")
-    setZoomPercent(
-      Math.max(minZoomPercent, Math.round(fitScale * 100)),
-    )
+    setZoomPercent(Math.max(minZoomPercent, Math.round(fitScale * 100)))
   }
 
   const startFrameDrag = (
@@ -706,7 +705,7 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
           const targetEl = event.target as HTMLElement
           if (
             targetEl.closest(
-              "[data-slide-id], [data-component-menu], [data-continuity-span], [data-add-slide], [data-slide-label], [data-slide-actions], [data-canvas-zoom]",
+              "[data-slide-id], [data-component-menu], [data-continuity-span], [data-slide-label], [data-slide-actions], [data-canvas-zoom]",
             )
           ) {
             return
@@ -721,18 +720,6 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
               style={{ gap: SLIDE_GAP_PX }}
               onContextMenu={(event) => event.preventDefault()}
             >
-              {/* Insert before first slide (overlay — does not shift continuity layout) */}
-              <button
-                type="button"
-                data-add-slide
-                title="Insert slide at start"
-                aria-label="Insert slide at start"
-                onClick={() => insertSlideAt(0)}
-                className="absolute left-0 top-[calc(50%-1.25rem)] z-20 flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-violet-400/80 bg-zinc-900 text-xs font-semibold text-white shadow-md shadow-black/40 transition hover:border-violet-300 hover:bg-violet-600"
-              >
-                +
-              </button>
-
               {project.slides.map((slide, index) => {
                 const viewSlide =
                   viewProject.slides.find((entry) => entry.id === slide.id) ??
@@ -1028,31 +1015,6 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
                 )
               })}
 
-              {/* Insert to the left of each slide (except the first — use the start +) */}
-              {project.slides.map((_, index) => {
-                if (index === 0) return null
-                const left =
-                  index * previewSlideWidth + index * SLIDE_GAP_PX
-                return (
-                  <button
-                    key={`insert-${index}`}
-                    type="button"
-                    data-add-slide
-                    title={`Insert slide to the left of ${String(index + 1).padStart(2, "0")}`}
-                    aria-label={`Insert slide to the left of ${index + 1}`}
-                    onClick={() => insertSlideAt(index)}
-                    className="absolute z-20 flex h-5 w-5 -translate-x-1/2 items-center justify-center rounded-full border border-violet-400/80 bg-zinc-900 text-xs font-semibold text-white shadow-md shadow-black/40 transition hover:border-violet-300 hover:bg-violet-600"
-                    style={{
-                      left,
-                      top: previewSlideHeight / 2,
-                      marginTop: -10,
-                    }}
-                  >
-                    +
-                  </button>
-                )
-              })}
-
               {canvasFocused && hasComponentSelection ? (
                 <ComponentMenu
                   kind={selectedKind}
@@ -1237,32 +1199,24 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
                 />
               ) : null}
             </div>
-
-            <button
-              type="button"
-              data-add-slide
-              onClick={addSlide}
-              className="mb-8 flex w-16 shrink-0 flex-col items-center justify-center gap-1 self-center rounded-xl border border-dashed border-zinc-700 py-10 text-zinc-500 hover:border-violet-500 hover:text-white"
-              style={{ height: Math.max(96, target.height * scale * 0.4) }}
-              aria-label="Add slide at end"
-            >
-              <span className="text-2xl leading-none">+</span>
-              <span className="text-[10px]">Slide</span>
-            </button>
           </div>
         </div>
       </div>
       <div
         data-canvas-zoom
-        className="pointer-events-none absolute right-4 top-4 z-30 flex items-center gap-1"
+        className="absolute right-4 top-4 z-50 flex items-center gap-1"
       >
-        <div className="pointer-events-auto flex items-center gap-0.5 rounded-lg bg-zinc-950/95 p-0.5 shadow-lg ring-1 ring-white/10 backdrop-blur-sm">
+        <div className="flex items-center gap-0.5 rounded-lg bg-zinc-950/95 p-0.5 shadow-lg ring-1 ring-white/10 backdrop-blur-sm">
           <button
             type="button"
             title="Zoom out"
             aria-label="Zoom out"
             disabled={displayZoomPercent <= minZoomPercent}
-            onClick={() => bumpZoom(-1)}
+            onClick={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              bumpZoom(-1)
+            }}
             className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-300 hover:bg-zinc-800 hover:text-white disabled:opacity-30"
           >
             −
@@ -1275,7 +1229,9 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
                 : "Zoom level — click to fit"
             }
             aria-label={`Zoom ${displayZoomPercent} percent`}
-            onClick={() => {
+            onClick={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
               if (zoomMode === "fit") {
                 setZoomMode("manual")
                 setZoomPercent(100)
@@ -1292,7 +1248,11 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
             title="Zoom in"
             aria-label="Zoom in"
             disabled={displayZoomPercent >= maxZoomPercent}
-            onClick={() => bumpZoom(1)}
+            onClick={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              bumpZoom(1)
+            }}
             className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-300 hover:bg-zinc-800 hover:text-white disabled:opacity-30"
           >
             +
@@ -1301,7 +1261,11 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
           <button
             type="button"
             title="Fit slides to view"
-            onClick={fitToView}
+            onClick={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              fitToView()
+            }}
             className={`rounded-md px-2 py-1 text-[11px] hover:bg-zinc-800 hover:text-white ${
               zoomMode === "fit"
                 ? "bg-zinc-800 text-white"
@@ -1314,7 +1278,7 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
       </div>
       <p className="pb-3 text-center text-xs text-zinc-500">
         {target.width} × {target.height} · {target.name} · drag ⋮⋮ to rearrange
-        · + between slides to insert · ⌘/Ctrl+scroll to zoom
+        · duplicate to add a slide · ⌘/Ctrl+scroll to zoom
       </p>
     </section>
   )

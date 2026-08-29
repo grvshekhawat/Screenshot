@@ -124,7 +124,11 @@ export function PlacedClipart({
           }
         >
           {imageUrl ? (
-            <ClipartVisual clipart={clipart} imageUrl={imageUrl} />
+            <ClipartVisual
+              clipart={clipart}
+              imageUrl={imageUrl}
+              forExport={forExport}
+            />
           ) : null}
           {!forExport && selected && interactive && onResizeStart ? (
             <ResizeHandles
@@ -173,7 +177,13 @@ export function PlacedClipart({
           : undefined
       }
     >
-      {imageUrl ? <ClipartVisual clipart={clipart} imageUrl={imageUrl} /> : null}
+      {imageUrl ? (
+        <ClipartVisual
+          clipart={clipart}
+          imageUrl={imageUrl}
+          forExport={forExport}
+        />
+      ) : null}
       {!forExport && selected && interactive && onResizeStart ? (
         <ResizeHandles
           artboardWidth={artboardWidth}

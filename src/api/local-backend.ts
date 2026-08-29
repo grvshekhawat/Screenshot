@@ -2,6 +2,7 @@ import { get, set } from "idb-keyval"
 import { assetIdsFromProject } from "../assets"
 import { normalizeProject } from "../constants"
 import { MAX_CLOUD_PROJECTS } from "../config"
+import { blobUrlToDataUrl } from "../export-canvas"
 import {
   CATALOG_SEED_VERSION,
   SEED_TEMPLATE_SPECS,
@@ -233,6 +234,17 @@ export async function localSaveProject(
   return updated
 }
 
+export async function localSetProjectThumbnail(
+  id: string,
+  thumbnail_path: string,
+): Promise<void> {
+  const all = await readStore<ProjectRecord[]>(LS_PROJECTS, [])
+  const index = all.findIndex((p) => p.id === id)
+  if (index < 0) return
+  all[index] = { ...all[index], thumbnail_path }
+  await writeStore(LS_PROJECTS, all)
+}
+
 export async function localDeleteProject(id: string): Promise<void> {
   const userId = localGetUserId()
   const all = await readStore<ProjectRecord[]>(LS_PROJECTS, [])
@@ -274,7 +286,16 @@ async function localPreviewAssetUrls(
   await Promise.all(
     assetIdsFromProject(project).map(async (id) => {
       const url = await localLoadAsset(id)
-      if (url) urls[id] = url
+      if (!url) return
+      if (url.startsWith("data:")) {
+        urls[id] = url
+        return
+      }
+      try {
+        urls[id] = await blobUrlToDataUrl(url)
+      } catch {
+        urls[id] = url
+      }
     }),
   )
   return urls
@@ -426,12 +447,12 @@ async function seedCatalogIfNeeded() {
 
   const seedVersion = Number(localStorage.getItem(LS_CATALOG_SEED) || "0")
   if (seedVersion < CATALOG_SEED_VERSION) {
-    await upsertSeedTemplates()
+    await upsertSeedTemplates({ preservePreviews: false })
     localStorage.setItem(LS_CATALOG_SEED, String(CATALOG_SEED_VERSION))
   } else {
     const templates = await readStore<TemplateRecord[]>(LS_TEMPLATES, [])
     if (templates.length === 0) {
-      await upsertSeedTemplates()
+      await upsertSeedTemplates({ preservePreviews: true })
     }
   }
 
@@ -493,20 +514,25 @@ async function ensureSampleScreenshotAssets() {
   if (changed) await writeStore(LS_ASSETS, assets)
 }
 
-async function upsertSeedTemplates() {
+async function upsertSeedTemplates(options?: { preservePreviews?: boolean }) {
+  const preservePreviews = options?.preservePreviews !== false
   const existing = await readStore<TemplateRecord[]>(LS_TEMPLATES, [])
   const seedIds = new Set(SEED_TEMPLATE_SPECS.map((spec) => spec.id))
+  const byId = new Map(existing.map((item) => [item.id, item]))
   const custom = existing.filter((item) => !seedIds.has(item.id))
-  const seeded: TemplateRecord[] = SEED_TEMPLATE_SPECS.map((spec) => ({
-    id: spec.id,
-    slug: spec.slug,
-    title: spec.title,
-    description: spec.description,
-    preview_path: null,
-    data: spec.build(),
-    sort_order: spec.sort_order,
-    published: true,
-  }))
+  const seeded: TemplateRecord[] = SEED_TEMPLATE_SPECS.map((spec) => {
+    const prev = byId.get(spec.id)
+    return {
+      id: spec.id,
+      slug: spec.slug,
+      title: spec.title,
+      description: spec.description,
+      preview_path: preservePreviews ? (prev?.preview_path ?? null) : null,
+      data: spec.build(),
+      sort_order: spec.sort_order,
+      published: true,
+    }
+  })
   await writeStore(LS_TEMPLATES, [...seeded, ...custom])
 }
 
