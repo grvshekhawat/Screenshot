@@ -32,12 +32,21 @@ export function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-full items-center justify-center bg-[#0c0c10] px-4">
-      <div className="w-full max-w-sm rounded-2xl border border-zinc-800 bg-zinc-950 p-6">
+    <div className="flex min-h-full flex-col bg-[#0c0c10]">
+      <header className="flex h-14 items-center justify-between border-b border-zinc-800 px-4">
         <Link to="/" className="text-sm font-semibold text-white">
           Screenshot Studio
         </Link>
-        <h1 className="mt-4 text-xl font-semibold text-white">Sign in</h1>
+        <Link
+          to="/"
+          className="text-sm text-zinc-400 hover:text-white"
+        >
+          ← Back to home
+        </Link>
+      </header>
+      <div className="flex flex-1 items-center justify-center px-4 py-10">
+      <div className="w-full max-w-sm rounded-2xl border border-zinc-800 bg-zinc-950 p-6">
+        <h1 className="text-xl font-semibold text-white">Sign in</h1>
         <p className="mt-1 text-sm text-zinc-400">
           Login is required to create and save projects.
         </p>
@@ -66,6 +75,12 @@ export function LoginPage() {
         </form>
         {message ? <p className="mt-3 text-sm text-emerald-400">{message}</p> : null}
         {error ? <p className="mt-3 text-sm text-red-400">{error}</p> : null}
+        <p className="mt-4 text-center text-sm text-zinc-500">
+          <Link to="/" className="text-zinc-300 hover:text-white">
+            Continue browsing templates
+          </Link>
+        </p>
+      </div>
       </div>
     </div>
   )

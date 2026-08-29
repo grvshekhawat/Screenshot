@@ -365,13 +365,31 @@ async function withTemplatePreviews(
   return Promise.all(templates.map((template) => withTemplatePreview(template)))
 }
 
+/** Always include built-in gallery templates; keep extra published rows from the cloud. */
+function mergeWithBuiltInCatalog(
+  published: TemplateRecord[],
+): TemplateRecord[] {
+  const seeds = builtInCatalogTemplates()
+  const byId = new Map(published.map((row) => [row.id, row]))
+  const bySlug = new Map(published.map((row) => [row.slug, row]))
+  const fromSeeds = seeds.map(
+    (seed) => byId.get(seed.id) ?? bySlug.get(seed.slug) ?? seed,
+  )
+  const extras = published.filter(
+    (row) =>
+      !seeds.some((seed) => seed.id === row.id || seed.slug === row.slug),
+  )
+  return [...fromSeeds, ...extras].sort(
+    (a, b) => a.sort_order - b.sort_order,
+  )
+}
+
 export async function listPublishedTemplates(): Promise<TemplateRecord[]> {
-  const fallback = () => withTemplatePreviews(builtInCatalogTemplates())
+  const withBuiltIns = (rows: TemplateRecord[]) =>
+    withTemplatePreviews(mergeWithBuiltInCatalog(rows))
 
   if (!isSupabaseConfigured()) {
-    const localRows = await local.localListTemplates()
-    if (localRows.length === 0) return fallback()
-    return withTemplatePreviews(localRows)
+    return withBuiltIns(await local.localListTemplates())
   }
   const supabase = getSupabase()!
   const { data, error } = await supabase
@@ -381,11 +399,9 @@ export async function listPublishedTemplates(): Promise<TemplateRecord[]> {
     .order("sort_order")
   if (error) {
     console.warn("listPublishedTemplates:", error.message)
-    return fallback()
+    return withBuiltIns([])
   }
-  const rows = (data ?? []) as TemplateRecord[]
-  if (rows.length === 0) return fallback()
-  return withTemplatePreviews(rows)
+  return withBuiltIns((data ?? []) as TemplateRecord[])
 }
 
 export async function listAllTemplates(): Promise<TemplateRecord[]> {
