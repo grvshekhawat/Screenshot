@@ -140,7 +140,6 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
         ? frameOverflow(viewActiveFrame, target.width, target.height)
         : { left: false, right: false, top: false, bottom: false }
   const previewSlideWidth = target.width * scale
-  const previewSlideHeight = target.height * scale
   const stridePercent =
     100 + (SLIDE_GAP_PX / Math.max(1, previewSlideWidth)) * 100
 

@@ -333,7 +333,7 @@ export function ProjectProvider({
   const projectRef = useRef(project)
   const assetUrlsRef = useRef(assetUrls)
   const readyRef = useRef(ready)
-  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const autosaveTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null)
   const saveInFlightRef = useRef<Promise<void> | null>(null)
   projectRef.current = project
   assetUrlsRef.current = assetUrls
