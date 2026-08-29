@@ -6,7 +6,8 @@ Cloud SaaS App Store / Play screenshot editor (Vite + React). Auth, projects, te
 
 | Action | Requirement |
 |--------|-------------|
-| Browse templates / clipart library | Public |
+| Browse templates / clipart library | Public (thumbnails only; no project created) |
+| Create / save / edit projects | Login |
 | Create / save / edit projects | Login |
 | Max projects per account | **5** (hard cap) |
 | PNG preview export | Free (watermarked) |
@@ -19,7 +20,7 @@ Cloud SaaS App Store / Play screenshot editor (Vite + React). Auth, projects, te
 - Projects: `src/api/projects.ts` — cloud CRUD + 5-cap; editor at `/app/:projectId`. Local demo backend stores projects/assets in **IndexedDB** (migrates off `localStorage` to avoid ~5MB quota errors)
 - State: `src/project-store.tsx` — cloud autosave when `projectId` set; IndexedDB fallback when not
 - Billing: `src/billing/*` + Edge Functions under `supabase/functions/` (Stripe + PayPal webhooks → `profiles`)
-- Catalog: published `templates` + `library_cliparts`; admin at `/admin` (`*@admin.local` in demo)
+- Catalog: published `templates` + `library_cliparts`; admin at `/admin` (`*@admin.local` in demo). Logged-out visitors can read published templates (RLS + `GRANT SELECT` to `anon`). Landing page falls back to built-in seed templates if the cloud catalog is empty.
   - Templates: design in the editor → Admin → pick project → **Publish as template** (copies assets into `templates/` bucket; generates a multi-slide catalog **thumbnail** of up to 5 slides via `template-preview.ts`, including uploaded screenshots when assets resolve)
 - Project list cards show the same multi-slide thumbnail (`thumbnail_path` / `thumbnail_url`), refreshed on save with real screenshots in device frames
   - Local demo seeds 4 portrait + 4 landscape gallery templates (`sample-screens.ts` / `sample-templates.ts`, catalog seed v10). Landscape phones reuse portrait chrome rotated −90°; screenshots stay upright (counter-rotated). Thumbnail device shadows scale with preview size so they match the editor.

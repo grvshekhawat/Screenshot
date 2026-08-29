@@ -6,6 +6,7 @@ import {
   normalizeProject,
 } from "./constants"
 import type { Project, Slide, TemplateId, TextAlign } from "./types"
+import type { TemplateRecord } from "./types/cloud"
 
 function projectFromSlides(
   name: string,
@@ -667,6 +668,20 @@ export const SEED_TEMPLATE_SPECS: SeedTemplateSpec[] = [
     build: buildLandBeautyCuratedTemplate,
   },
 ]
+
+/** Built-in gallery rows for the public landing page (and local seed). */
+export function builtInCatalogTemplates(): TemplateRecord[] {
+  return SEED_TEMPLATE_SPECS.map((spec) => ({
+    id: spec.id,
+    slug: spec.slug,
+    title: spec.title,
+    description: spec.description,
+    preview_path: null,
+    data: spec.build(),
+    sort_order: spec.sort_order,
+    published: true,
+  }))
+}
 
 /** Bump when seed templates or sample screens change. */
 export const CATALOG_SEED_VERSION = 10

@@ -127,24 +127,32 @@ create policy "projects_delete_own" on public.projects
 drop policy if exists "templates_public_read" on public.templates;
 drop policy if exists "templates_admin_write" on public.templates;
 create policy "templates_public_read" on public.templates
-  for select using (published = true or exists (
-    select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin'
-  ));
+  for select
+  to anon, authenticated
+  using (published = true);
 create policy "templates_admin_write" on public.templates
-  for all using (exists (
+  for all
+  to authenticated
+  using (exists (
     select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin'
   ));
 
 drop policy if exists "cliparts_public_read" on public.library_cliparts;
 drop policy if exists "cliparts_admin_write" on public.library_cliparts;
 create policy "cliparts_public_read" on public.library_cliparts
-  for select using (published = true or exists (
-    select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin'
-  ));
+  for select
+  to anon, authenticated
+  using (published = true);
 create policy "cliparts_admin_write" on public.library_cliparts
-  for all using (exists (
+  for all
+  to authenticated
+  using (exists (
     select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin'
   ));
+
+grant usage on schema public to anon, authenticated;
+grant select on table public.templates to anon, authenticated;
+grant select on table public.library_cliparts to anon, authenticated;
 
 -- Storage buckets (run in dashboard or via API): project-assets, templates, cliparts
 -- Example policies for project-assets:

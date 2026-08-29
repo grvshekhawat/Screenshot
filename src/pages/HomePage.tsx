@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { Link } from "react-router-dom"
+import { Link, useNavigate } from "react-router-dom"
 import { listPublishedTemplates } from "../api/projects"
 import { useAuth } from "../auth/AuthProvider"
 import {
@@ -10,14 +10,51 @@ import type { TemplateRecord } from "../types/cloud"
 import { TemplateThumbnail } from "../components/TemplateThumbnail"
 
 export function HomePage() {
-  const { userId } = useAuth()
+  const { userId, ready } = useAuth()
+  const navigate = useNavigate()
   const [templates, setTemplates] = useState<TemplateRecord[]>([])
   const [orientation, setOrientation] =
     useState<ArtboardOrientation>("portrait")
 
   useEffect(() => {
-    void listPublishedTemplates().then(setTemplates).catch(() => setTemplates([]))
-  }, [])
+    if (!ready) return
+    let cancelled = false
+    void listPublishedTemplates()
+      .then((rows) => {
+        if (!cancelled) setTemplates(rows)
+      })
+      .catch(() => {
+        if (!cancelled) setTemplates([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [ready])
+
+  const visibleTemplates = useMemo(
+    () =>
+      templates.filter(
+        (template) => projectOrientation(template.data) === orientation,
+      ),
+    [templates, orientation],
+  )
+
+  const goToEditor = () => navigate(userId ? "/app" : "/login")
+
+  useEffect(() => {
+    if (!ready) return
+    let cancelled = false
+    void listPublishedTemplates()
+      .then((rows) => {
+        if (!cancelled) setTemplates(rows)
+      })
+      .catch(() => {
+        if (!cancelled) setTemplates([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [ready])
 
   const visibleTemplates = useMemo(
     () =>
@@ -70,7 +107,12 @@ export function HomePage() {
 
       <section className="mx-auto w-full max-w-[1600px] px-4 pb-20 sm:px-6 lg:px-8">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold">Templates</h2>
+          <div>
+            <h2 className="text-lg font-semibold">Templates</h2>
+            <p className="mt-0.5 text-xs text-zinc-500">
+              Browse freely. Sign in to create or edit a project.
+            </p>
+          </div>
           <div
             className="flex rounded-lg border border-zinc-800 p-0.5"
             role="group"
@@ -106,6 +148,7 @@ export function HomePage() {
               key={template.id}
               template={template}
               className="w-full border border-zinc-800"
+              onClick={goToEditor}
             />
           ))}
           {visibleTemplates.length === 0 ? (

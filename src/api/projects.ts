@@ -1,6 +1,7 @@
 import { isSupabaseConfigured } from "../config"
 import { assetIdsFromProject } from "../assets"
 import { createSampleProject, normalizeProject } from "../constants"
+import { builtInCatalogTemplates } from "../sample-templates"
 import { getSupabase } from "../lib/supabase"
 import {
   renderProjectPreviewBlob,
@@ -365,8 +366,12 @@ async function withTemplatePreviews(
 }
 
 export async function listPublishedTemplates(): Promise<TemplateRecord[]> {
+  const fallback = () => withTemplatePreviews(builtInCatalogTemplates())
+
   if (!isSupabaseConfigured()) {
-    return withTemplatePreviews(await local.localListTemplates())
+    const localRows = await local.localListTemplates()
+    if (localRows.length === 0) return fallback()
+    return withTemplatePreviews(localRows)
   }
   const supabase = getSupabase()!
   const { data, error } = await supabase
@@ -374,8 +379,13 @@ export async function listPublishedTemplates(): Promise<TemplateRecord[]> {
     .select("*")
     .eq("published", true)
     .order("sort_order")
-  if (error) throw error
-  return withTemplatePreviews((data ?? []) as TemplateRecord[])
+  if (error) {
+    console.warn("listPublishedTemplates:", error.message)
+    return fallback()
+  }
+  const rows = (data ?? []) as TemplateRecord[]
+  if (rows.length === 0) return fallback()
+  return withTemplatePreviews(rows)
 }
 
 export async function listAllTemplates(): Promise<TemplateRecord[]> {
