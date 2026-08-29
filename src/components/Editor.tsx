@@ -221,7 +221,7 @@ export function Editor() {
     }
   }
 
-  const onPaywallChoose = async (provider: "stripe" | "paypal") => {
+  const onPaywallChoose = async (provider: "stripe") => {
     if (!userId) return
     setPaywallBusy(true)
     setPaywallError(null)

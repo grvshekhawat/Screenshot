@@ -11,7 +11,7 @@ Cloud SaaS App Store / Play screenshot editor (Vite + React). Auth, projects, te
 | Max projects per account | **5** (admins: no cap) |
 | PNG preview export | Free (watermarked) |
 | Clean PNG / ZIP / all-sizes ZIP | Active monthly subscription |
-| Pay | Stripe (card) or PayPal |
+| Pay | Stripe (card) — $1.99/mo (PayPal UI hidden for now) |
 
 ## Architecture
 
@@ -26,10 +26,13 @@ Cloud SaaS App Store / Play screenshot editor (Vite + React). Auth, projects, te
   - Local demo seeds 4 portrait + 4 landscape gallery templates (`sample-screens.ts` / `sample-templates.ts`, catalog seed v10). Landscape phones reuse portrait chrome rotated −90°; screenshots stay upright (counter-rotated).
 - Schema/RLS: `supabase/migrations/001_init.sql` (+ `002_public_catalog.sql`, `003_admin_catalog.sql`)
 - Env template: `.env.example`
+- Go-live checklist: `GO_LIVE.md`
 
 ## Routes
 
-`/` gallery · `/login` · `/pricing` · `/app` projects · `/app/:projectId` editor · `/admin`
+`/` gallery · `/login` · `/pricing` · `/terms` · `/privacy` · `/app` projects · `/app/:projectId` editor · `/admin`
+
+Support: `support@screenshot.design` (footer + legal pages).
 
 ## Editor notes
 

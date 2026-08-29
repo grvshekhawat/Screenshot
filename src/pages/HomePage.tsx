@@ -8,6 +8,7 @@ import {
 } from "../orientation"
 import type { TemplateRecord } from "../types/cloud"
 import { TemplateThumbnail } from "../components/TemplateThumbnail"
+import { SiteFooter } from "../components/SiteFooter"
 
 export function HomePage() {
   const { userId, ready } = useAuth()
@@ -42,7 +43,7 @@ export function HomePage() {
   const goToEditor = () => navigate(userId ? "/app" : "/login")
 
   return (
-    <div className="min-h-full bg-[#0c0c10] text-zinc-100">
+    <div className="flex min-h-full flex-col bg-[#0c0c10] text-zinc-100">
       <header className="flex h-14 items-center justify-between border-b border-zinc-800 px-4">
         <span className="text-sm font-semibold">Screenshot Studio</span>
         <div className="flex gap-3 text-sm">
@@ -135,6 +136,7 @@ export function HomePage() {
           ) : null}
         </div>
       </section>
+      <SiteFooter />
     </div>
   )
 }

@@ -4,10 +4,12 @@ import {
   cloneTemplateToProject,
   createProject,
   deleteProject,
+  fetchProfile,
   listProjects,
   listPublishedTemplates,
 } from "../api/projects"
 import { useAuth } from "../auth/AuthProvider"
+import { syncStripeSubscription } from "../billing/checkout"
 import { createSampleProject } from "../constants"
 import { MAX_CLOUD_PROJECTS } from "../config"
 import {
@@ -21,8 +23,18 @@ import { TemplateThumbnail } from "../components/TemplateThumbnail"
 const ORIENT_KEY = "ss:projects-orientation"
 
 export function ProjectsPage() {
-  const { ready, userId, email, profile, isAdmin, signOut, usingLocalBackend, setDemoSubscription, canExport } =
-    useAuth()
+  const {
+    ready,
+    userId,
+    email,
+    profile,
+    isAdmin,
+    signOut,
+    usingLocalBackend,
+    setDemoSubscription,
+    canExport,
+    refreshProfile,
+  } = useAuth()
   const navigate = useNavigate()
   const [projects, setProjects] = useState<ProjectRecord[]>([])
   const [templates, setTemplates] = useState<TemplateRecord[]>([])
@@ -52,6 +64,41 @@ export function ProjectsPage() {
       setError(err instanceof Error ? err.message : "Failed to load"),
     )
   }, [userId])
+
+  // After Stripe Checkout return (?subscribed=1), sync from Stripe then poll profile.
+  useEffect(() => {
+    if (!userId || usingLocalBackend) return
+    const params = new URLSearchParams(window.location.search)
+    if (params.get("subscribed") !== "1") return
+
+    let cancelled = false
+    const poll = async () => {
+      for (let attempt = 0; attempt < 15 && !cancelled; attempt += 1) {
+        try {
+          await syncStripeSubscription()
+        } catch {
+          /* webhook/sync may still be catching up */
+        }
+        await refreshProfile()
+        const next = await fetchProfile(userId)
+        if (next?.subscription_status === "active") {
+          params.delete("subscribed")
+          const qs = params.toString()
+          window.history.replaceState(
+            {},
+            "",
+            `${window.location.pathname}${qs ? `?${qs}` : ""}`,
+          )
+          return
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1500))
+      }
+    }
+    void poll()
+    return () => {
+      cancelled = true
+    }
+  }, [userId, usingLocalBackend, refreshProfile])
 
   useEffect(() => {
     try {

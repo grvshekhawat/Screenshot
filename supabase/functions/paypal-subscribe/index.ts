@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+import { handleCors, jsonResponse, textResponse } from "../_shared/cors.ts"
 
 async function paypalAccessToken() {
   const clientId = Deno.env.get("PAYPAL_CLIENT_ID")!
@@ -19,9 +20,11 @@ async function paypalAccessToken() {
 }
 
 serve(async (req) => {
-  if (req.method !== "POST") return new Response("Method not allowed", { status: 405 })
+  const cors = handleCors(req)
+  if (cors) return cors
+  if (req.method !== "POST") return textResponse("Method not allowed", 405)
   const auth = req.headers.get("Authorization")
-  if (!auth) return new Response("Unauthorized", { status: 401 })
+  if (!auth) return textResponse("Unauthorized", 401)
 
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
@@ -31,7 +34,7 @@ serve(async (req) => {
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) return new Response("Unauthorized", { status: 401 })
+  if (!user) return textResponse("Unauthorized", 401)
 
   const body = await req.json()
   const { token, base } = await paypalAccessToken()
@@ -58,5 +61,5 @@ serve(async (req) => {
   const approve = (json.links as { rel: string; href: string }[] | undefined)?.find(
     (l) => l.rel === "approve",
   )
-  return Response.json({ url: approve?.href, subscriptionId: json.id })
+  return jsonResponse({ url: approve?.href, subscriptionId: json.id })
 })

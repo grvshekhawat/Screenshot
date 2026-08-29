@@ -1,7 +1,9 @@
 import { useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
 import { useAuth } from "../auth/AuthProvider"
+import { SiteFooter } from "../components/SiteFooter"
 import { openCustomerPortal, startCheckout } from "../billing/checkout"
+import { formatSubscriptionEndDate } from "../types/cloud"
 
 export function PricingPage() {
   const { userId, canExport, profile, refreshProfile, usingLocalBackend } =
@@ -10,7 +12,16 @@ export function PricingPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const subscribe = async (provider: "stripe" | "paypal") => {
+  const periodEndLabel = formatSubscriptionEndDate(
+    profile?.subscription_period_end,
+  )
+  const status = profile?.subscription_status ?? "none"
+  const canceledWithAccess =
+    status === "canceled" && canExport && Boolean(periodEndLabel)
+  const canceledExpired =
+    status === "canceled" && !canExport && Boolean(periodEndLabel)
+
+  const subscribe = async () => {
     if (!userId) {
       navigate("/login")
       return
@@ -18,7 +29,7 @@ export function PricingPage() {
     setBusy(true)
     setError(null)
     try {
-      const result = await startCheckout(provider, userId)
+      const result = await startCheckout("stripe", userId)
       await refreshProfile()
       if (result.url) {
         window.location.href = result.url
@@ -50,7 +61,7 @@ export function PricingPage() {
   }
 
   return (
-    <div className="min-h-full bg-[#0c0c10] text-zinc-100">
+    <div className="flex min-h-full flex-col bg-[#0c0c10] text-zinc-100">
       <header className="flex h-14 items-center justify-between border-b border-zinc-800 px-4">
         <Link to="/" className="text-sm font-semibold">
           Screenshot Studio
@@ -60,14 +71,26 @@ export function PricingPage() {
         </Link>
       </header>
 
-      <main className="mx-auto max-w-3xl px-4 py-12">
+      <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-12">
         <h1 className="text-center text-3xl font-semibold">Simple pricing</h1>
         <p className="mt-2 text-center text-sm text-zinc-400">
-          Free to create. Pro to export. Pay with Stripe or PayPal.
+          Free to create. Pro to export. Pay with Stripe.
         </p>
         {usingLocalBackend ? (
           <p className="mx-auto mt-4 max-w-lg rounded-lg bg-amber-500/10 px-3 py-2 text-center text-xs text-amber-200">
             Demo mode: checkout activates Pro instantly without real charges.
+          </p>
+        ) : null}
+        {canceledWithAccess && periodEndLabel ? (
+          <p className="mx-auto mt-4 max-w-lg rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-center text-sm text-amber-100">
+            Subscription canceled. Pro access continues through{" "}
+            <span className="font-semibold">{periodEndLabel}</span>.
+          </p>
+        ) : null}
+        {canceledExpired && periodEndLabel ? (
+          <p className="mx-auto mt-4 max-w-lg rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-center text-sm text-zinc-300">
+            Pro ended on <span className="font-semibold">{periodEndLabel}</span>.
+            Subscribe again to restore clean exports.
           </p>
         ) : null}
         {error ? <p className="mt-4 text-center text-sm text-red-400">{error}</p> : null}
@@ -86,7 +109,8 @@ export function PricingPage() {
           <div className="rounded-2xl border border-violet-500/50 bg-zinc-950 p-6">
             <h2 className="text-lg font-semibold">Pro</h2>
             <p className="mt-2 text-3xl font-semibold">
-              Monthly<span className="text-base font-normal text-zinc-400"> / billed</span>
+              $1.99
+              <span className="text-base font-normal text-zinc-400"> / month</span>
             </p>
             <ul className="mt-4 space-y-2 text-sm text-zinc-400">
               <li>Everything in Free</li>
@@ -94,38 +118,60 @@ export function PricingPage() {
               <li>ZIP for current store size</li>
               <li>ZIP for all sizes (iPhone, iPad, Play)</li>
             </ul>
-            {canExport ? (
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void manage()}
-                className="mt-6 w-full rounded-lg border border-zinc-700 py-2.5 text-sm font-semibold hover:bg-zinc-900"
-              >
-                Manage subscription
-              </button>
+            {canExport && status === "active" ? (
+              <div className="mt-6 space-y-2">
+                {periodEndLabel ? (
+                  <p className="text-center text-xs text-orange-400">
+                    Current period ends {periodEndLabel}
+                  </p>
+                ) : null}
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void manage()}
+                  className="w-full rounded-lg border border-zinc-700 py-2.5 text-sm font-semibold hover:bg-zinc-900"
+                >
+                  Manage subscription
+                </button>
+              </div>
+            ) : canExport && canceledWithAccess ? (
+              <div className="mt-6 space-y-2">
+                <p className="text-center text-xs text-amber-200/90">
+                  Pro until {periodEndLabel}
+                </p>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void manage()}
+                  className="w-full rounded-lg border border-zinc-700 py-2.5 text-sm font-semibold hover:bg-zinc-900"
+                >
+                  Manage billing
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void subscribe()}
+                  className="w-full rounded-lg bg-violet-600 py-2.5 text-sm font-semibold text-white hover:bg-violet-500 disabled:opacity-50"
+                >
+                  Resubscribe with Stripe
+                </button>
+              </div>
             ) : (
               <div className="mt-6 space-y-2">
                 <button
                   type="button"
                   disabled={busy}
-                  onClick={() => void subscribe("stripe")}
+                  onClick={() => void subscribe()}
                   className="w-full rounded-lg bg-violet-600 py-2.5 text-sm font-semibold text-white hover:bg-violet-500 disabled:opacity-50"
                 >
                   Subscribe with Stripe
-                </button>
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => void subscribe("paypal")}
-                  className="w-full rounded-lg bg-[#0070ba] py-2.5 text-sm font-semibold text-white hover:bg-[#005ea6] disabled:opacity-50"
-                >
-                  Subscribe with PayPal
                 </button>
               </div>
             )}
           </div>
         </div>
       </main>
+      <SiteFooter />
     </div>
   )
 }

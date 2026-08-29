@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from "./auth/AuthProvider"
 import { AdminPage } from "./pages/AdminPage"
 import { EditorPage } from "./pages/EditorPage"
 import { HomePage } from "./pages/HomePage"
+import { LegalPage } from "./pages/LegalPage"
 import { LoginPage } from "./pages/LoginPage"
 import { PricingPage } from "./pages/PricingPage"
 import { ProjectsPage } from "./pages/ProjectsPage"
@@ -29,6 +30,8 @@ export default function App() {
           <Route path="/" element={<HomePage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/pricing" element={<PricingPage />} />
+          <Route path="/terms" element={<LegalPage doc="terms" />} />
+          <Route path="/privacy" element={<LegalPage doc="privacy" />} />
           <Route
             path="/app"
             element={

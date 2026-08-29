@@ -1,15 +1,19 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts"
 import Stripe from "https://esm.sh/stripe@14?target=deno"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+import { handleCors, jsonResponse, textResponse } from "../_shared/cors.ts"
 
 const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY")!, {
   apiVersion: "2023-10-16",
 })
 
 serve(async (req) => {
-  if (req.method !== "POST") return new Response("Method not allowed", { status: 405 })
+  const cors = handleCors(req)
+  if (cors) return cors
+  if (req.method !== "POST") return textResponse("Method not allowed", 405)
+
   const auth = req.headers.get("Authorization")
-  if (!auth) return new Response("Unauthorized", { status: 401 })
+  if (!auth) return textResponse("Unauthorized", 401)
 
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
@@ -19,7 +23,7 @@ serve(async (req) => {
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) return new Response("Unauthorized", { status: 401 })
+  if (!user) return textResponse("Unauthorized", 401)
 
   const body = await req.json()
   const session = await stripe.checkout.sessions.create({
@@ -29,7 +33,11 @@ serve(async (req) => {
     cancel_url: body.cancelUrl,
     client_reference_id: user.id,
     customer_email: user.email ?? undefined,
+    metadata: { supabase_user_id: user.id },
+    subscription_data: {
+      metadata: { supabase_user_id: user.id },
+    },
   })
 
-  return Response.json({ url: session.url })
+  return jsonResponse({ url: session.url })
 })

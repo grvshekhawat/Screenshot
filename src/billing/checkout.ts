@@ -88,3 +88,38 @@ export async function openCustomerPortal(
   if (!response.ok) throw new Error(await response.text())
   return (await response.json()) as { url?: string }
 }
+
+/** After Checkout return: ask Stripe for an active sub and write it to profiles. */
+export async function syncStripeSubscription(): Promise<{
+  ok: boolean
+  subscription_status?: string
+  message?: string
+}> {
+  if (!isSupabaseConfigured()) {
+    return { ok: false, message: "Supabase not configured" }
+  }
+  const base = config.billingFunctionsBase
+  if (!base) throw new Error("Billing functions URL is not configured")
+  const supabase = getSupabase()!
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
+  if (!session) throw new Error("Not signed in")
+
+  const response = await fetch(`${base}/stripe-sync`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${session.access_token}`,
+    },
+    body: "{}",
+  })
+  if (!response.ok) {
+    throw new Error((await response.text()) || "Failed to sync subscription")
+  }
+  return (await response.json()) as {
+    ok: boolean
+    subscription_status?: string
+    message?: string
+  }
+}
