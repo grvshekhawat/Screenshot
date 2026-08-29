@@ -24,6 +24,7 @@ const LS_ASSETS = "ss:local-assets"
 const LS_TEMPLATES = "ss:local-templates"
 const LS_CLIPARTS = "ss:local-cliparts"
 const LS_CATALOG_SEED = "ss:catalog-seed-v"
+const LS_HIDDEN_TEMPLATES = "ss:hidden-templates"
 
 const IDB_PREFIX = "ss-idb:"
 
@@ -171,7 +172,8 @@ export async function localCreateProject(
   if (!userId) throw new Error("Not signed in")
   const all = await readStore<ProjectRecord[]>(LS_PROJECTS, [])
   const mine = all.filter((p) => p.user_id === userId)
-  if (mine.length >= MAX_CLOUD_PROJECTS) {
+  const profile = await localGetProfile()
+  if (profile?.role !== "admin" && mine.length >= MAX_CLOUD_PROJECTS) {
     throw new Error(
       `Project limit reached (${MAX_CLOUD_PROJECTS}). Delete a project to create another.`,
     )
@@ -316,12 +318,33 @@ export async function localUpsertTemplate(
   return record
 }
 
-export async function localDeleteTemplate(id: string): Promise<void> {
+export async function localDeleteTemplate(
+  id: string,
+  slug?: string,
+): Promise<void> {
+  const seed = SEED_TEMPLATE_SPECS.find(
+    (row) =>
+      row.id === id ||
+      row.slug === id ||
+      (slug != null && (row.slug === slug || row.id === slug)),
+  )
+  const hideIds = new Set(
+    seed ? [seed.id, seed.slug, id, ...(slug ? [slug] : [])] : [id, ...(slug ? [slug] : [])],
+  )
   const all = await readStore<TemplateRecord[]>(LS_TEMPLATES, [])
   await writeStore(
     LS_TEMPLATES,
-    all.filter((t) => t.id !== id),
+    all.filter((t) => !hideIds.has(t.id) && !hideIds.has(t.slug)),
   )
+  const hidden = localListHiddenTemplateIds()
+  localStorage.setItem(
+    LS_HIDDEN_TEMPLATES,
+    JSON.stringify([...new Set([...hidden, ...hideIds])]),
+  )
+}
+
+export function localListHiddenTemplateIds(): string[] {
+  return readLocalJson<string[]>(LS_HIDDEN_TEMPLATES, [])
 }
 
 export async function localListCliparts(): Promise<LibraryClipartRecord[]> {

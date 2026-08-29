@@ -66,6 +66,8 @@ export function PlacedDevice({
         height: deviceHeight,
         transform,
         transformOrigin: "center center",
+        transformStyle: "flat",
+        isolation: "isolate",
         zIndex,
         cursor: interactive ? "grab" : "default",
         touchAction: interactive ? "none" : undefined,

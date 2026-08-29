@@ -135,6 +135,9 @@ export function PlacedLens({
             src={lockedImageUrl}
             alt=""
             draggable={false}
+            crossOrigin={
+              lockedImageUrl.startsWith("http") ? "anonymous" : undefined
+            }
             style={{
               display: "block",
               width,

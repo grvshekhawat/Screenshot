@@ -1,10 +1,7 @@
-import { createRoot } from "react-dom/client"
 import JSZip from "jszip"
 import { saveAs } from "file-saver"
-import { Artboard } from "./components/Artboard"
 import { STORE_TARGETS } from "./constants"
-import { canvasToOpaquePng, captureArtboardDom } from "./export-canvas"
-import { guestClipartsForSlide, guestFramesForSlide } from "./overflow"
+import { renderOffscreenArtboard } from "./export-slide"
 import {
   projectOrientation,
   storeTargetIdsForOrientation,
@@ -12,115 +9,8 @@ import {
 import { projectForExportTarget } from "./size-layouts"
 import type { Project, Slide, StoreTargetId } from "./types"
 
-type ExportSlideProps = {
-  slide: Slide
-  slideIndex: number
-  slides: Slide[]
-  width: number
-  height: number
-  assetUrls: Record<string, string>
-  showLenses?: boolean
-  onReady?: () => void
-}
-
 type ExportOptions = {
   watermark?: boolean
-}
-
-function ExportSlide({
-  slide,
-  slideIndex,
-  slides,
-  width,
-  height,
-  assetUrls,
-  showLenses = true,
-  onReady,
-}: ExportSlideProps) {
-  const guestFrames = guestFramesForSlide(slides, slideIndex, width, height)
-  const guestCliparts = guestClipartsForSlide(slides, slideIndex, width, height)
-  return (
-    <Artboard
-      slide={slide}
-      slides={slides}
-      width={width}
-      height={height}
-      assetUrls={assetUrls}
-      guestFrames={guestFrames}
-      guestCliparts={guestCliparts}
-      showLenses={showLenses}
-      forExport
-      onReady={onReady}
-    />
-  )
-}
-
-async function renderOffscreenArtboard(
-  slide: Slide,
-  slideIndex: number,
-  slides: Slide[],
-  width: number,
-  height: number,
-  assetUrls: Record<string, string>,
-  showLenses = true,
-  options?: ExportOptions,
-): Promise<Blob> {
-  const host = document.createElement("div")
-  host.setAttribute("data-export-host", "true")
-  host.style.cssText = [
-    "position:fixed",
-    "left:0",
-    "top:0",
-    `width:${width}px`,
-    `height:${height}px`,
-    "overflow:hidden",
-    "pointer-events:none",
-    "z-index:-1",
-  ].join(";")
-  document.body.appendChild(host)
-  const root = createRoot(host)
-
-  try {
-    await new Promise<void>((resolve, reject) => {
-      const timeout = window.setTimeout(
-        () => reject(new Error("Timed out rendering artboard")),
-        20000,
-      )
-      const onReady = () => {
-        window.clearTimeout(timeout)
-        resolve()
-      }
-
-      root.render(
-        <ExportSlide
-          slide={slide}
-          slideIndex={slideIndex}
-          slides={slides}
-          width={width}
-          height={height}
-          assetUrls={assetUrls}
-          showLenses={showLenses}
-          onReady={onReady}
-        />,
-      )
-    })
-
-    await new Promise((resolve) => requestAnimationFrame(resolve))
-    await new Promise((resolve) => requestAnimationFrame(resolve))
-
-    const artboard = host.querySelector("[data-artboard]")
-    if (!(artboard instanceof HTMLElement)) {
-      throw new Error("Artboard element missing")
-    }
-
-    const canvas = await captureArtboardDom(artboard, width, height)
-    return canvasToOpaquePng(canvas, width, height, {
-      watermark: options?.watermark,
-    })
-  } finally {
-    root.unmount()
-    host.remove()
-  }
 }
 
 /** Snapshot of slide content (no lenses) — used when locking a lens image. */

@@ -105,6 +105,7 @@ export type TextLayer = {
   shadowOffsetY: number
   /** Shadow opacity 0–100 */
   shadowOpacity: number
+  overflow: "cut" | "continue"
   /** Outline width in design px (0 = none) */
   strokeWidth: number
   strokeColor: string
@@ -165,6 +166,7 @@ export type LensLayer = {
   lockedY: number
   /** Raster snapshot of the slide when locked (survives slide edits). */
   lockedImageId: string | null
+  overflow: "cut" | "continue"
 }
 
 export type Slide = {

@@ -1,5 +1,5 @@
 import { deviceSpec } from "./constants"
-import type { ClipartLayer, Frame, Slide } from "./types"
+import type { ClipartLayer, Frame, LensLayer, Slide, TextLayer } from "./types"
 
 export type OverflowEdges = {
   left: boolean
@@ -25,6 +25,30 @@ function clipartMetrics(clipart: ClipartLayer, width: number, height: number) {
   const cx = (clipart.x / 100) * width
   const cy = (clipart.y / 100) * height
   return { clipartWidth, clipartHeight, cx, cy, aspect }
+}
+
+function continuityOffset(
+  ownerSlideIndex: number,
+  guestSlideIndex: number,
+  stridePercent = 100,
+): number {
+  return (ownerSlideIndex - guestSlideIndex) * stridePercent
+}
+
+function textMetrics(text: TextLayer, width: number, height: number) {
+  const textWidth = (text.width / 100) * width
+  const textHeight = Math.max(24, (text.size / 1000) * width * 2.2)
+  const cx = (text.x / 100) * width
+  const cy = (text.y / 100) * height
+  return { textWidth, textHeight, cx, cy }
+}
+
+function lensMetrics(lens: LensLayer, width: number, height: number) {
+  const lensWidth = (lens.width / 100) * width
+  const lensHeight = (lens.height / 100) * height
+  const cx = (lens.x / 100) * width
+  const cy = (lens.y / 100) * height
+  return { lensWidth, lensHeight, cx, cy }
 }
 
 export function deviceHorizontalHalfWidth(
@@ -172,14 +196,15 @@ export function overflowsHorizontally(edges: OverflowEdges): boolean {
   return edges.left || edges.right
 }
 
-export type GuestFrame = {
-  frame: Frame
+export type GuestText = {
+  text: TextLayer
   originSlideId: string
   isGuest: boolean
 }
 
-export type GuestClipart = {
-  clipart: ClipartLayer
+export type GuestLens = {
+  lens: LensLayer
+  source: LensLayer
   originSlideId: string
   isGuest: boolean
 }
@@ -189,11 +214,11 @@ export function continuedFrameForSlide(
   frame: Frame,
   ownerSlideIndex: number,
   guestSlideIndex: number,
+  stridePercent = 100,
 ): Frame {
-  const slideOffset = ownerSlideIndex - guestSlideIndex
   return {
     ...frame,
-    x: frame.x + slideOffset * 100,
+    x: frame.x + continuityOffset(ownerSlideIndex, guestSlideIndex, stridePercent),
   }
 }
 
@@ -201,11 +226,39 @@ export function continuedClipartForSlide(
   clipart: ClipartLayer,
   ownerSlideIndex: number,
   guestSlideIndex: number,
+  stridePercent = 100,
 ): ClipartLayer {
-  const slideOffset = ownerSlideIndex - guestSlideIndex
   return {
     ...clipart,
-    x: clipart.x + slideOffset * 100,
+    x:
+      clipart.x +
+      continuityOffset(ownerSlideIndex, guestSlideIndex, stridePercent),
+  }
+}
+
+export function continuedTextForSlide(
+  text: TextLayer,
+  ownerSlideIndex: number,
+  guestSlideIndex: number,
+  stridePercent = 100,
+): TextLayer {
+  return {
+    ...text,
+    x: text.x + continuityOffset(ownerSlideIndex, guestSlideIndex, stridePercent),
+  }
+}
+
+export function continuedLensForSlide(
+  lens: LensLayer,
+  ownerSlideIndex: number,
+  guestSlideIndex: number,
+  stridePercent = 100,
+): LensLayer {
+  const dx = continuityOffset(ownerSlideIndex, guestSlideIndex, stridePercent)
+  return {
+    ...lens,
+    x: lens.x + dx,
+    lockedX: lens.lockedX + dx,
   }
 }
 
@@ -214,6 +267,7 @@ export function guestFramesForSlide(
   index: number,
   width: number,
   height: number,
+  stridePercent = 100,
 ): GuestFrame[] {
   const guests: GuestFrame[] = []
   const localFrameIds = new Set(slides[index]?.frames.map((frame) => frame.id) ?? [])
@@ -232,7 +286,12 @@ export function guestFramesForSlide(
       )
       if (!clips.includes(index)) continue
       guests.push({
-        frame: continuedFrameForSlide(frame, ownerIndex, index),
+        frame: continuedFrameForSlide(
+          frame,
+          ownerIndex,
+          index,
+          stridePercent,
+        ),
         originSlideId: ownerSlide.id,
         isGuest: true,
       })
@@ -247,6 +306,7 @@ export function guestClipartsForSlide(
   index: number,
   width: number,
   height: number,
+  stridePercent = 100,
 ): GuestClipart[] {
   const guests: GuestClipart[] = []
   const localIds = new Set(
@@ -267,7 +327,12 @@ export function guestClipartsForSlide(
       )
       if (!clips.includes(index)) continue
       guests.push({
-        clipart: continuedClipartForSlide(clipart, ownerIndex, index),
+        clipart: continuedClipartForSlide(
+          clipart,
+          ownerIndex,
+          index,
+          stridePercent,
+        ),
         originSlideId: ownerSlide.id,
         isGuest: true,
       })
@@ -275,6 +340,134 @@ export function guestClipartsForSlide(
   })
 
   return guests
+}
+
+export function textContinuityClipIndices(
+  text: TextLayer,
+  ownerSlideIndex: number,
+  slideCount: number,
+  width: number,
+  height: number,
+): number[] {
+  const { cx, textWidth } = textMetrics(text, width, height)
+  return continuityIndicesFromBounds(
+    ownerSlideIndex,
+    slideCount,
+    width,
+    cx,
+    textWidth / 2,
+  )
+}
+
+export function lensContinuityClipIndices(
+  lens: LensLayer,
+  ownerSlideIndex: number,
+  slideCount: number,
+  width: number,
+  height: number,
+): number[] {
+  const { cx, lensWidth } = lensMetrics(lens, width, height)
+  return continuityIndicesFromBounds(
+    ownerSlideIndex,
+    slideCount,
+    width,
+    cx,
+    lensWidth / 2,
+  )
+}
+
+export function guestTextsForSlide(
+  slides: Slide[],
+  index: number,
+  width: number,
+  height: number,
+  stridePercent = 100,
+): GuestText[] {
+  const guests: GuestText[] = []
+  const localIds = new Set(slides[index]?.texts.map((text) => text.id) ?? [])
+
+  slides.forEach((ownerSlide, ownerIndex) => {
+    for (const text of ownerSlide.texts) {
+      if (text.overflow !== "continue") continue
+      if (ownerIndex === index) continue
+      if (localIds.has(text.id)) continue
+      const clips = textContinuityClipIndices(
+        text,
+        ownerIndex,
+        slides.length,
+        width,
+        height,
+      )
+      if (!clips.includes(index)) continue
+      guests.push({
+        text: continuedTextForSlide(text, ownerIndex, index, stridePercent),
+        originSlideId: ownerSlide.id,
+        isGuest: true,
+      })
+    }
+  })
+
+  return guests
+}
+
+export function guestLensesForSlide(
+  slides: Slide[],
+  index: number,
+  width: number,
+  height: number,
+  stridePercent = 100,
+): GuestLens[] {
+  const guests: GuestLens[] = []
+  const localIds = new Set(
+    (slides[index]?.lenses ?? []).map((lens) => lens.id),
+  )
+
+  slides.forEach((ownerSlide, ownerIndex) => {
+    for (const lens of ownerSlide.lenses ?? []) {
+      if (lens.overflow !== "continue") continue
+      if (ownerIndex === index) continue
+      if (localIds.has(lens.id)) continue
+      const clips = lensContinuityClipIndices(
+        lens,
+        ownerIndex,
+        slides.length,
+        width,
+        height,
+      )
+      if (!clips.includes(index)) continue
+      guests.push({
+        lens: continuedLensForSlide(lens, ownerIndex, index, stridePercent),
+        source: lens,
+        originSlideId: ownerSlide.id,
+        isGuest: true,
+      })
+    }
+  })
+
+  return guests
+}
+
+export function guestIdsForSlide(
+  slides: Slide[],
+  index: number,
+  width: number,
+  height: number,
+  stridePercent = 100,
+): string[] {
+  return [
+    ...guestFramesForSlide(slides, index, width, height, stridePercent).map(
+      (guest) => guest.frame.id,
+    ),
+    ...guestClipartsForSlide(slides, index, width, height, stridePercent).map(
+      (guest) => guest.clipart.id,
+    ),
+    ...guestTextsForSlide(slides, index, width, height, stridePercent).map(
+      (guest) => guest.text.id,
+    ),
+    ...guestLensesForSlide(slides, index, width, height, stridePercent).map(
+      (guest) => guest.lens.id,
+    ),
+  ]
 }
 
 export function findFrameOwner(
@@ -292,6 +485,22 @@ export function findClipartOwner(
 ): Slide | undefined {
   return slides.find((slide) =>
     slide.cliparts.some((clipart) => clipart.id === clipartId),
+  )
+}
+
+export function findTextOwner(
+  slides: Slide[],
+  textId: string,
+): Slide | undefined {
+  return slides.find((slide) => slide.texts.some((text) => text.id === textId))
+}
+
+export function findLensOwner(
+  slides: Slide[],
+  lensId: string,
+): Slide | undefined {
+  return slides.find((slide) =>
+    (slide.lenses ?? []).some((lens) => lens.id === lensId),
   )
 }
 
@@ -433,4 +642,38 @@ export function clipartContinuitySlidePadding(
   const { cx } = clipartMetrics(clipart, width, height)
   const halfW = clipartHorizontalHalfWidth(clipart, width, height)
   return continuityPaddingFromBounds(ownerSlideIndex, slideCount, width, cx, halfW)
+}
+
+export function textContinuitySlidePadding(
+  text: TextLayer,
+  ownerSlideIndex: number,
+  slideCount: number,
+  width: number,
+  height: number,
+): { prepend: number; append: number } {
+  const { cx, textWidth } = textMetrics(text, width, height)
+  return continuityPaddingFromBounds(
+    ownerSlideIndex,
+    slideCount,
+    width,
+    cx,
+    textWidth / 2,
+  )
+}
+
+export function lensContinuitySlidePadding(
+  lens: LensLayer,
+  ownerSlideIndex: number,
+  slideCount: number,
+  width: number,
+  height: number,
+): { prepend: number; append: number } {
+  const { cx, lensWidth } = lensMetrics(lens, width, height)
+  return continuityPaddingFromBounds(
+    ownerSlideIndex,
+    slideCount,
+    width,
+    cx,
+    lensWidth / 2,
+  )
 }

@@ -59,7 +59,12 @@ language plpgsql
 as $$
 declare
   project_count int;
+  user_role text;
 begin
+  select role into user_role from public.profiles where id = new.user_id;
+  if user_role = 'admin' then
+    return new;
+  end if;
   select count(*) into project_count from public.projects where user_id = new.user_id;
   if tg_op = 'INSERT' and project_count >= 5 then
     raise exception 'Project limit reached (5). Delete a project to create another.';
@@ -135,6 +140,9 @@ create policy "templates_admin_write" on public.templates
   to authenticated
   using (exists (
     select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin'
+  ))
+  with check (exists (
+    select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin'
   ));
 
 drop policy if exists "cliparts_public_read" on public.library_cliparts;
@@ -148,11 +156,42 @@ create policy "cliparts_admin_write" on public.library_cliparts
   to authenticated
   using (exists (
     select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin'
+  ))
+  with check (exists (
+    select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin'
   ));
 
 grant usage on schema public to anon, authenticated;
 grant select on table public.templates to anon, authenticated;
+grant insert, update, delete on table public.templates to authenticated;
 grant select on table public.library_cliparts to anon, authenticated;
+grant insert, update, delete on table public.library_cliparts to authenticated;
+
+create table if not exists public.catalog_hidden_templates (
+  template_id text primary key
+);
+
+alter table public.catalog_hidden_templates enable row level security;
+
+drop policy if exists "catalog_hidden_select" on public.catalog_hidden_templates;
+create policy "catalog_hidden_select" on public.catalog_hidden_templates
+  for select
+  to anon, authenticated
+  using (true);
+
+drop policy if exists "catalog_hidden_admin" on public.catalog_hidden_templates;
+create policy "catalog_hidden_admin" on public.catalog_hidden_templates
+  for all
+  to authenticated
+  using (exists (
+    select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin'
+  ))
+  with check (exists (
+    select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin'
+  ));
+
+grant select on table public.catalog_hidden_templates to anon, authenticated;
+grant insert, update, delete on table public.catalog_hidden_templates to authenticated;
 
 -- Storage buckets (run in dashboard or via API): project-assets, templates, cliparts
 -- Example policies for project-assets:

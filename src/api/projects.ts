@@ -372,8 +372,12 @@ async function withTemplatePreviews(
 /** Always include built-in gallery templates; keep extra published rows from the cloud. */
 function mergeWithBuiltInCatalog(
   published: TemplateRecord[],
+  hiddenIds: string[] = [],
 ): TemplateRecord[] {
-  const seeds = builtInCatalogTemplates()
+  const hidden = new Set(hiddenIds)
+  const seeds = builtInCatalogTemplates().filter(
+    (seed) => !hidden.has(seed.id) && !hidden.has(seed.slug),
+  )
   const byId = new Map(published.map((row) => [row.id, row]))
   const bySlug = new Map(published.map((row) => [row.slug, row]))
   const fromSeeds = seeds.map(
@@ -381,6 +385,7 @@ function mergeWithBuiltInCatalog(
   )
   const extras = published.filter(
     (row) =>
+      !hidden.has(row.id) &&
       !seeds.some((seed) => seed.id === row.id || seed.slug === row.slug),
   )
   return [...fromSeeds, ...extras].sort(
@@ -388,9 +393,25 @@ function mergeWithBuiltInCatalog(
   )
 }
 
+async function listHiddenTemplateIds(): Promise<string[]> {
+  if (!isSupabaseConfigured()) {
+    return local.localListHiddenTemplateIds()
+  }
+  const supabase = getSupabase()!
+  const { data, error } = await supabase
+    .from("catalog_hidden_templates")
+    .select("template_id")
+  if (error) {
+    console.warn("catalog_hidden_templates:", error.message)
+    return []
+  }
+  return (data ?? []).map((row) => row.template_id as string)
+}
+
 export async function listPublishedTemplates(): Promise<TemplateRecord[]> {
+  const hidden = await listHiddenTemplateIds()
   const withBuiltIns = (rows: TemplateRecord[]) =>
-    withTemplatePreviews(mergeWithBuiltInCatalog(rows))
+    withTemplatePreviews(mergeWithBuiltInCatalog(rows, hidden))
 
   if (!isSupabaseConfigured()) {
     return withBuiltIns(await local.localListTemplates())
@@ -409,8 +430,10 @@ export async function listPublishedTemplates(): Promise<TemplateRecord[]> {
 }
 
 export async function listAllTemplates(): Promise<TemplateRecord[]> {
+  const hidden = await listHiddenTemplateIds()
   if (!isSupabaseConfigured()) {
-    return withTemplatePreviews(await local.localListAllTemplates())
+    const rows = await local.localListAllTemplates()
+    return withTemplatePreviews(mergeWithBuiltInCatalog(rows, hidden))
   }
   const supabase = getSupabase()!
   const { data, error } = await supabase
@@ -418,7 +441,9 @@ export async function listAllTemplates(): Promise<TemplateRecord[]> {
     .select("*")
     .order("sort_order")
   if (error) throw error
-  return withTemplatePreviews((data ?? []) as TemplateRecord[])
+  return withTemplatePreviews(
+    mergeWithBuiltInCatalog((data ?? []) as TemplateRecord[], hidden),
+  )
 }
 
 export async function upsertTemplate(
@@ -464,11 +489,38 @@ export async function upsertTemplate(
   return data as TemplateRecord
 }
 
-export async function deleteTemplate(id: string): Promise<void> {
-  if (!isSupabaseConfigured()) return local.localDeleteTemplate(id)
+function templateIdsToHide(id: string, slug?: string): string[] {
+  const seed = builtInCatalogTemplates().find(
+    (row) =>
+      row.id === id ||
+      row.slug === id ||
+      (slug != null && (row.slug === slug || row.id === slug)),
+  )
+  return seed
+    ? [...new Set([seed.id, seed.slug, id, ...(slug ? [slug] : [])])]
+    : [...new Set([id, ...(slug ? [slug] : [])])]
+}
+
+export async function deleteTemplate(id: string, slug?: string): Promise<void> {
+  const hideIds = templateIdsToHide(id, slug)
+  if (!isSupabaseConfigured()) return local.localDeleteTemplate(id, slug)
+
   const supabase = getSupabase()!
-  const { error } = await supabase.from("templates").delete().eq("id", id)
-  if (error) throw error
+  const uuid =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
+  if (uuid) {
+    const { error } = await supabase.from("templates").delete().eq("id", id)
+    if (error) throw error
+  }
+  for (const value of hideIds) {
+    const { error } = await supabase.from("templates").delete().eq("slug", value)
+    if (error) throw error
+  }
+
+  const { error: hideError } = await supabase
+    .from("catalog_hidden_templates")
+    .upsert(hideIds.map((template_id) => ({ template_id })))
+  if (hideError) throw hideError
 }
 
 function slugify(value: string): string {

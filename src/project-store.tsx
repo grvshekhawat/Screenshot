@@ -24,6 +24,7 @@ import {
   createSlide,
   createText,
   defaultBackground,
+  findLayerInSlides,
   getActiveClipart,
   getActiveFrame,
   getActiveLens,
@@ -71,6 +72,9 @@ import type {
 import {
   clipartContinuitySlidePadding,
   continuitySlidePadding,
+  guestIdsForSlide,
+  lensContinuitySlidePadding,
+  textContinuitySlidePadding,
   type OverflowEdges,
 } from "./overflow"
 
@@ -113,6 +117,16 @@ type ProjectContextValue = {
     clipartId: string,
     mode: ClipartLayer["overflow"],
     edges: OverflowEdges,
+  ) => void
+  setTextOverflow: (
+    slideId: string,
+    textId: string,
+    mode: TextLayer["overflow"],
+  ) => void
+  setLensOverflow: (
+    slideId: string,
+    lensId: string,
+    mode: LensLayer["overflow"],
   ) => void
   duplicateSlide: (id: string) => void
   deleteSlide: (id: string) => void
@@ -180,6 +194,22 @@ type ProjectContextValue = {
 }
 
 const ProjectContext = createContext<ProjectContextValue | null>(null)
+
+function extraIdsFor(project: Project, slideId: string): string[] {
+  const index = project.slides.findIndex((slide) => slide.id === slideId)
+  if (index < 0) return []
+  const target = STORE_TARGETS[project.targetId]
+  return guestIdsForSlide(
+    project.slides,
+    index,
+    target.width,
+    target.height,
+  )
+}
+
+function extraIdsForSlide(current: Project, slide: Slide): string[] {
+  return extraIdsFor(current, slide.id)
+}
 
 function copyBackground(background: Slide["background"]): Slide["background"] {
   return defaultBackground({
@@ -653,6 +683,112 @@ export function ProjectProvider({
     [],
   )
 
+  const setTextOverflow = useCallback(
+    (slideId: string, textId: string, mode: TextLayer["overflow"]) => {
+      setProject((current) => {
+        let slides = current.slides.map((slide) => {
+          if (slide.id !== slideId) return slide
+          return {
+            ...slide,
+            texts: slide.texts.map((text) =>
+              text.id === textId ? { ...text, overflow: mode } : text,
+            ),
+          }
+        })
+        if (mode !== "continue") return { ...current, slides }
+        const source = slides.find((slide) => slide.id === slideId)
+        if (!source) return { ...current, slides }
+        const text = source.texts.find((item) => item.id === textId)
+        if (!text) return { ...current, slides }
+        const { width, height } = STORE_TARGETS[current.targetId]
+        let result = slides
+        let ownerIndex = result.findIndex((slide) => slide.id === slideId)
+        for (let guard = 0; guard < 8; guard++) {
+          const { prepend, append } = textContinuitySlidePadding(
+            { ...text, overflow: "continue" },
+            ownerIndex,
+            result.length,
+            width,
+            height,
+          )
+          if (prepend === 0 && append === 0) break
+          const makeNeighbor = () =>
+            createSlide({
+              frames: [],
+              texts: [],
+              background: copyBackground(source.background),
+              templateId: source.templateId,
+            })
+          if (prepend > 0) {
+            result = [
+              ...Array.from({ length: prepend }, makeNeighbor),
+              ...result,
+            ]
+            ownerIndex += prepend
+          }
+          if (append > 0) {
+            result = [...result, ...Array.from({ length: append }, makeNeighbor)]
+          }
+        }
+        return { ...current, slides: result }
+      })
+    },
+    [],
+  )
+
+  const setLensOverflow = useCallback(
+    (slideId: string, lensId: string, mode: LensLayer["overflow"]) => {
+      setProject((current) => {
+        let slides = current.slides.map((slide) => {
+          if (slide.id !== slideId) return slide
+          return {
+            ...slide,
+            lenses: (slide.lenses ?? []).map((lens) =>
+              lens.id === lensId ? { ...lens, overflow: mode } : lens,
+            ),
+          }
+        })
+        if (mode !== "continue") return { ...current, slides }
+        const source = slides.find((slide) => slide.id === slideId)
+        if (!source) return { ...current, slides }
+        const lens = (source.lenses ?? []).find((item) => item.id === lensId)
+        if (!lens) return { ...current, slides }
+        const { width, height } = STORE_TARGETS[current.targetId]
+        let result = slides
+        let ownerIndex = result.findIndex((slide) => slide.id === slideId)
+        for (let guard = 0; guard < 8; guard++) {
+          const { prepend, append } = lensContinuitySlidePadding(
+            { ...lens, overflow: "continue" },
+            ownerIndex,
+            result.length,
+            width,
+            height,
+          )
+          if (prepend === 0 && append === 0) break
+          const makeNeighbor = () =>
+            createSlide({
+              frames: [],
+              texts: [],
+              background: copyBackground(source.background),
+              templateId: source.templateId,
+            })
+          if (prepend > 0) {
+            result = [
+              ...Array.from({ length: prepend }, makeNeighbor),
+              ...result,
+            ]
+            ownerIndex += prepend
+          }
+          if (append > 0) {
+            result = [...result, ...Array.from({ length: append }, makeNeighbor)]
+          }
+        }
+        return { ...current, slides: result }
+      })
+    },
+    [],
+  )
+
   const duplicateSlide = useCallback((id: string) => {
     setProject((current) => {
       const index = current.slides.findIndex((slide) => slide.id === id)
@@ -770,7 +906,16 @@ export function ProjectProvider({
     setProjectState((current) => ({
       ...current,
       slides: current.slides.map((slide) =>
-        slide.id === slideId ? { ...slide, selectedId: frameId } : slide,
+        slide.id === slideId
+          ? {
+              ...slide,
+              selectedId: frameId,
+              layerOrder: appendLayerOrder(
+                normalizeLayerOrder(slide, extraIdsFor(current, slideId)),
+                frameId,
+              ),
+            }
+          : slide,
       ),
     }))
   }, [])
@@ -783,7 +928,7 @@ export function ProjectProvider({
         if (slide.id !== slideId || slide.frames.length >= MAX_FRAMES) {
           return slide
         }
-        const source = getActiveFrame(slide)
+        const source = getActiveFrame(slide, current.slides)
         const next = createFrame(
           source
             ? {
@@ -800,7 +945,7 @@ export function ProjectProvider({
         return {
           ...slide,
           frames: [...slide.frames, next],
-          layerOrder: appendLayerOrder(normalizeLayerOrder(slide), next.id),
+          layerOrder: appendLayerOrder(normalizeLayerOrder(slide, extraIdsForSlide(current, slide)), next.id),
           selectedId: next.id,
         }
       }),
@@ -838,7 +983,7 @@ export function ProjectProvider({
         return {
           ...slide,
           frames,
-          layerOrder: appendLayerOrder(normalizeLayerOrder(slide), copy.id, frameId),
+          layerOrder: appendLayerOrder(normalizeLayerOrder(slide, extraIdsForSlide(current, slide)), copy.id, frameId),
           selectedId: copy.id,
         }
       }),
@@ -910,7 +1055,7 @@ export function ProjectProvider({
           return {
             ...slide,
             layerOrder: moveInLayerOrder(
-              normalizeLayerOrder(slide),
+              normalizeLayerOrder(slide, extraIdsForSlide(current, slide)),
               frameId,
               direction,
             ),
@@ -941,7 +1086,7 @@ export function ProjectProvider({
         return {
           ...slide,
           texts,
-          layerOrder: appendLayerOrder(normalizeLayerOrder(slide), copy.id, textId),
+          layerOrder: appendLayerOrder(normalizeLayerOrder(slide, extraIdsForSlide(current, slide)), copy.id, textId),
           selectedId: copy.id,
         }
       }),
@@ -957,7 +1102,7 @@ export function ProjectProvider({
           return {
             ...slide,
             layerOrder: moveInLayerOrder(
-              normalizeLayerOrder(slide),
+              normalizeLayerOrder(slide, extraIdsForSlide(current, slide)),
               textId,
               direction,
             ),
@@ -973,7 +1118,16 @@ export function ProjectProvider({
     setProjectState((current) => ({
       ...current,
       slides: current.slides.map((slide) =>
-        slide.id === slideId ? { ...slide, selectedId: textId } : slide,
+        slide.id === slideId
+          ? {
+              ...slide,
+              selectedId: textId,
+              layerOrder: appendLayerOrder(
+                normalizeLayerOrder(slide, extraIdsFor(current, slideId)),
+                textId,
+              ),
+            }
+          : slide,
       ),
     }))
   }, [])
@@ -1005,7 +1159,7 @@ export function ProjectProvider({
         return {
           ...slide,
           texts: [...slide.texts, next],
-          layerOrder: appendLayerOrder(normalizeLayerOrder(slide), next.id),
+          layerOrder: appendLayerOrder(normalizeLayerOrder(slide, extraIdsForSlide(current, slide)), next.id),
           selectedId: next.id,
         }
       }),
@@ -1056,7 +1210,16 @@ export function ProjectProvider({
     setProjectState((current) => ({
       ...current,
       slides: current.slides.map((slide) =>
-        slide.id === slideId ? { ...slide, selectedId: clipartId } : slide,
+        slide.id === slideId
+          ? {
+              ...slide,
+              selectedId: clipartId,
+              layerOrder: appendLayerOrder(
+                normalizeLayerOrder(slide, extraIdsFor(current, slideId)),
+                clipartId,
+              ),
+            }
+          : slide,
       ),
     }))
   }, [])
@@ -1080,7 +1243,7 @@ export function ProjectProvider({
           return {
             ...slide,
             cliparts: [...slide.cliparts, next],
-            layerOrder: appendLayerOrder(normalizeLayerOrder(slide), next.id),
+            layerOrder: appendLayerOrder(normalizeLayerOrder(slide, extraIdsForSlide(current, slide)), next.id),
             selectedId: next.id,
           }
         }),
@@ -1122,7 +1285,7 @@ export function ProjectProvider({
         return {
           ...slide,
           cliparts,
-          layerOrder: appendLayerOrder(normalizeLayerOrder(slide), copy.id, clipartId),
+          layerOrder: appendLayerOrder(normalizeLayerOrder(slide, extraIdsForSlide(current, slide)), copy.id, clipartId),
           selectedId: copy.id,
         }
       }),
@@ -1164,7 +1327,7 @@ export function ProjectProvider({
               return {
                 ...slide,
                 frames: [...slide.frames, copy],
-                layerOrder: appendLayerOrder(normalizeLayerOrder(slide), copy.id),
+                layerOrder: appendLayerOrder(normalizeLayerOrder(slide, extraIdsForSlide(current, slide)), copy.id),
                 selectedId: copy.id,
               }
             }),
@@ -1186,7 +1349,7 @@ export function ProjectProvider({
               return {
                 ...slide,
                 texts: [...slide.texts, copy],
-                layerOrder: appendLayerOrder(normalizeLayerOrder(slide), copy.id),
+                layerOrder: appendLayerOrder(normalizeLayerOrder(slide, extraIdsForSlide(current, slide)), copy.id),
                 selectedId: copy.id,
               }
             }),
@@ -1214,7 +1377,7 @@ export function ProjectProvider({
               return {
                 ...slide,
                 cliparts: [...slide.cliparts, copy],
-                layerOrder: appendLayerOrder(normalizeLayerOrder(slide), copy.id),
+                layerOrder: appendLayerOrder(normalizeLayerOrder(slide, extraIdsForSlide(current, slide)), copy.id),
                 selectedId: copy.id,
               }
             }),
@@ -1236,7 +1399,7 @@ export function ProjectProvider({
               return {
                 ...slide,
                 lenses: [...(slide.lenses ?? []), copy],
-                layerOrder: appendLayerOrder(normalizeLayerOrder(slide), copy.id),
+                layerOrder: appendLayerOrder(normalizeLayerOrder(slide, extraIdsForSlide(current, slide)), copy.id),
                 selectedId: copy.id,
               }
             }),
@@ -1254,7 +1417,16 @@ export function ProjectProvider({
     setProjectState((current) => ({
       ...current,
       slides: current.slides.map((slide) =>
-        slide.id === slideId ? { ...slide, selectedId: lensId } : slide,
+        slide.id === slideId
+          ? {
+              ...slide,
+              selectedId: lensId,
+              layerOrder: appendLayerOrder(
+                normalizeLayerOrder(slide, extraIdsFor(current, slideId)),
+                lensId,
+              ),
+            }
+          : slide,
       ),
     }))
   }, [])
@@ -1277,7 +1449,7 @@ export function ProjectProvider({
         return {
           ...slide,
           lenses: [...(slide.lenses ?? []), next],
-          layerOrder: appendLayerOrder(normalizeLayerOrder(slide), next.id),
+          layerOrder: appendLayerOrder(normalizeLayerOrder(slide, extraIdsForSlide(current, slide)), next.id),
           selectedId: next.id,
         }
       }),
@@ -1306,7 +1478,7 @@ export function ProjectProvider({
         return {
           ...slide,
           lenses,
-          layerOrder: appendLayerOrder(normalizeLayerOrder(slide), copy.id, lensId),
+          layerOrder: appendLayerOrder(normalizeLayerOrder(slide, extraIdsForSlide(current, slide)), copy.id, lensId),
           selectedId: copy.id,
         }
       }),
@@ -1412,7 +1584,7 @@ export function ProjectProvider({
           return {
             ...slide,
             layerOrder: moveInLayerOrder(
-              normalizeLayerOrder(slide),
+              normalizeLayerOrder(slide, extraIdsForSlide(current, slide)),
               lensId,
               direction,
             ),
@@ -1484,7 +1656,7 @@ export function ProjectProvider({
           return {
             ...slide,
             layerOrder: moveInLayerOrder(
-              normalizeLayerOrder(slide),
+              normalizeLayerOrder(slide, extraIdsForSlide(current, slide)),
               clipartId,
               direction,
             ),
@@ -1507,7 +1679,7 @@ export function ProjectProvider({
         ...current,
         slides: current.slides.map((slide) => {
           if (slide.id !== slideId) return slide
-          const targetId = frameId ?? getActiveFrame(slide)?.id
+          const targetId = frameId ?? getActiveFrame(slide, current.slides)?.id
           if (!targetId || !slide.frames.some((frame) => frame.id === targetId)) {
             const next = createFrame({
               screenshotId: slot === "b" ? null : id,
@@ -1517,7 +1689,7 @@ export function ProjectProvider({
             return {
               ...slide,
               frames: [...slide.frames, next],
-              layerOrder: appendLayerOrder(normalizeLayerOrder(slide), next.id),
+              layerOrder: appendLayerOrder(normalizeLayerOrder(slide, extraIdsForSlide(current, slide)), next.id),
               selectedId: next.id,
             }
           }
@@ -1563,7 +1735,7 @@ export function ProjectProvider({
           return {
             ...slide,
             cliparts: [...slide.cliparts, next],
-            layerOrder: appendLayerOrder(normalizeLayerOrder(slide), next.id),
+            layerOrder: appendLayerOrder(normalizeLayerOrder(slide, extraIdsForSlide(current, slide)), next.id),
             selectedId: next.id,
           }
         }),
@@ -1597,11 +1769,11 @@ export function ProjectProvider({
   const activeSlide =
     project.slides.find((slide) => slide.id === project.activeSlideId) ??
     project.slides[0]
-  const activeFrame = getActiveFrame(activeSlide)
-  const activeText = getActiveText(activeSlide)
-  const activeClipart = getActiveClipart(activeSlide)
-  const activeLens = getActiveLens(activeSlide)
-  const kind = selectedKind(activeSlide)
+  const activeFrame = getActiveFrame(activeSlide, project.slides)
+  const activeText = getActiveText(activeSlide, project.slides)
+  const activeClipart = getActiveClipart(activeSlide, project.slides)
+  const activeLens = getActiveLens(activeSlide, project.slides)
+  const kind = selectedKind(activeSlide, project.slides)
   const viewProject = project
   const canUndo = historyPastRef.current.length > 0
   const canRedo = historyFutureRef.current.length > 0
@@ -1611,21 +1783,21 @@ export function ProjectProvider({
     const slide = project.slides.find((entry) => entry.id === project.activeSlideId)
     if (!slide || !slide.selectedId) return
     const id = slide.selectedId
-    if ((slide.lenses ?? []).some((lens) => lens.id === id)) {
-      removeLens(slide.id, id)
+    const found = findLayerInSlides(project.slides, id)
+    if (!found) return
+    if (found.kind === "lens") {
+      removeLens(found.slide.id, id)
       return
     }
-    if (slide.cliparts.some((clipart) => clipart.id === id)) {
-      removeClipart(slide.id, id)
+    if (found.kind === "clipart") {
+      removeClipart(found.slide.id, id)
       return
     }
-    if (slide.texts.some((text) => text.id === id)) {
-      removeText(slide.id, id)
+    if (found.kind === "text") {
+      removeText(found.slide.id, id)
       return
     }
-    if (slide.frames.some((frame) => frame.id === id)) {
-      removeFrame(slide.id, id)
-    }
+    removeFrame(found.slide.id, id)
   }, [project, removeLens, removeClipart, removeText, removeFrame])
 
   const value = useMemo<ProjectContextValue>(
@@ -1655,6 +1827,8 @@ export function ProjectProvider({
       insertSlideAt,
       setFrameOverflow,
       setClipartOverflow,
+      setTextOverflow,
+      setLensOverflow,
       duplicateSlide,
       deleteSlide,
       updateSlide,
@@ -1723,6 +1897,8 @@ export function ProjectProvider({
       insertSlideAt,
       setFrameOverflow,
       setClipartOverflow,
+      setTextOverflow,
+      setLensOverflow,
       duplicateSlide,
       deleteSlide,
       updateSlide,

@@ -21,7 +21,7 @@ import { TemplateThumbnail } from "../components/TemplateThumbnail"
 const ORIENT_KEY = "ss:projects-orientation"
 
 export function ProjectsPage() {
-  const { ready, userId, email, profile, signOut, usingLocalBackend, setDemoSubscription, canExport } =
+  const { ready, userId, email, profile, isAdmin, signOut, usingLocalBackend, setDemoSubscription, canExport } =
     useAuth()
   const navigate = useNavigate()
   const [projects, setProjects] = useState<ProjectRecord[]>([])
@@ -160,9 +160,11 @@ export function ProjectsPage() {
           <div>
             <h1 className="text-2xl font-semibold">Your projects</h1>
             <p className="mt-1 text-sm text-zinc-400">
-              {projects.length}/{MAX_CLOUD_PROJECTS} projects ·{" "}
-              {visibleProjects.length} {orientation} · Free watermarked PNG · Pro
-              for clean ZIP
+              {isAdmin
+                ? `${projects.length} projects (no limit)`
+                : `${projects.length}/${MAX_CLOUD_PROJECTS} projects`}{" "}
+              · {visibleProjects.length} {orientation} · Free watermarked PNG ·
+              Pro for clean ZIP
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
@@ -196,7 +198,7 @@ export function ProjectsPage() {
             </div>
             <button
               type="button"
-              disabled={busy || projects.length >= MAX_CLOUD_PROJECTS}
+              disabled={busy || (!isAdmin && projects.length >= MAX_CLOUD_PROJECTS)}
               onClick={() => void onCreate()}
               className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-500 disabled:opacity-40"
             >
@@ -254,7 +256,7 @@ export function ProjectsPage() {
                 key={template.id}
                 template={template}
                 className="w-full border border-zinc-800"
-                disabled={busy || projects.length >= MAX_CLOUD_PROJECTS}
+                disabled={busy || (!isAdmin && projects.length >= MAX_CLOUD_PROJECTS)}
                 onClick={() => void onClone(template)}
               />
             ))}

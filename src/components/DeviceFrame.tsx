@@ -692,6 +692,7 @@ function ScreenImage({
       src={src}
       alt="App screenshot"
       draggable={false}
+      crossOrigin={src.startsWith("http") ? "anonymous" : undefined}
       style={{
         display: "block",
         width: "100%",

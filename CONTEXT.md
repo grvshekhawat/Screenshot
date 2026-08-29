@@ -8,8 +8,7 @@ Cloud SaaS App Store / Play screenshot editor (Vite + React). Auth, projects, te
 |--------|-------------|
 | Browse templates / clipart library | Public (thumbnails only; no project created) |
 | Create / save / edit projects | Login |
-| Create / save / edit projects | Login |
-| Max projects per account | **5** (hard cap) |
+| Max projects per account | **5** (admins: no cap) |
 | PNG preview export | Free (watermarked) |
 | Clean PNG / ZIP / all-sizes ZIP | Active monthly subscription |
 | Pay | Stripe (card) or PayPal |
@@ -17,14 +16,14 @@ Cloud SaaS App Store / Play screenshot editor (Vite + React). Auth, projects, te
 ## Architecture
 
 - Auth: `src/auth/AuthProvider.tsx` — email + password (Supabase) or email demo (local). Magic links are not used.
-- Projects: `src/api/projects.ts` — cloud CRUD + 5-cap; editor at `/app/:projectId`. Local demo backend stores projects/assets in **IndexedDB** (migrates off `localStorage` to avoid ~5MB quota errors)
+- Projects: `src/api/projects.ts` — cloud CRUD + 5-cap for non-admins (`enforce_project_limit`; admins skip); editor at `/app/:projectId`. Local demo backend stores projects/assets in **IndexedDB** (migrates off `localStorage` to avoid ~5MB quota errors)
 - State: `src/project-store.tsx` — cloud autosave when `projectId` set; IndexedDB fallback when not
 - Billing: `src/billing/*` + Edge Functions under `supabase/functions/` (Stripe + PayPal webhooks → `profiles`)
-- Catalog: published `templates` + `library_cliparts`; admin at `/admin` (`*@admin.local` in demo). Logged-out visitors can read published templates (RLS + `GRANT SELECT` to `anon`). Landing page falls back to built-in seed templates if the cloud catalog is empty.
-  - Templates: design in the editor → Admin → pick project → **Publish as template** (copies assets into `templates/` bucket; generates a multi-slide catalog **thumbnail** of up to 5 slides via `template-preview.ts`, including uploaded screenshots when assets resolve)
-- Project list cards show the same multi-slide thumbnail (`thumbnail_path` / `thumbnail_url`), refreshed on save with real screenshots in device frames
+- Catalog: published `templates` + `library_cliparts`; admin at `/admin` (`*@admin.local` in demo, or `profiles.role = admin`). Logged-out visitors can read published templates (RLS + `GRANT SELECT` to `anon`). Landing page merges built-in seeds with cloud rows; deleted seeds stay gone via `catalog_hidden_templates` (run `003_admin_catalog.sql`). Admins can DELETE templates (RLS + grants).
+  - Templates: design in the editor → Admin → pick project → **Publish as template** (copies assets into `templates/` bucket). Catalog / project thumbnails capture the real artboard (`export-slide.tsx`) so stacked devices, clipart, and lenses match the editor; `template-preview.ts` composes up to 5 slides.
+- Project list cards show the same multi-slide thumbnail (`thumbnail_path` / `thumbnail_url`), refreshed on save and when the list loads from live slide data.
   - Local demo seeds 4 portrait + 4 landscape gallery templates (`sample-screens.ts` / `sample-templates.ts`, catalog seed v10). Landscape phones reuse portrait chrome rotated −90°; screenshots stay upright (counter-rotated). Thumbnail device shadows scale with preview size so they match the editor.
-- Schema/RLS: `supabase/migrations/001_init.sql`
+- Schema/RLS: `supabase/migrations/001_init.sql` (+ `002_public_catalog.sql`, `003_admin_catalog.sql`)
 - Env template: `.env.example`
 
 ## Routes
@@ -34,7 +33,7 @@ Cloud SaaS App Store / Play screenshot editor (Vite + React). Auth, projects, te
 ## Editor notes
 
 - Canvas: slides side by side in `DesignCanvas`; zoom −/+/Fit (⌘/Ctrl+scroll). **100% = 1:1 artboard pixels**; **Fit** fills the viewport (label shows the real %, e.g. 32%). Steps are ±5% of current size; zoom range 5–400%. Device Scale 100% = largest phone that fits the artboard. Artboard scale-root is `position:absolute`; resize handles size from on-screen artboard width. **This size** vs **All sizes**: independent per-size layouts (`sizeLayouts`); **All sizes** copies only the **selected** component onto the same slide in every store size (adapted); switching size resets to **This size** (`src/size-layouts.ts`)
-- Frames / cliparts: sized from artboard width + locked aspect; Continue uses gap-aware `ContinuitySpan` / `ContinuityClipartSpan` (not per-slide guests) so halves align across the slide gap; export still uses `guestFramesForSlide`
+- Frames / cliparts / text / lenses: sized from artboard width + locked aspect; **Continue** draws overflow onto neighboring slides as guests. Layer order is **per slide**: Move up/down stacks whatever is visible on that slide (including guests from other slides) without changing the owner slide’s order. Phones are no longer forced on top.
 - Clipart library: shapes (and Admin-published assets by category, e.g. gestures); clipart can **Attach to phone** so overlays follow device move/scale/tilt (Content → Clipart; Properties)
 - Phone screen: Single or Split screen with Split % and Angle ° sliders (CSS gradient convention; full-screen shots clipped along the cut). Device frames share text-style shadow presets (None / Soft / Hard) with blur, offset X/Y, and opacity.
 - Lens: free-form rounded magnifier (`slide.lenses`) with independent W/H and corner roundness; border up to 160px; optional **Lock image** captures a slide snapshot (persists through slide edits) while the lens moves; Content → Lens; exports with the slide

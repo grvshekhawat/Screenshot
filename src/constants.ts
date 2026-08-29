@@ -623,21 +623,38 @@ export function defaultLayerOrder(
   ]
 }
 
-export function normalizeLayerOrder(slide: Slide): string[] {
-  const allIds = defaultLayerOrder(slide)
-  const kept = (slide.layerOrder ?? []).filter((id) => allIds.includes(id))
-  const missing = allIds.filter((id) => !kept.includes(id))
-  return [...kept, ...missing]
+export function normalizeLayerOrder(
+  slide: Slide,
+  extraIds: string[] = [],
+): string[] {
+  const localIds = defaultLayerOrder(slide)
+  const extras =
+    extraIds.length > 0
+      ? extraIds.filter((id) => !localIds.includes(id))
+      : (slide.layerOrder ?? []).filter((id) => !localIds.includes(id))
+  const allowed = new Set([...localIds, ...extras])
+  const kept = (slide.layerOrder ?? []).filter((id) => allowed.has(id))
+  const missingLocals = localIds.filter((id) => !kept.includes(id))
+  const missingExtras = extras.filter((id) => !kept.includes(id))
+  return [...kept, ...missingLocals, ...missingExtras]
 }
 
-export function layerZIndex(slide: Slide, id: string): number {
-  const order = normalizeLayerOrder(slide)
+export function layerZIndex(
+  slide: Slide,
+  id: string,
+  extraIds: string[] = [],
+): number {
+  const order = normalizeLayerOrder(slide, extraIds)
   const index = order.indexOf(id)
   return index >= 0 ? index + 1 : order.length + 1
 }
 
-export function layerMoveLimits(slide: Slide, id: string) {
-  const order = normalizeLayerOrder(slide)
+export function layerMoveLimits(
+  slide: Slide,
+  id: string,
+  extraIds: string[] = [],
+) {
+  const order = normalizeLayerOrder(slide, extraIds)
   const index = order.indexOf(id)
   return {
     canMoveUp: index >= 0 && index < order.length - 1,
@@ -688,7 +705,8 @@ export function sanitizeSlideSelection(slide: Slide): Slide {
     slide.frames.some((frame) => frame.id === slide.selectedId) ||
     slide.texts.some((text) => text.id === slide.selectedId) ||
     slide.cliparts.some((clipart) => clipart.id === slide.selectedId) ||
-    (slide.lenses ?? []).some((lens) => lens.id === slide.selectedId)
+    (slide.lenses ?? []).some((lens) => lens.id === slide.selectedId) ||
+    layerOrder.includes(slide.selectedId)
   return {
     ...slide,
     lenses: slide.lenses ?? [],
@@ -769,6 +787,7 @@ export function createLens(overrides: Partial<LensLayer> & { shape?: string } = 
     lockedX,
     lockedY,
     lockedImageId,
+    overflow: rest.overflow === "continue" ? "continue" : "cut",
     id: rest.id ?? crypto.randomUUID(),
   }
 }
@@ -864,6 +883,7 @@ export function createText(overrides: Partial<TextLayer> = {}): TextLayer {
     align: "center",
     rotation: 0,
     strokeColor: "#000000",
+    overflow: "cut",
     ...overrides,
     weight,
     shadow,
@@ -981,27 +1001,59 @@ export function defaultTexts(
   return layers.length ? layers : [createText({ y: y0, ...style })]
 }
 
-export function getActiveFrame(slide: Slide): Frame | null {
-  return (
-    slide.frames.find((frame) => frame.id === slide.selectedId) ??
-    slide.frames[0] ??
-    null
-  )
+export function findLayerInSlides(slides: Slide[], id: string) {
+  for (const slide of slides) {
+    const frame = slide.frames.find((item) => item.id === id)
+    if (frame) return { kind: "frame" as const, slide, frame }
+    const text = slide.texts.find((item) => item.id === id)
+    if (text) return { kind: "text" as const, slide, text }
+    const clipart = slide.cliparts.find((item) => item.id === id)
+    if (clipart) return { kind: "clipart" as const, slide, clipart }
+    const lens = (slide.lenses ?? []).find((item) => item.id === id)
+    if (lens) return { kind: "lens" as const, slide, lens }
+  }
+  return null
 }
 
-export function getActiveText(slide: Slide): TextLayer | null {
-  return slide.texts.find((text) => text.id === slide.selectedId) ?? null
+export function getActiveFrame(
+  slide: Slide,
+  slides: Slide[] = [slide],
+): Frame | null {
+  const found = findLayerInSlides(slides, slide.selectedId)
+  if (found?.kind === "frame") return found.frame
+  return null
 }
 
-export function getActiveClipart(slide: Slide): ClipartLayer | null {
-  return slide.cliparts.find((clipart) => clipart.id === slide.selectedId) ?? null
+export function getActiveText(
+  slide: Slide,
+  slides: Slide[] = [slide],
+): TextLayer | null {
+  const found = findLayerInSlides(slides, slide.selectedId)
+  return found?.kind === "text" ? found.text : null
 }
 
-export function getActiveLens(slide: Slide): LensLayer | null {
-  return (slide.lenses ?? []).find((lens) => lens.id === slide.selectedId) ?? null
+export function getActiveClipart(
+  slide: Slide,
+  slides: Slide[] = [slide],
+): ClipartLayer | null {
+  const found = findLayerInSlides(slides, slide.selectedId)
+  return found?.kind === "clipart" ? found.clipart : null
 }
 
-export function selectedKind(slide: Slide): SelectedKind {
+export function getActiveLens(
+  slide: Slide,
+  slides: Slide[] = [slide],
+): LensLayer | null {
+  const found = findLayerInSlides(slides, slide.selectedId)
+  return found?.kind === "lens" ? found.lens : null
+}
+
+export function selectedKind(
+  slide: Slide,
+  slides: Slide[] = [slide],
+): SelectedKind {
+  const found = findLayerInSlides(slides, slide.selectedId)
+  if (found) return found.kind
   if ((slide.lenses ?? []).some((lens) => lens.id === slide.selectedId)) {
     return "lens"
   }

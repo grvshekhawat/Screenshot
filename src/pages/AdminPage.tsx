@@ -160,7 +160,8 @@ export function AdminPage() {
           <h1 className="text-lg font-semibold">Templates</h1>
           <p className="mt-1 text-sm text-zinc-400">
             Design a layout in the editor, then publish that project here for
-            users to clone.
+            users to clone. Admins can publish as many templates as they want
+            and can delete catalog templates (including built-in seeds).
           </p>
 
           <form
@@ -239,10 +240,20 @@ export function AdminPage() {
                 </span>
                 <button
                   type="button"
-                  className="text-xs text-red-400"
-                  onClick={() =>
-                    void deleteTemplate(template.id).then(reload)
-                  }
+                  className="text-xs text-red-400 hover:text-red-300"
+                  disabled={busy}
+                  onClick={() => {
+                    setError(null)
+                    void deleteTemplate(template.id, template.slug)
+                      .then(() => reload())
+                      .catch((err) =>
+                        setError(
+                          err instanceof Error
+                            ? err.message
+                            : "Could not delete template",
+                        ),
+                      )
+                  }}
                 >
                   Delete
                 </button>

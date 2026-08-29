@@ -39,6 +39,7 @@ export function ClipartVisual({
         src={imageUrl}
         alt=""
         draggable={false}
+        crossOrigin={imageUrl.startsWith("http") ? "anonymous" : undefined}
         style={{
           display: "block",
           width: "100%",

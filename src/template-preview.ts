@@ -1,10 +1,15 @@
-import { STORE_TARGETS, deviceSpec, templateSplit } from "./constants"
+import { STORE_TARGETS, deviceSpec, normalizeLayerOrder, templateSplit } from "./constants"
+import { captureSlideToCanvas } from "./export-slide"
+import { guestClipartsForSlide, guestFramesForSlide } from "./overflow"
 import type {
+  ClipartLayer,
   Frame,
+  LensLayer,
   Project,
   Slide,
   SlideBackground,
   TemplateId,
+  TextLayer,
   ThumbnailLayout,
 } from "./types"
 
@@ -59,6 +64,7 @@ function artboardSize(project: Project): { width: number; height: number } {
 function loadImage(url: string): Promise<HTMLImageElement | null> {
   return new Promise((resolve) => {
     const img = new Image()
+    if (url.startsWith("http")) img.crossOrigin = "anonymous"
     img.onload = () => resolve(img)
     img.onerror = () => resolve(null)
     img.src = url
@@ -280,17 +286,15 @@ function paintScreenContent(
   ctx.restore()
 }
 
-function paintDevice(
+function paintFrame(
   ctx: CanvasRenderingContext2D,
-  slide: Slide,
+  frame: Frame,
   width: number,
   height: number,
   images: Map<string, HTMLImageElement>,
   /** previewSlideWidth / nativeArtboardWidth — keeps shadow in proportion to the slide. */
   designScale = 1,
 ) {
-  const frame = slide.frames[0]
-  if (!frame) return
   const spec = deviceSpec(frame.deviceId)
   const deviceW = width * frame.scale
   const deviceH = deviceW / spec.aspect
@@ -409,62 +413,275 @@ function paintDevice(
   ctx.restore()
 }
 
-function paintTexts(
+function paintClipart(
   ctx: CanvasRenderingContext2D,
-  slide: Slide,
+  clipart: ClipartLayer,
+  frame: Frame | null,
+  width: number,
+  height: number,
+  images: Map<string, HTMLImageElement>,
+) {
+  const img = images.get(clipart.assetId)
+  if (!img) return
+  const aspect =
+    Number.isFinite(clipart.aspect) && clipart.aspect > 0 ? clipart.aspect : 1
+  const opacity =
+    typeof clipart.opacity === "number" && Number.isFinite(clipart.opacity)
+      ? Math.min(1, Math.max(0, clipart.opacity))
+      : 1
+
+  ctx.save()
+  ctx.globalAlpha = opacity
+
+  if (frame && clipart.attachedFrameId === frame.id) {
+    const spec = deviceSpec(frame.deviceId)
+    const deviceW = width * frame.scale
+    const deviceH = deviceW / spec.aspect
+    const centerX = (frame.x / 100) * width
+    const centerY = (frame.y / 100) * height
+    const clipartWidth = (clipart.width / 100) * deviceW
+    const clipartHeight = clipartWidth / aspect
+    ctx.translate(centerX, centerY)
+    ctx.rotate(((frame.rotation ?? 0) * Math.PI) / 180)
+    ctx.translate(-deviceW / 2, -deviceH / 2)
+    const localX =
+      deviceW / 2 + (clipart.x / 100) * deviceW - clipartWidth / 2
+    const localY =
+      deviceH / 2 + (clipart.y / 100) * deviceH - clipartHeight / 2
+    ctx.translate(localX + clipartWidth / 2, localY + clipartHeight / 2)
+    ctx.rotate(((clipart.rotation ?? 0) * Math.PI) / 180)
+    ctx.drawImage(img, -clipartWidth / 2, -clipartHeight / 2, clipartWidth, clipartHeight)
+  } else {
+    const clipartWidth = (clipart.width / 100) * width
+    const clipartHeight = clipartWidth / aspect
+    const cx = (clipart.x / 100) * width
+    const cy = (clipart.y / 100) * height
+    ctx.translate(cx, cy)
+    ctx.rotate(((clipart.rotation ?? 0) * Math.PI) / 180)
+    ctx.drawImage(img, -clipartWidth / 2, -clipartHeight / 2, clipartWidth, clipartHeight)
+  }
+
+  ctx.restore()
+}
+
+function paintTextLayer(
+  ctx: CanvasRenderingContext2D,
+  text: TextLayer,
   width: number,
   height: number,
 ) {
-  for (const text of slide.texts.slice(0, 2)) {
-    const content = text.content?.trim()
-    if (!content) continue
-    const cx = (text.x / 100) * width
-    const cy = (text.y / 100) * height
-    const fontSize = Math.max(12, (text.size / 1000) * width * 0.85)
-    ctx.save()
-    ctx.fillStyle = text.color || "#ffffff"
-    ctx.textAlign =
-      text.align === "left"
-        ? "left"
-        : text.align === "right"
-          ? "right"
-          : "center"
-    ctx.textBaseline = "middle"
-    ctx.font = `600 ${fontSize}px ${text.font || "system-ui"}, system-ui, sans-serif`
-    const maxWidth = width * 0.82
-    const words = content.split(/\s+/)
-    const lines: string[] = []
-    let line = ""
-    for (const word of words) {
-      const next = line ? `${line} ${word}` : word
-      if (ctx.measureText(next).width > maxWidth && line) {
-        lines.push(line)
-        line = word
-      } else {
-        line = next
-      }
+  const content = text.content?.trim()
+  if (!content) return
+  const cx = (text.x / 100) * width
+  const cy = (text.y / 100) * height
+  const fontSize = Math.max(10, (text.size / 1000) * width)
+  const boxW = ((text.width || 80) / 100) * width
+  ctx.save()
+  ctx.translate(cx, cy)
+  ctx.rotate(((text.rotation ?? 0) * Math.PI) / 180)
+  ctx.fillStyle = text.color || "#ffffff"
+  ctx.textAlign =
+    text.align === "left"
+      ? "left"
+      : text.align === "right"
+        ? "right"
+        : "center"
+  ctx.textBaseline = "middle"
+  const weight = text.weight || 600
+  ctx.font = `${weight} ${fontSize}px ${text.font || "system-ui"}, system-ui, sans-serif`
+  const blur = Math.max(0, text.shadow ?? 0)
+  const ox = text.shadowOffsetX ?? 0
+  const oy = text.shadowOffsetY ?? (blur > 0 ? 4 : 0)
+  const shadowAlpha = Math.min(1, Math.max(0, (text.shadowOpacity ?? 40) / 100))
+  if (blur > 0 || ox !== 0 || oy !== 0) {
+    ctx.shadowColor = `rgba(0,0,0,${shadowAlpha})`
+    ctx.shadowBlur = blur * 0.35
+    ctx.shadowOffsetX = ox * 0.35
+    ctx.shadowOffsetY = oy * 0.35
+  }
+  if ((text.strokeWidth ?? 0) > 0) {
+    ctx.strokeStyle = text.strokeColor || "#000000"
+    ctx.lineWidth = text.strokeWidth
+    ctx.lineJoin = "round"
+  }
+  const maxWidth = boxW
+  const words = content.split(/\s+/)
+  const lines: string[] = []
+  let line = ""
+  for (const word of words) {
+    const next = line ? `${line} ${word}` : word
+    if (ctx.measureText(next).width > maxWidth && line) {
+      lines.push(line)
+      line = word
+    } else {
+      line = next
     }
-    if (line) lines.push(line)
-    const lineHeight = fontSize * 1.15
-    const startY = cy - ((lines.length - 1) * lineHeight) / 2
-    lines.slice(0, 3).forEach((entry, index) => {
-      ctx.fillText(entry, cx, startY + index * lineHeight, maxWidth)
-    })
+  }
+  if (line) lines.push(line)
+  const lineHeight = fontSize * 1.15
+  const startY = -((lines.length - 1) * lineHeight) / 2
+  lines.slice(0, 6).forEach((entry, index) => {
+    const y = startY + index * lineHeight
+    if ((text.strokeWidth ?? 0) > 0) ctx.strokeText(entry, 0, y, maxWidth)
+    ctx.fillText(entry, 0, y, maxWidth)
+  })
+  ctx.restore()
+}
+
+function paintLens(
+  ctx: CanvasRenderingContext2D,
+  lens: LensLayer,
+  width: number,
+  height: number,
+  base: HTMLCanvasElement,
+  images: Map<string, HTMLImageElement>,
+) {
+  const lensW = (lens.width / 100) * width
+  const lensH = (lens.height / 100) * height
+  if (lensW < 2 || lensH < 2) return
+  const cx = (lens.x / 100) * width
+  const cy = (lens.y / 100) * height
+  const zoom = Math.max(1, lens.zoom || 2)
+  const isLocked = lens.imageLocked || Boolean(lens.lockedImageId)
+  const anchorX = isLocked ? lens.lockedX : lens.x
+  const anchorY = isLocked ? lens.lockedY : lens.y
+  const contentCx = (anchorX / 100) * width
+  const contentCy = (anchorY / 100) * height
+  const radius =
+    ((lens.cornerRadius ?? 20) / 100) * (Math.min(lensW, lensH) / 2)
+
+  ctx.save()
+  ctx.translate(cx, cy)
+  ctx.rotate(((lens.rotation ?? 0) * Math.PI) / 180)
+  if ((lens.shadow ?? 0) > 0) {
+    ctx.shadowColor = "rgba(0,0,0,0.45)"
+    ctx.shadowBlur = lens.shadow
+    ctx.shadowOffsetY = lens.shadow * 0.35
+    ctx.fillStyle = "#000"
+    roundRect(ctx, -lensW / 2, -lensH / 2, lensW, lensH, radius)
+    ctx.fill()
+    ctx.shadowColor = "transparent"
+  }
+  roundRect(ctx, -lensW / 2, -lensH / 2, lensW, lensH, radius)
+  ctx.clip()
+  const locked = lens.lockedImageId ? images.get(lens.lockedImageId) : undefined
+  ctx.translate(-lensW / 2, -lensH / 2)
+  ctx.translate(lensW / 2 - contentCx * zoom, lensH / 2 - contentCy * zoom)
+  ctx.scale(zoom, zoom)
+  if (isLocked && locked) {
+    ctx.drawImage(locked, 0, 0, width, height)
+  } else {
+    ctx.drawImage(base, 0, 0)
+  }
+  ctx.restore()
+
+  if ((lens.borderWidth ?? 0) > 0) {
+    ctx.save()
+    ctx.translate(cx, cy)
+    ctx.rotate(((lens.rotation ?? 0) * Math.PI) / 180)
+    ctx.strokeStyle = lens.borderColor || "#ffffff"
+    ctx.lineWidth = Math.max(1, lens.borderWidth)
+    roundRect(ctx, -lensW / 2, -lensH / 2, lensW, lensH, radius)
+    ctx.stroke()
     ctx.restore()
   }
 }
 
-function paintSlide(
+function paintSlideFallback(
   ctx: CanvasRenderingContext2D,
   slide: Slide,
   width: number,
   height: number,
   images: Map<string, HTMLImageElement>,
   designScale = 1,
+  allSlides: Slide[] = [slide],
+  slideIndex = 0,
 ) {
   paintBackground(ctx, slide.background, width, height, slide.templateId, images)
-  paintDevice(ctx, slide, width, height, images, designScale)
-  paintTexts(ctx, slide, width, height)
+
+  const guests = guestFramesForSlide(allSlides, slideIndex, width, height)
+  const guestCliparts = guestClipartsForSlide(
+    allSlides,
+    slideIndex,
+    width,
+    height,
+  )
+  const framesById = new Map<string, Frame>(
+    [
+      ...slide.frames,
+      ...guests.map((guest) => guest.frame),
+    ].map((frame) => [frame.id, frame]),
+  )
+  const clipartsById = new Map<string, ClipartLayer>(
+    [
+      ...slide.cliparts,
+      ...guestCliparts.map((guest) => guest.clipart),
+    ].map((clipart) => [clipart.id, clipart]),
+  )
+  const textsById = new Map(slide.texts.map((text) => [text.id, text]))
+  const order = normalizeLayerOrder(slide)
+  const extraIds = [
+    ...framesById.keys(),
+    ...clipartsById.keys(),
+    ...textsById.keys(),
+  ].filter((id) => !order.includes(id))
+
+  const paintNonLens = (target: CanvasRenderingContext2D) => {
+    paintBackground(
+      target,
+      slide.background,
+      width,
+      height,
+      slide.templateId,
+      images,
+    )
+    for (const id of [...order, ...extraIds]) {
+      const frame = framesById.get(id)
+      if (frame) {
+        paintFrame(target, frame, width, height, images, designScale)
+        continue
+      }
+      const clipart = clipartsById.get(id)
+      if (clipart) {
+        const attached = clipart.attachedFrameId
+          ? (framesById.get(clipart.attachedFrameId) ?? null)
+          : null
+        paintClipart(target, clipart, attached, width, height, images)
+        continue
+      }
+      const text = textsById.get(id)
+      if (text) paintTextLayer(target, text, width, height)
+    }
+  }
+
+  const base = document.createElement("canvas")
+  base.width = width
+  base.height = height
+  const baseCtx = base.getContext("2d")
+  if (baseCtx) paintNonLens(baseCtx)
+
+  for (const id of [...order, ...extraIds]) {
+    const lens = (slide.lenses ?? []).find((item) => item.id === id)
+    if (lens) {
+      paintLens(ctx, lens, width, height, base, images)
+      continue
+    }
+    const frame = framesById.get(id)
+    if (frame) {
+      paintFrame(ctx, frame, width, height, images, designScale)
+      continue
+    }
+    const clipart = clipartsById.get(id)
+    if (clipart) {
+      const attached = clipart.attachedFrameId
+        ? (framesById.get(clipart.attachedFrameId) ?? null)
+        : null
+      paintClipart(ctx, clipart, attached, width, height, images)
+      continue
+    }
+    const text = textsById.get(id)
+    if (text) paintTextLayer(ctx, text, width, height)
+  }
 }
 
 function previewSlides(project: Project): Slide[] {
@@ -529,9 +746,12 @@ export async function renderProjectPreviewCanvas(
 
   if (!slides.length) return canvas
 
-  slides.forEach((slide, index) => {
+  const assetUrls = options.assetUrls ?? {}
+  for (const [index, slide] of slides.entries()) {
     let col: number
     let row: number
+    let x: number
+    let y: number
     if (useLandGrid) {
       row = Math.floor(index / cols)
       col = index % cols
@@ -540,27 +760,37 @@ export async function renderProjectPreviewCanvas(
       if (inRow < cols) {
         col = index - rowStart
         const offset = ((cols - inRow) * (slideWidth + SLIDE_GAP)) / 2
-        const x = PAD + offset + col * (slideWidth + SLIDE_GAP)
-        const y = PAD + row * (slideH + SLIDE_GAP)
-        paintPreviewCell(ctx, slide, x, y, slideWidth, slideH, images, designScale)
-        return
+        x = PAD + offset + col * (slideWidth + SLIDE_GAP)
+        y = PAD + row * (slideH + SLIDE_GAP)
+      } else {
+        x = PAD + col * (slideWidth + SLIDE_GAP)
+        y = PAD + row * (slideH + SLIDE_GAP)
       }
     } else if (layout === "portrait") {
-      col = 0
-      row = index
+      x = PAD
+      y = PAD + index * (slideH + SLIDE_GAP)
     } else {
-      col = index
-      row = 0
+      x = PAD + index * (slideWidth + SLIDE_GAP)
+      y = PAD
     }
-    const x = PAD + col * (slideWidth + SLIDE_GAP)
-    const y = PAD + row * (slideH + SLIDE_GAP)
-    paintPreviewCell(ctx, slide, x, y, slideWidth, slideH, images, designScale)
-  })
+    await paintPreviewCell(
+      ctx,
+      slide,
+      x,
+      y,
+      slideWidth,
+      slideH,
+      images,
+      designScale,
+      assetUrls,
+      project.slides,
+    )
+  }
 
   return canvas
 }
 
-function paintPreviewCell(
+async function paintPreviewCell(
   ctx: CanvasRenderingContext2D,
   slide: Slide,
   x: number,
@@ -569,13 +799,41 @@ function paintPreviewCell(
   slideH: number,
   images: Map<string, HTMLImageElement>,
   designScale = 1,
+  assetUrls: Record<string, string> = {},
+  allSlides: Slide[] = [slide],
 ) {
   ctx.save()
   ctx.beginPath()
   roundRect(ctx, x, y, slideWidth, slideH, 10)
   ctx.clip()
   ctx.translate(x, y)
-  paintSlide(ctx, slide, slideWidth, slideH, images, designScale)
+  const slideIndex = Math.max(
+    0,
+    allSlides.findIndex((entry) => entry.id === slide.id),
+  )
+  try {
+    const captured = await captureSlideToCanvas(
+      slide,
+      slideIndex,
+      allSlides,
+      slideWidth,
+      slideH,
+      assetUrls,
+      true,
+    )
+    ctx.drawImage(captured, 0, 0, slideWidth, slideH)
+  } catch {
+    paintSlideFallback(
+      ctx,
+      slide,
+      slideWidth,
+      slideH,
+      images,
+      designScale,
+      allSlides,
+      slideIndex,
+    )
+  }
   ctx.restore()
 
   ctx.strokeStyle = "rgba(255,255,255,0.08)"

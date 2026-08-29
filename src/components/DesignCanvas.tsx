@@ -6,26 +6,25 @@ import {
   type DragEvent,
   type PointerEvent,
 } from "react"
-import { STORE_TARGETS, deviceSpec, layerZIndex } from "../constants"
+import { STORE_TARGETS, deviceSpec } from "../constants"
 import {
   clipartOverflow,
-  continuityClipartIds,
-  continuityClipartItems,
-  continuityFrameIds,
-  continuityItems,
   findClipartOwner,
   findFrameOwner,
+  findLensOwner,
+  findTextOwner,
   frameOverflow,
+  guestClipartsForSlide,
+  guestFramesForSlide,
+  guestIdsForSlide,
+  guestLensesForSlide,
+  guestTextsForSlide,
 } from "../overflow"
 import { useProject } from "../project-store"
 import type { FrameScreenSlot, Slide } from "../types"
 import { Artboard } from "./Artboard"
 import { ComponentMenu, menuLimits } from "./ComponentMenu"
-import {
-  ContinuityClipartSpan,
-  ContinuitySpan,
-  SLIDE_GAP_PX,
-} from "./ContinuitySpan"
+import { SLIDE_GAP_PX } from "./ContinuitySpan"
 import { screenshotDropTargetFromEvent } from "./ScreenshotDropZone"
 import {
   resizeFactorFromCenter,
@@ -87,6 +86,8 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
     reorderSlides,
     setFrameOverflow,
     setClipartOverflow,
+    setTextOverflow,
+    setLensOverflow,
     canvasFocused,
   } = useProject()
   const target = STORE_TARGETS[project.targetId]
@@ -115,6 +116,15 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
     activeSlide,
     selectedKind,
     activeSlide.selectedId,
+    guestIdsForSlide(
+      project.slides,
+      Math.max(
+        0,
+        project.slides.findIndex((entry) => entry.id === activeSlide.id),
+      ),
+      target.width,
+      target.height,
+    ),
   )
   const viewActiveFrame =
     viewProject.slides
@@ -133,31 +143,8 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
         : { left: false, right: false, top: false, bottom: false }
   const previewSlideWidth = target.width * scale
   const previewSlideHeight = target.height * scale
-  const spanningCliparts = continuityClipartItems(
-    viewProject.slides,
-    target.width,
-    target.height,
-  )
-  const spanningFrames = continuityItems(
-    viewProject.slides,
-    target.width,
-    target.height,
-  )
-  const hiddenFrameIds = continuityFrameIds(spanningFrames)
-  const attachedToSpanningIds = new Set(
-    spanningFrames.flatMap((item) => {
-      const owner = viewProject.slides.find(
-        (entry) => entry.id === item.ownerSlideId,
-      )
-      return (owner?.cliparts ?? [])
-        .filter((clipart) => clipart.attachedFrameId === item.frame.id)
-        .map((clipart) => clipart.id)
-    }),
-  )
-  const hiddenClipartIds = new Set([
-    ...continuityClipartIds(spanningCliparts),
-    ...attachedToSpanningIds,
-  ])
+  const stridePercent =
+    100 + (SLIDE_GAP_PX / Math.max(1, previewSlideWidth)) * 100
 
   useLayoutEffect(() => {
     const el = viewportRef.current
@@ -241,8 +228,8 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
     const owner = findFrameOwner(project.slides, frameId) ?? slide
     const frame = owner.frames.find((item) => item.id === frameId)
     if (!frame) return
-    selectSlide(owner.id)
-    selectFrame(owner.id, frameId)
+    selectSlide(slide.id)
+    selectFrame(slide.id, frameId)
     const preview =
       event.currentTarget.closest("[data-preview-frame]") ??
       document.querySelector(
@@ -282,7 +269,8 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
     }
     event.preventDefault()
     event.stopPropagation()
-    const text = slide.texts.find((item) => item.id === textId)
+    const owner = findTextOwner(project.slides, textId) ?? slide
+    const text = owner.texts.find((item) => item.id === textId)
     if (!text) return
     selectSlide(slide.id)
     selectText(slide.id, textId)
@@ -296,7 +284,7 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
       const rect = preview.getBoundingClientRect()
       const x = origin.x + ((moveEvent.clientX - startX) / rect.width) * 100
       const y = origin.y + ((moveEvent.clientY - startY) / rect.height) * 100
-      updateText(slide.id, textId, {
+      updateText(owner.id, textId, {
         x: Math.min(130, Math.max(-30, x)),
         y: Math.min(130, Math.max(-30, y)),
       })
@@ -328,8 +316,8 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
     const owner = findClipartOwner(project.slides, clipartId) ?? slide
     const clipart = owner.cliparts.find((item) => item.id === clipartId)
     if (!clipart) return
-    selectSlide(owner.id)
-    selectClipart(owner.id, clipartId)
+    selectSlide(slide.id)
+    selectClipart(slide.id, clipartId)
     const preview =
       event.currentTarget.closest("[data-preview-frame]") ??
       document.querySelector(
@@ -400,8 +388,8 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
     const owner = findFrameOwner(project.slides, frameId) ?? slide
     const frame = owner.frames.find((item) => item.id === frameId)
     if (!frame) return
-    selectSlide(owner.id)
-    selectFrame(owner.id, frameId)
+    selectSlide(slide.id)
+    selectFrame(slide.id, frameId)
     const preview =
       event.currentTarget.closest("[data-preview-frame]") ??
       document.querySelector(
@@ -455,7 +443,8 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
   ) => {
     event.preventDefault()
     event.stopPropagation()
-    const text = slide.texts.find((item) => item.id === textId)
+    const owner = findTextOwner(project.slides, textId) ?? slide
+    const text = owner.texts.find((item) => item.id === textId)
     if (!text) return
     selectSlide(slide.id)
     selectText(slide.id, textId)
@@ -482,11 +471,11 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
         center.y,
       )
       if (horizontal) {
-        updateText(slide.id, textId, {
+        updateText(owner.id, textId, {
           width: Math.min(90, Math.max(20, originWidth * factor)),
         })
       } else {
-        updateText(slide.id, textId, {
+        updateText(owner.id, textId, {
           size: Math.min(120, Math.max(24, Math.round(originSize * factor))),
           width: Math.min(90, Math.max(20, originWidth * factor)),
         })
@@ -512,8 +501,8 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
     const owner = findClipartOwner(project.slides, clipartId) ?? slide
     const clipart = owner.cliparts.find((item) => item.id === clipartId)
     if (!clipart) return
-    selectSlide(owner.id)
-    selectClipart(owner.id, clipartId)
+    selectSlide(slide.id)
+    selectClipart(slide.id, clipartId)
     const preview =
       event.currentTarget.closest("[data-preview-frame]") ??
       document.querySelector(
@@ -584,7 +573,8 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
     }
     event.preventDefault()
     event.stopPropagation()
-    const lens = (slide.lenses ?? []).find((item) => item.id === lensId)
+    const owner = findLensOwner(project.slides, lensId) ?? slide
+    const lens = (owner.lenses ?? []).find((item) => item.id === lensId)
     if (!lens) return
     selectSlide(slide.id)
     selectLens(slide.id, lensId)
@@ -602,7 +592,7 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
       const rect = preview.getBoundingClientRect()
       const x = origin.x + ((moveEvent.clientX - startX) / rect.width) * 100
       const y = origin.y + ((moveEvent.clientY - startY) / rect.height) * 100
-      updateLens(slide.id, lensId, {
+      updateLens(owner.id, lensId, {
         x: Math.min(110, Math.max(-10, x)),
         y: Math.min(110, Math.max(-10, y)),
       })
@@ -625,7 +615,8 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
   ) => {
     event.preventDefault()
     event.stopPropagation()
-    const lens = (slide.lenses ?? []).find((item) => item.id === lensId)
+    const owner = findLensOwner(project.slides, lensId) ?? slide
+    const lens = (owner.lenses ?? []).find((item) => item.id === lensId)
     if (!lens) return
     selectSlide(slide.id)
     selectLens(slide.id, lensId)
@@ -654,18 +645,18 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
         center.y,
       )
       if (horizontal) {
-        updateLens(slide.id, lensId, {
+        updateLens(owner.id, lensId, {
           width: Math.min(100, Math.max(6, originWidth * factor)),
         })
         return
       }
       if (vertical) {
-        updateLens(slide.id, lensId, {
+        updateLens(owner.id, lensId, {
           height: Math.min(100, Math.max(6, originHeight * factor)),
         })
         return
       }
-      updateLens(slide.id, lensId, {
+      updateLens(owner.id, lensId, {
         width: Math.min(100, Math.max(6, originWidth * factor)),
         height: Math.min(100, Math.max(6, originHeight * factor)),
       })
@@ -884,41 +875,55 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
                             width={target.width}
                             height={target.height}
                             assetUrls={assetUrls}
-                            guestFrames={[]}
-                            guestCliparts={[]}
-                            hideFrameIds={hiddenFrameIds}
-                            hideClipartIds={hiddenClipartIds}
+                            guestFrames={guestFramesForSlide(
+                              viewProject.slides,
+                              index,
+                              target.width,
+                              target.height,
+                              stridePercent,
+                            )}
+                            guestCliparts={guestClipartsForSlide(
+                              viewProject.slides,
+                              index,
+                              target.width,
+                              target.height,
+                              stridePercent,
+                            )}
+                            guestTexts={guestTextsForSlide(
+                              viewProject.slides,
+                              index,
+                              target.width,
+                              target.height,
+                              stridePercent,
+                            )}
+                            guestLenses={guestLensesForSlide(
+                              viewProject.slides,
+                              index,
+                              target.width,
+                              target.height,
+                              stridePercent,
+                            )}
                             interactive
                             canvasScale={scale}
                             selectedFrameId={slide.selectedId}
-                            onFramePointerDown={(frameId, event) => {
-                              const owner =
-                                findFrameOwner(project.slides, frameId) ?? slide
-                              startFrameDrag(owner, frameId, event)
-                            }}
+                            onFramePointerDown={(frameId, event) =>
+                              startFrameDrag(slide, frameId, event)
+                            }
                             onTextPointerDown={(textId, event) =>
                               startTextDrag(slide, textId, event)
                             }
-                            onClipartPointerDown={(clipartId, event) => {
-                              const owner =
-                                findClipartOwner(project.slides, clipartId) ??
-                                slide
-                              startClipartDrag(owner, clipartId, event)
-                            }}
-                            onFrameResizeStart={(frameId, handle, event) => {
-                              const owner =
-                                findFrameOwner(project.slides, frameId) ?? slide
-                              startFrameResize(owner, frameId, handle, event)
-                            }}
+                            onClipartPointerDown={(clipartId, event) =>
+                              startClipartDrag(slide, clipartId, event)
+                            }
+                            onFrameResizeStart={(frameId, handle, event) =>
+                              startFrameResize(slide, frameId, handle, event)
+                            }
                             onTextResizeStart={(textId, handle, event) =>
                               startTextResize(slide, textId, handle, event)
                             }
-                            onClipartResizeStart={(clipartId, handle, event) => {
-                              const owner =
-                                findClipartOwner(project.slides, clipartId) ??
-                                slide
-                              startClipartResize(owner, clipartId, handle, event)
-                            }}
+                            onClipartResizeStart={(clipartId, handle, event) =>
+                              startClipartResize(slide, clipartId, handle, event)
+                            }
                             onLensPointerDown={(lensId, event) =>
                               startLensDrag(slide, lensId, event)
                             }
@@ -1048,112 +1053,6 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
                 )
               })}
 
-              {spanningFrames.map((item) => {
-                const ownerSlide =
-                  viewProject.slides.find(
-                    (entry) => entry.id === item.ownerSlideId,
-                  ) ??
-                  viewProject.slides.find(
-                    (entry) => entry.id === activeSlide.id,
-                  ) ??
-                  viewProject.slides[0]
-                const designOwner =
-                  project.slides.find(
-                    (entry) => entry.id === item.ownerSlideId,
-                  ) ?? activeSlide
-                const attachedCliparts = ownerSlide.cliparts
-                  .filter(
-                    (clipart) => clipart.attachedFrameId === item.frame.id,
-                  )
-                  .map((clipart) => ({
-                    clipart,
-                    imageUrl: assetUrls[clipart.assetId] ?? null,
-                    selected:
-                      canvasFocused && designOwner.selectedId === clipart.id,
-                    zIndex: layerZIndex(designOwner, clipart.id),
-                  }))
-                return (
-                  <ContinuitySpan
-                    key={item.frame.id}
-                    frame={item.frame}
-                    attachedCliparts={attachedCliparts}
-                    ownerSlideIndex={item.ownerSlideIndex}
-                    clipIndices={item.clipIndices}
-                    artboardWidth={target.width}
-                    artboardHeight={target.height}
-                    previewSlideWidth={previewSlideWidth}
-                    previewSlideHeight={previewSlideHeight}
-                    scale={scale}
-                    screenshotUrl={
-                      item.frame.screenshotId
-                        ? (assetUrls[item.frame.screenshotId] ?? null)
-                        : null
-                    }
-                    screenshotUrlB={
-                      item.frame.screenshotIdB
-                        ? (assetUrls[item.frame.screenshotIdB] ?? null)
-                        : null
-                    }
-                    selected={
-                      canvasFocused &&
-                      designOwner.selectedId === item.frame.id
-                    }
-                    zIndex={layerZIndex(designOwner, item.frame.id)}
-                    interactive
-                    onPointerDown={(frameId, event) =>
-                      startFrameDrag(designOwner, frameId, event)
-                    }
-                    onResizeStart={(frameId, handle, event) =>
-                      startFrameResize(designOwner, frameId, handle, event)
-                    }
-                    onUploadClick={(frameId, slot) =>
-                      onUploadClick(frameId, designOwner.id, slot)
-                    }
-                    onClipartPointerDown={(clipartId, event) =>
-                      startClipartDrag(designOwner, clipartId, event)
-                    }
-                    onClipartResizeStart={(clipartId, handle, event) =>
-                      startClipartResize(designOwner, clipartId, handle, event)
-                    }
-                  />
-                )
-              })}
-
-              {spanningCliparts.map((item) => {
-                const designOwner =
-                  project.slides.find(
-                    (entry) => entry.id === item.ownerSlideId,
-                  ) ?? activeSlide
-                return (
-                  <ContinuityClipartSpan
-                    key={item.clipart.id}
-                    clipart={item.clipart}
-                    ownerSlideIndex={item.ownerSlideIndex}
-                    clipIndices={item.clipIndices}
-                    artboardWidth={target.width}
-                    artboardHeight={target.height}
-                    previewSlideWidth={previewSlideWidth}
-                    previewSlideHeight={previewSlideHeight}
-                    scale={scale}
-                    imageUrl={
-                      assetUrls[item.clipart.assetId] ?? null
-                    }
-                    selected={
-                      canvasFocused &&
-                      designOwner.selectedId === item.clipart.id
-                    }
-                    zIndex={layerZIndex(designOwner, item.clipart.id)}
-                    interactive
-                    onPointerDown={(clipartId, event) =>
-                      startClipartDrag(designOwner, clipartId, event)
-                    }
-                    onResizeStart={(clipartId, handle, event) =>
-                      startClipartResize(designOwner, clipartId, handle, event)
-                    }
-                  />
-                )
-              })}
-
               {canvasFocused && hasComponentSelection ? (
                 <ComponentMenu
                   kind={selectedKind}
@@ -1263,39 +1162,77 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
                     selectedKind === "clipart" && activeClipart
                       ? () =>
                           setClipartOverflow(
-                            activeSlide.id,
+                            findClipartOwner(project.slides, activeClipart.id)
+                              ?.id ?? activeSlide.id,
                             activeClipart.id,
                             "cut",
                             activeEdges,
                           )
-                      : activeFrame && selectedKind === "frame"
+                      : selectedKind === "text" && activeText
                         ? () =>
-                            setFrameOverflow(
-                              activeSlide.id,
-                              activeFrame.id,
+                            setTextOverflow(
+                              findTextOwner(project.slides, activeText.id)?.id ??
+                                activeSlide.id,
+                              activeText.id,
                               "cut",
-                              activeEdges,
                             )
-                        : undefined
+                        : selectedKind === "lens" && activeLens
+                          ? () =>
+                              setLensOverflow(
+                                findLensOwner(project.slides, activeLens.id)
+                                  ?.id ?? activeSlide.id,
+                                activeLens.id,
+                                "cut",
+                              )
+                          : activeFrame && selectedKind === "frame"
+                            ? () =>
+                                setFrameOverflow(
+                                  findFrameOwner(project.slides, activeFrame.id)
+                                    ?.id ?? activeSlide.id,
+                                  activeFrame.id,
+                                  "cut",
+                                  activeEdges,
+                                )
+                            : undefined
                   }
                   onContinue={
                     selectedKind === "clipart" && activeClipart
                       ? () =>
                           setClipartOverflow(
-                            activeSlide.id,
+                            findClipartOwner(project.slides, activeClipart.id)
+                              ?.id ?? activeSlide.id,
                             activeClipart.id,
                             "continue",
                             activeEdges,
                           )
-                      : activeFrame && selectedKind === "frame"
+                      : selectedKind === "text" && activeText
                         ? () =>
-                            setFrameOverflow(
-                              activeSlide.id,
-                              activeFrame.id,
+                            setTextOverflow(
+                              findTextOwner(project.slides, activeText.id)?.id ??
+                                activeSlide.id,
+                              activeText.id,
                               "continue",
-                              activeEdges,
                             )
-                        : undefined
+                        : selectedKind === "lens" && activeLens
+                          ? () =>
+                              setLensOverflow(
+                                findLensOwner(project.slides, activeLens.id)
+                                  ?.id ?? activeSlide.id,
+                                activeLens.id,
+                                "continue",
+                              )
+                          : activeFrame && selectedKind === "frame"
+                            ? () =>
+                                setFrameOverflow(
+                                  findFrameOwner(
+                                    project.slides,
+                                    activeFrame.id,
+                                  )?.id ?? activeSlide.id,
+                                  activeFrame.id,
+                                  "continue",
+                                  activeEdges,
+                                )
+                            : undefined
                   }
                 />
               ) : null}

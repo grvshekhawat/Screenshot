@@ -156,9 +156,10 @@ export function PlacedClipart({
         height: clipartHeight,
         transform: `rotate(${clipart.rotation}deg)`,
         transformOrigin: "center center",
+        isolation: "isolate",
+        zIndex,
         cursor: interactive ? "grab" : "default",
         touchAction: interactive ? "none" : undefined,
-        zIndex,
         outline:
           !forExport && selected
             ? `${Math.max(2, artboardWidth * 0.003)}px solid #8b5cf6`

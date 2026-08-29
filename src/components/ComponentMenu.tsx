@@ -68,16 +68,17 @@ export function ComponentMenu({
 }: ComponentMenuProps) {
   const [copyOpen, setCopyOpen] = useState(false)
   const copyRef = useRef<HTMLDivElement>(null)
-  const showContinuity =
-    ((kind === "frame" && frame) || (kind === "clipart" && clipart)) &&
-    onCut &&
-    onContinue
+  const showContinuity = Boolean(onCut && onContinue)
   const continuityMode =
     kind === "clipart" && clipart
       ? clipart.overflow
       : kind === "frame" && frame
         ? frame.overflow
-        : "cut"
+        : kind === "text" && text
+          ? text.overflow
+          : kind === "lens" && lens
+            ? lens.overflow
+            : "cut"
   const otherSlides = slides
     .map((slide, index) => ({ slide, index }))
     .filter(({ slide }) => slide.id !== currentSlideId)
@@ -207,8 +208,13 @@ export function ComponentMenu({
   )
 }
 
-export function menuLimits(slide: Slide, kind: SelectedKind, id: string) {
-  const move = layerMoveLimits(slide, id)
+export function menuLimits(
+  slide: Slide,
+  kind: SelectedKind,
+  id: string,
+  extraIds: string[] = [],
+) {
+  const move = layerMoveLimits(slide, id, extraIds)
   if (kind === "frame") {
     return {
       canDuplicate: slide.frames.length < MAX_FRAMES,

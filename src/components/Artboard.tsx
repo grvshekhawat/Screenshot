@@ -1,6 +1,11 @@
-import { useEffect, type PointerEvent } from "react"
-import { layerZIndex, splitBackgroundCss, templateSplit, textShadowCss } from "../constants"
-import type { GuestClipart, GuestFrame } from "../overflow"
+import { useEffect, type PointerEvent, type ReactNode } from "react"
+import { layerZIndex, normalizeLayerOrder, splitBackgroundCss, templateSplit, textShadowCss } from "../constants"
+import type {
+  GuestClipart,
+  GuestFrame,
+  GuestLens,
+  GuestText,
+} from "../overflow"
 import type {
   Frame,
   FrameScreenSlot,
@@ -21,6 +26,8 @@ type ArtboardProps = {
   assetUrls: Record<string, string>
   guestFrames?: GuestFrame[]
   guestCliparts?: GuestClipart[]
+  guestTexts?: GuestText[]
+  guestLenses?: GuestLens[]
   hideFrameIds?: Set<string>
   hideClipartIds?: Set<string>
   /** When false, skip lenses (used while rendering lens magnification). */
@@ -71,34 +78,6 @@ type ArtboardProps = {
   onReady?: () => void
 }
 
-function deviceLayerZIndex(
-  slide: Slide,
-  slides: Slide[] | undefined,
-  originSlideId: string,
-  frameId: string,
-  isGuest: boolean,
-): number {
-  if (isGuest && slides) {
-    const owner = slides.find((entry) => entry.id === originSlideId)
-    if (owner) return layerZIndex(owner, frameId)
-  }
-  return layerZIndex(slide, frameId)
-}
-
-function clipartLayerZIndex(
-  slide: Slide,
-  slides: Slide[] | undefined,
-  originSlideId: string,
-  clipartId: string,
-  isGuest: boolean,
-): number {
-  if (isGuest && slides) {
-    const owner = slides.find((entry) => entry.id === originSlideId)
-    if (owner) return layerZIndex(owner, clipartId)
-  }
-  return layerZIndex(slide, clipartId)
-}
-
 export function Artboard({
   slide,
   slides,
@@ -107,6 +86,8 @@ export function Artboard({
   assetUrls,
   guestFrames = [],
   guestCliparts = [],
+  guestTexts = [],
+  guestLenses = [],
   hideFrameIds,
   hideClipartIds,
   showLenses = true,
@@ -127,6 +108,13 @@ export function Artboard({
   onReady,
 }: ArtboardProps) {
   const fontScale = width / 1320
+  const extraIds = [
+    ...guestFrames.map((guest) => guest.frame.id),
+    ...guestCliparts.map((guest) => guest.clipart.id),
+    ...guestTexts.map((guest) => guest.text.id),
+    ...guestLenses.map((guest) => guest.lens.id),
+  ]
+  const order = normalizeLayerOrder(slide, extraIds)
   const placed: GuestFrame[] = [
     ...slide.frames
       .filter((frame) => !hideFrameIds?.has(frame.id))
@@ -210,6 +198,7 @@ export function Artboard({
         <img
           src={bgImageUrl}
           alt=""
+          crossOrigin={bgImageUrl.startsWith("http") ? "anonymous" : undefined}
           style={{
             position: "absolute",
             inset: 0,
@@ -239,7 +228,70 @@ export function Artboard({
         />
       ) : null}
 
-      {placed.map(({ frame, originSlideId, isGuest }) => (
+      {stackLayers()}
+    </div>
+  )
+
+  function stackLayers() {
+    const z = (id: string) => layerZIndex(slide, id, extraIds)
+    const framesById = new Map(placed.map((item) => [item.frame.id, item.frame]))
+    const clipartItems = [
+      ...slide.cliparts
+        .filter((clipart) => !hideClipartIds?.has(clipart.id))
+        .map((clipart) => ({
+          clipart,
+          frame: clipart.attachedFrameId
+            ? (framesById.get(clipart.attachedFrameId) ??
+              slide.frames.find((item) => item.id === clipart.attachedFrameId) ??
+              null)
+            : null,
+          originSlideId: slide.id,
+          isGuest: false as const,
+        })),
+      ...guestCliparts
+        .filter((guest) => !hideClipartIds?.has(guest.clipart.id))
+        .map((guest) => ({
+          clipart: guest.clipart,
+          frame: guest.clipart.attachedFrameId
+            ? (framesById.get(guest.clipart.attachedFrameId) ?? null)
+            : null,
+          originSlideId: guest.originSlideId,
+          isGuest: true as const,
+        })),
+    ]
+    const textItems = [
+      ...slide.texts.map((text) => ({
+        text,
+        originSlideId: slide.id,
+      })),
+      ...guestTexts.map((guest) => ({
+        text: guest.text,
+        originSlideId: guest.originSlideId,
+      })),
+    ]
+    const lensItems = showLenses
+      ? [
+          ...(slide.lenses ?? []).map((lens) => ({
+            lens,
+            originSlide: slide,
+            originSlideId: slide.id,
+          })),
+          ...guestLenses.map((guest) => ({
+            lens: guest.source,
+            originSlide:
+              slides?.find((entry) => entry.id === guest.originSlideId) ??
+              slide,
+            originSlideId: guest.originSlideId,
+            offsetX:
+              guest.lens.x - guest.source.x,
+          })),
+        ]
+      : []
+
+    const nodes = new Map<string, ReactNode>()
+    for (const { frame, originSlideId, isGuest } of placed) {
+      nodes.set(
+        frame.id,
         <PlacedDevice
           key={`${originSlideId}-${frame.id}${isGuest ? "-guest" : ""}`}
           frame={frame}
@@ -256,13 +308,7 @@ export function Artboard({
               : null
           }
           selected={selectedFrameId === frame.id}
-          zIndex={deviceLayerZIndex(
-            slide,
-            slides,
-            originSlideId,
-            frame.id,
-            Boolean(isGuest),
-          )}
+          zIndex={z(frame.id)}
           isGuest={Boolean(isGuest)}
           interactive={interactive}
           forExport={forExport}
@@ -270,41 +316,12 @@ export function Artboard({
           onPointerDown={onFramePointerDown}
           onResizeStart={onFrameResizeStart}
           onUploadClick={onFrameUploadClick}
-        />
-      ))}
-
-      {([
-        ...slide.cliparts
-          .filter((clipart) => !hideClipartIds?.has(clipart.id))
-          .filter((clipart) => {
-            if (!clipart.attachedFrameId) return true
-            // Attached to a local (non-hidden) frame — drawn with that phone below
-            return !slide.frames.some(
-              (frame) =>
-                frame.id === clipart.attachedFrameId &&
-                !hideFrameIds?.has(frame.id),
-            )
-          })
-          .map((clipart) => ({
-            clipart,
-            frame: clipart.attachedFrameId
-              ? (slide.frames.find(
-                  (item) => item.id === clipart.attachedFrameId,
-                ) ?? null)
-              : null,
-            originSlideId: slide.id,
-            isGuest: false as const,
-          })),
-        ...guestCliparts
-          .filter((guest) => !hideClipartIds?.has(guest.clipart.id))
-          .filter((guest) => !guest.clipart.attachedFrameId)
-          .map((guest) => ({
-            clipart: guest.clipart,
-            frame: null as Frame | null,
-            originSlideId: guest.originSlideId,
-            isGuest: true as const,
-          })),
-      ]).map(({ clipart, frame, originSlideId, isGuest }) => (
+        />,
+      )
+    }
+    for (const { clipart, frame, originSlideId, isGuest } of clipartItems) {
+      nodes.set(
+        clipart.id,
         <PlacedClipart
           key={`${originSlideId}-${clipart.id}${isGuest ? "-guest" : ""}`}
           clipart={clipart}
@@ -313,13 +330,7 @@ export function Artboard({
           artboardHeight={height}
           imageUrl={assetUrls[clipart.assetId] ?? null}
           selected={selectedFrameId === clipart.id}
-          zIndex={clipartLayerZIndex(
-            slide,
-            slides,
-            originSlideId,
-            clipart.id,
-            Boolean(isGuest),
-          )}
+          zIndex={z(clipart.id)}
           interactive={interactive}
           forExport={forExport}
           canvasScale={canvasScale}
@@ -331,83 +342,75 @@ export function Artboard({
                   onClipartAspectChange?.(clipartId, aspect)
               : undefined
           }
-        />
-      ))}
-
-      {slide.frames
-        .filter((frame) => !hideFrameIds?.has(frame.id))
-        .flatMap((frame) =>
-          slide.cliparts
-            .filter(
-              (clipart) =>
-                clipart.attachedFrameId === frame.id &&
-                !hideClipartIds?.has(clipart.id),
-            )
-            .map((clipart) => (
-              <PlacedClipart
-                key={`attached-${frame.id}-${clipart.id}`}
-                clipart={clipart}
-                frame={frame}
-                artboardWidth={width}
-                artboardHeight={height}
-                imageUrl={assetUrls[clipart.assetId] ?? null}
-                selected={selectedFrameId === clipart.id}
-                zIndex={layerZIndex(slide, clipart.id)}
-                interactive={interactive}
-                forExport={forExport}
-                canvasScale={canvasScale}
-                onPointerDown={onClipartPointerDown}
-                onResizeStart={onClipartResizeStart}
-                onAspectChange={
-                  interactive && !forExport
-                    ? (clipartId, aspect) =>
-                        onClipartAspectChange?.(clipartId, aspect)
-                    : undefined
-                }
-              />
-            )),
-        )}
-
-      {slide.texts.map((text) => (
+        />,
+      )
+    }
+    for (const { text, originSlideId } of textItems) {
+      nodes.set(
+        text.id,
         <PlacedText
-          key={text.id}
+          key={`${originSlideId}-${text.id}`}
           text={text}
           width={width}
           fontScale={fontScale}
           selected={selectedFrameId === text.id}
-          zIndex={layerZIndex(slide, text.id)}
+          zIndex={z(text.id)}
           interactive={interactive}
           forExport={forExport}
           canvasScale={canvasScale}
           onPointerDown={onTextPointerDown}
           onResizeStart={onTextResizeStart}
-        />
-      ))}
+        />,
+      )
+    }
+    for (const item of lensItems) {
+      const offsetX = "offsetX" in item ? item.offsetX : 0
+      nodes.set(
+        item.lens.id,
+        <div
+          key={`${item.originSlideId}-${item.lens.id}`}
+          style={{
+            position: "absolute",
+            inset: 0,
+            transform: offsetX ? `translateX(${(offsetX / 100) * width}px)` : undefined,
+            zIndex: z(item.lens.id),
+          }}
+        >
+          <PlacedLens
+            lens={item.lens}
+            slide={item.originSlide}
+            slides={slides}
+            width={width}
+            height={height}
+            assetUrls={assetUrls}
+            guestFrames={guestFrames}
+            guestCliparts={guestCliparts}
+            selected={selectedFrameId === item.lens.id}
+            zIndex={z(item.lens.id)}
+            interactive={interactive}
+            forExport={forExport}
+            canvasScale={canvasScale}
+            onPointerDown={onLensPointerDown}
+            onResizeStart={onLensResizeStart}
+          />
+        </div>,
+      )
+    }
 
-      {showLenses
-        ? (slide.lenses ?? []).map((lens) => (
-            <PlacedLens
-              key={lens.id}
-              lens={lens}
-              slide={slide}
-              slides={slides}
-              width={width}
-              height={height}
-              assetUrls={assetUrls}
-              guestFrames={guestFrames}
-              guestCliparts={guestCliparts}
-              selected={selectedFrameId === lens.id}
-              zIndex={layerZIndex(slide, lens.id)}
-              interactive={interactive}
-              forExport={forExport}
-              canvasScale={canvasScale}
-              onPointerDown={onLensPointerDown}
-              onResizeStart={onLensResizeStart}
-            />
-          ))
-        : null}
-    </div>
-  )
+    const seen = new Set<string>()
+    const stacked: ReactNode[] = []
+    for (const id of order) {
+      const node = nodes.get(id)
+      if (!node) continue
+      stacked.push(node)
+      seen.add(id)
+    }
+    for (const [id, node] of nodes) {
+      if (seen.has(id)) continue
+      stacked.push(node)
+    }
+    return stacked
+  }
 }
 
 function PlacedText({
@@ -466,6 +469,7 @@ function PlacedText({
         cursor: interactive ? "grab" : "default",
         touchAction: interactive ? "none" : undefined,
         zIndex,
+        isolation: "isolate",
         outline:
           !forExport && selected
             ? `${Math.max(2, width * 0.003)}px solid #8b5cf6`
