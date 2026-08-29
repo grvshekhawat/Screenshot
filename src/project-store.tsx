@@ -8,7 +8,10 @@ import {
   useState,
   type ReactNode,
 } from "react"
-import { assetIdsFromProject } from "./assets"
+import {
+  assetIdsFromActiveLayout,
+  assetIdsFromInactiveLayouts,
+} from "./assets"
 import {
   setProjectSizeEditMode,
   switchProjectTarget,
@@ -44,7 +47,7 @@ import {
 import {
   getProject,
   listPublishedCliparts,
-  resolveAssetUrl,
+  resolveAssetUrls,
   saveProjectRecord,
   uploadProjectAsset,
 } from "./api/projects"
@@ -335,6 +338,8 @@ export function ProjectProvider({
   const readyRef = useRef(ready)
   const autosaveTimerRef = useRef<number | null>(null)
   const saveInFlightRef = useRef<Promise<void> | null>(null)
+  /** Skip the autosave that would fire purely because hydrate set `ready`. */
+  const skipAutosaveAfterHydrateRef = useRef(false)
   projectRef.current = project
   assetUrlsRef.current = assetUrls
   readyRef.current = ready
@@ -412,57 +417,74 @@ export function ProjectProvider({
         const record = await getProject(projectId)
         if (!record) throw new Error("Project not found")
         loaded = record.data
-        await Promise.all(
-          assetIdsFromProject(loaded).map(async (id) => {
-            const url = await resolveAssetUrl(id)
-            if (url) urls[id] = url
-            else {
-              const blob = await loadScreenshot(id)
-              if (blob) urls[id] = URL.createObjectURL(blob)
-            }
-          }),
-        )
       } else {
         loaded = await loadProject()
-        await Promise.all(
-          assetIdsFromProject(loaded).map(async (id) => {
-            const url = await resolveAssetUrl(id)
-            if (url) {
-              urls[id] = url
-              return
-            }
-            const blob = await loadScreenshot(id)
-            if (blob) urls[id] = URL.createObjectURL(blob)
-          }),
-        )
       }
 
-      const library = await listPublishedCliparts().catch(() => [])
-      for (const item of library) {
-        if (item.url) urls[`library:${item.id}`] = item.url
-      }
+      const activeIds = assetIdsFromActiveLayout(loaded)
+      const resolved = await resolveAssetUrls(activeIds)
+      Object.assign(urls, resolved)
+      await Promise.all(
+        activeIds.map(async (id) => {
+          if (urls[id]) return
+          const blob = await loadScreenshot(id)
+          if (blob) urls[id] = URL.createObjectURL(blob)
+        }),
+      )
+
       if (cancelled) {
         for (const url of Object.values(urls)) {
           if (url.startsWith("blob:")) URL.revokeObjectURL(url)
         }
         return
       }
+
+      skipAutosaveAfterHydrateRef.current = true
       setProjectState(normalizeProject(loaded))
       resetHistory()
       setAssetUrls(urls)
-      setLibraryCliparts(
-        library
-          .filter((item) => item.url)
-          .map((item) => ({
-            id: item.id,
-            name: item.name,
-            category: item.category,
-            url: item.url!,
-          })),
-      )
       setLastSavedAt(Date.now())
       setSaveState("saved")
       setReady(true)
+
+      // Background: other size-layout assets + clipart library (do not block editor).
+      void (async () => {
+        const inactiveIds = assetIdsFromInactiveLayouts(loaded)
+        if (inactiveIds.length > 0) {
+          const more = await resolveAssetUrls(inactiveIds)
+          const extras: Record<string, string> = { ...more }
+          await Promise.all(
+            inactiveIds.map(async (id) => {
+              if (extras[id]) return
+              const blob = await loadScreenshot(id)
+              if (blob) extras[id] = URL.createObjectURL(blob)
+            }),
+          )
+          if (!cancelled && Object.keys(extras).length > 0) {
+            setAssetUrls((prev) => ({ ...prev, ...extras }))
+          }
+        }
+
+        const library = await listPublishedCliparts().catch(() => [])
+        if (cancelled) return
+        const libraryUrls: Record<string, string> = {}
+        for (const item of library) {
+          if (item.url) libraryUrls[`library:${item.id}`] = item.url
+        }
+        if (Object.keys(libraryUrls).length > 0) {
+          setAssetUrls((prev) => ({ ...prev, ...libraryUrls }))
+        }
+        setLibraryCliparts(
+          library
+            .filter((item) => item.url)
+            .map((item) => ({
+              id: item.id,
+              name: item.name,
+              category: item.category,
+              url: item.url!,
+            })),
+        )
+      })()
     }
     void hydrate().catch(() => {
       if (!cancelled) setReady(true)
@@ -474,6 +496,10 @@ export function ProjectProvider({
 
   useEffect(() => {
     if (!ready) return
+    if (skipAutosaveAfterHydrateRef.current) {
+      skipAutosaveAfterHydrateRef.current = false
+      return
+    }
     setSaveState("unsaved")
     if (autosaveTimerRef.current) window.clearTimeout(autosaveTimerRef.current)
     autosaveTimerRef.current = window.setTimeout(() => {
@@ -499,6 +525,31 @@ export function ProjectProvider({
       }
     }
   }, [project, ready, projectId])
+
+  // When switching store sizes, resolve any assets not yet loaded from background hydrate.
+  useEffect(() => {
+    if (!ready) return
+    const needed = assetIdsFromActiveLayout(projectRef.current)
+    const missing = needed.filter((id) => !assetUrlsRef.current[id])
+    if (missing.length === 0) return
+    let cancelled = false
+    void (async () => {
+      const resolved = await resolveAssetUrls(missing)
+      const extras: Record<string, string> = { ...resolved }
+      await Promise.all(
+        missing.map(async (id) => {
+          if (extras[id]) return
+          const blob = await loadScreenshot(id)
+          if (blob) extras[id] = URL.createObjectURL(blob)
+        }),
+      )
+      if (cancelled || Object.keys(extras).length === 0) return
+      setAssetUrls((prev) => ({ ...prev, ...extras }))
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [ready, project.targetId])
 
   const persistSnapshot = useCallback(async () => {
     if (!readyRef.current) return

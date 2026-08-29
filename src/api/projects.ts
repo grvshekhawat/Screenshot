@@ -91,20 +91,9 @@ async function resolvePreviewAssetUrls(
   project: Project,
 ): Promise<Record<string, string>> {
   const urls: Record<string, string> = {}
+  const resolved = await resolveAssetUrls(assetIdsFromProject(project))
   await Promise.all(
-    assetIdsFromProject(project).map(async (id) => {
-      let url = await resolveAssetUrl(id)
-      if (!url) {
-        const blob = await loadScreenshot(id)
-        if (blob) {
-          const objectUrl = URL.createObjectURL(blob)
-          try {
-            url = await blobUrlToDataUrl(objectUrl)
-          } finally {
-            URL.revokeObjectURL(objectUrl)
-          }
-        }
-      }
+    Object.entries(resolved).map(async ([id, url]) => {
       if (!url) return
       // Data URLs survive DOM capture without CORS / fetch failures.
       if (url.startsWith("data:")) {
@@ -115,6 +104,20 @@ async function resolvePreviewAssetUrls(
         urls[id] = await blobUrlToDataUrl(url)
       } catch {
         urls[id] = url
+      }
+    }),
+  )
+  // Fill any missing via local screenshot blobs.
+  await Promise.all(
+    assetIdsFromProject(project).map(async (id) => {
+      if (urls[id]) return
+      const blob = await loadScreenshot(id)
+      if (!blob) return
+      const objectUrl = URL.createObjectURL(blob)
+      try {
+        urls[id] = await blobUrlToDataUrl(objectUrl)
+      } finally {
+        URL.revokeObjectURL(objectUrl)
       }
     }),
   )
@@ -343,36 +346,104 @@ export async function uploadProjectAsset(
 }
 
 export async function resolveAssetUrl(assetId: string): Promise<string | null> {
-  const sample = sampleScreenDataUrl(assetId)
-  if (sample) return sample
+  const map = await resolveAssetUrls([assetId])
+  return map[assetId] ?? null
+}
 
-  if (assetId.startsWith("library:")) {
-    const libraryId = assetId.slice("library:".length)
-    if (!isSupabaseConfigured()) {
-      return local.localLoadLibraryClipartUrl(libraryId)
+/**
+ * Resolve many project/library asset URLs with one auth lookup and batched
+ * signed URL creation (avoids N× getUser when opening multi-size projects).
+ */
+export async function resolveAssetUrls(
+  assetIds: string[],
+): Promise<Record<string, string>> {
+  const urls: Record<string, string> = {}
+  if (assetIds.length === 0) return urls
+
+  const projectIds: string[] = []
+  const libraryIds: string[] = []
+
+  for (const assetId of assetIds) {
+    const sample = sampleScreenDataUrl(assetId)
+    if (sample) {
+      urls[assetId] = sample
+      continue
     }
-    const supabase = getSupabase()!
-    const { data, error } = await supabase
-      .from("library_cliparts")
-      .select("storage_path")
-      .eq("id", libraryId)
-      .maybeSingle()
-    if (error || !data?.storage_path) return null
-    return resolveClipartUrl(data.storage_path as string)
+    if (assetId.startsWith("library:")) {
+      libraryIds.push(assetId)
+      continue
+    }
+    projectIds.push(assetId)
   }
 
-  if (!isSupabaseConfigured()) return local.localLoadAsset(assetId)
+  if (libraryIds.length > 0) {
+    await Promise.all(
+      libraryIds.map(async (assetId) => {
+        const libraryId = assetId.slice("library:".length)
+        if (!isSupabaseConfigured()) {
+          const url = await local.localLoadLibraryClipartUrl(libraryId)
+          if (url) urls[assetId] = url
+          return
+        }
+        const supabase = getSupabase()!
+        const { data, error } = await supabase
+          .from("library_cliparts")
+          .select("storage_path")
+          .eq("id", libraryId)
+          .maybeSingle()
+        if (error || !data?.storage_path) return
+        const url = await resolveClipartUrl(data.storage_path as string)
+        if (url) urls[assetId] = url
+      }),
+    )
+  }
+
+  if (projectIds.length === 0) return urls
+
+  if (!isSupabaseConfigured()) {
+    await Promise.all(
+      projectIds.map(async (assetId) => {
+        const url = await local.localLoadAsset(assetId)
+        if (url) urls[assetId] = url
+      }),
+    )
+    return urls
+  }
+
   const supabase = getSupabase()!
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) return null
-  const path = `${user.id}/${assetId}`
-  const { data: signed, error } = await supabase.storage
+  if (!user) return urls
+
+  const paths = projectIds.map((id) => `${user.id}/${id}`)
+  const { data: signedBatch, error } = await supabase.storage
     .from("project-assets")
-    .createSignedUrl(path, 60 * 60 * 24 * 7)
-  if (error || !signed?.signedUrl) return null
-  return signed.signedUrl
+    .createSignedUrls(paths, 60 * 60 * 24 * 7)
+
+  if (!error && signedBatch) {
+    for (const row of signedBatch) {
+      if (!row.path || !row.signedUrl || row.error) continue
+      const prefix = `${user.id}/`
+      const assetId = row.path.startsWith(prefix)
+        ? row.path.slice(prefix.length)
+        : row.path
+      urls[assetId] = row.signedUrl
+    }
+  } else {
+    // Fallback: parallel individual signs (still one getUser above).
+    await Promise.all(
+      projectIds.map(async (assetId) => {
+        const path = `${user.id}/${assetId}`
+        const { data: signed, error: signError } = await supabase.storage
+          .from("project-assets")
+          .createSignedUrl(path, 60 * 60 * 24 * 7)
+        if (!signError && signed?.signedUrl) urls[assetId] = signed.signedUrl
+      }),
+    )
+  }
+
+  return urls
 }
 
 export async function resolveTemplatePreviewUrl(

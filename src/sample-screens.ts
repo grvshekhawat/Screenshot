@@ -283,8 +283,19 @@ export function builtInSampleScreens(): SampleScreen[] {
 }
 
 /** Public catalog mock UIs — no login or storage required. */
+let sampleScreenCache: Map<string, string> | null = null
+
+function sampleScreenMap(): Map<string, string> {
+  if (!sampleScreenCache) {
+    sampleScreenCache = new Map(
+      builtInSampleScreens().map((screen) => [screen.id, screen.dataUrl]),
+    )
+  }
+  return sampleScreenCache
+}
+
 export function sampleScreenDataUrl(assetId: string): string | null {
-  return builtInSampleScreens().find((screen) => screen.id === assetId)?.dataUrl ?? null
+  return sampleScreenMap().get(assetId) ?? null
 }
 
 const LW = 844

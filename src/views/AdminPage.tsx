@@ -13,6 +13,10 @@ import {
   upsertLibraryClipart,
   upsertTemplate,
 } from "../api/projects"
+import {
+  generateClipartPreview,
+  pngBase64ToFile,
+} from "../api/generate-clipart"
 import { useAuth } from "../auth/AuthProvider"
 import { createSampleProject } from "../constants"
 import { IMAGE_ACCEPT, isImageFile, normalizeImageFile } from "../image-upload"
@@ -33,6 +37,11 @@ export function AdminPage() {
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [genPrompt, setGenPrompt] = useState("")
+  const [genName, setGenName] = useState("")
+  const [genCategory, setGenCategory] = useState("general")
+  const [genPreviewBase64, setGenPreviewBase64] = useState<string | null>(null)
+  const [genBusy, setGenBusy] = useState(false)
 
   const reload = async () => {
     const [t, c, p] = await Promise.all([
@@ -153,6 +162,56 @@ export function AdminPage() {
       await reload()
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed")
+    }
+  }
+
+  const onGenerateClipart = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setError(null)
+    setMessage(null)
+    setGenBusy(true)
+    setGenPreviewBase64(null)
+    try {
+      const result = await generateClipartPreview({
+        prompt: genPrompt,
+        name: genName || undefined,
+      })
+      setGenPreviewBase64(result.pngBase64)
+      if (result.name && !genName.trim()) setGenName(result.name)
+      setMessage("Preview ready — publish to add it to the library.")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Generation failed")
+    } finally {
+      setGenBusy(false)
+    }
+  }
+
+  const onPublishGeneratedClipart = async () => {
+    if (!genPreviewBase64) return
+    setError(null)
+    setMessage(null)
+    setBusy(true)
+    try {
+      const file = pngBase64ToFile(
+        genPreviewBase64,
+        `${(genName || "clipart").replace(/[^\w.\-]+/g, "_")}.png`,
+      )
+      await upsertLibraryClipart({
+        name: genName.trim() || genPrompt.trim().slice(0, 40) || "Clipart",
+        category: genCategory.trim() || "general",
+        sort_order: cliparts.length,
+        published: true,
+        file,
+      })
+      setMessage("Generated clipart published")
+      setGenPreviewBase64(null)
+      setGenPrompt("")
+      setGenName("")
+      await reload()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Publish failed")
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -281,7 +340,112 @@ export function AdminPage() {
 
         <section>
           <h2 className="text-lg font-semibold">Clipart library</h2>
-          <form onSubmit={(e) => void onClipartUpload(e)} className="mt-3 flex flex-wrap items-end gap-2">
+          <p className="mt-1 text-sm text-zinc-400">
+            Upload a PNG or generate a transparent sticker with AI (admins only).
+            Generated assets are previewed first, then published for all users.
+          </p>
+
+          <form
+            onSubmit={(e) => void onGenerateClipart(e)}
+            className="mt-4 space-y-3 rounded-xl border border-zinc-800 bg-zinc-950 p-4"
+          >
+            <h3 className="text-sm font-semibold text-zinc-200">
+              Generate sticker (AI)
+            </h3>
+            {usingLocalBackend ? (
+              <p className="text-xs text-amber-200/90">
+                AI generation requires Supabase + the{" "}
+                <code className="text-amber-100">generate-clipart</code> Edge
+                Function. Use file upload in local demo mode.
+              </p>
+            ) : null}
+            <label className="block text-xs text-zinc-400">
+              Prompt
+              <input
+                value={genPrompt}
+                onChange={(e) => setGenPrompt(e.target.value)}
+                required
+                maxLength={500}
+                placeholder="girl walking"
+                disabled={usingLocalBackend || genBusy}
+                className="mt-1 block w-full rounded border border-zinc-800 bg-zinc-900 px-2 py-2 text-sm text-white disabled:opacity-50"
+              />
+            </label>
+            <div className="flex flex-wrap gap-3">
+              <label className="text-xs text-zinc-400">
+                Name
+                <input
+                  value={genName}
+                  onChange={(e) => setGenName(e.target.value)}
+                  placeholder="Girl walking"
+                  disabled={genBusy}
+                  className="mt-1 block rounded border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-sm text-white"
+                />
+              </label>
+              <label className="text-xs text-zinc-400">
+                Category
+                <input
+                  value={genCategory}
+                  onChange={(e) => setGenCategory(e.target.value)}
+                  disabled={genBusy}
+                  className="mt-1 block rounded border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-sm text-white"
+                />
+              </label>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="submit"
+                disabled={usingLocalBackend || genBusy || !genPrompt.trim()}
+                className="rounded-lg bg-violet-600 px-3 py-2 text-xs font-semibold text-white hover:bg-violet-500 disabled:opacity-50"
+              >
+                {genBusy ? "Generating…" : "Generate"}
+              </button>
+              {genPreviewBase64 ? (
+                <>
+                  <button
+                    type="button"
+                    disabled={busy || genBusy}
+                    onClick={() => void onPublishGeneratedClipart()}
+                    className="rounded-lg bg-zinc-100 px-3 py-2 text-xs font-semibold text-zinc-900 disabled:opacity-50"
+                  >
+                    Publish to library
+                  </button>
+                  <button
+                    type="button"
+                    disabled={genBusy}
+                    onClick={() => setGenPreviewBase64(null)}
+                    className="rounded-lg border border-zinc-700 px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-900"
+                  >
+                    Discard
+                  </button>
+                </>
+              ) : null}
+            </div>
+            {genPreviewBase64 ? (
+              <div
+                className="mt-2 inline-flex rounded-lg border border-zinc-800 p-3"
+                style={{
+                  backgroundImage:
+                    "linear-gradient(45deg,#3f3f46 25%,transparent 25%),linear-gradient(-45deg,#3f3f46 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#3f3f46 75%),linear-gradient(-45deg,transparent 75%,#3f3f46 75%)",
+                  backgroundSize: "16px 16px",
+                  backgroundPosition: "0 0,0 8px,8px -8px,-8px 0",
+                  backgroundColor: "#27272a",
+                }}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={`data:image/png;base64,${genPreviewBase64}`}
+                  alt="Generated clipart preview"
+                  className="h-40 w-40 object-contain"
+                />
+              </div>
+            ) : null}
+          </form>
+
+          <form
+            onSubmit={(e) => void onClipartUpload(e)}
+            className="mt-4 flex flex-wrap items-end gap-2"
+          >
             <label className="text-xs text-zinc-400">
               Name
               <input

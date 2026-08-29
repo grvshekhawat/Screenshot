@@ -29,6 +29,7 @@ Ship order: **Supabase → billing → front-end → verify → announce**.
   - [x] `stripe-checkout`
   - [x] `stripe-portal`
   - [x] `stripe-webhook`
+  - [ ] `generate-clipart` (admin AI stickers — OpenAI)
   - [ ] `paypal-subscribe` (optional)
   - [ ] `paypal-manage` (optional)
   - [ ] `paypal-webhook` (optional)
@@ -37,9 +38,20 @@ Ship order: **Supabase → billing → front-end → verify → announce**.
   - [x] `STRIPE_PRICE_ID`
   - [x] `STRIPE_WEBHOOK_SECRET`
   - [x] `SUPABASE_SERVICE_ROLE_KEY`
+  - [ ] `OPENAI_API_KEY` (for `generate-clipart`)
   - [ ] PayPal: `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_PLAN_ID`, `PAYPAL_API_BASE` (live)
 - [ ] Stripe webhook endpoint → `https://<project>.supabase.co/functions/v1/stripe-webhook` (events for Checkout + subscription lifecycle)
 - [ ] Billing Portal enabled in Stripe (for cancel / manage)
+
+### Admin AI clipart (`generate-clipart`)
+
+```bash
+supabase secrets set OPENAI_API_KEY=sk-...
+supabase functions deploy generate-clipart
+```
+
+- Admin-only (`profiles.role = admin`). Prompt → transparent PNG preview on `/admin` → Publish uses existing `library_cliparts` / `cliparts` bucket.
+- Model: OpenAI `gpt-image-1.5`, medium quality, ~$0.03–0.05 per generation. Not available in local demo mode.
 
 
 
@@ -70,6 +82,7 @@ Ship order: **Supabase → billing → front-end → verify → announce**.
 - [ ] `/templates/[slug]` shows title, description, preview, CTA
 - [ ] Delete/hide a seed template once to confirm `catalog_hidden_templates` works
 - [ ] Blog posts under `content/blog/` render at `/blog` and `/blog/[slug]`
+- [ ] Admin: Generate sticker (AI) → preview → Publish appears in editor clipart library
 
 
 
