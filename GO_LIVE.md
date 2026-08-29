@@ -30,6 +30,8 @@ Ship order: **Supabase → billing → front-end → verify → announce**.
   - [x] `stripe-portal`
   - [x] `stripe-webhook`
   - [ ] `generate-clipart` (admin AI stickers — OpenAI)
+  - [ ] `import-store-app` (admin store listing scrape)
+  - [ ] `analyze-store-layout` (admin AI layout → components; needs OpenAI)
   - [ ] `paypal-subscribe` (optional)
   - [ ] `paypal-manage` (optional)
   - [ ] `paypal-webhook` (optional)
@@ -38,7 +40,7 @@ Ship order: **Supabase → billing → front-end → verify → announce**.
   - [x] `STRIPE_PRICE_ID`
   - [x] `STRIPE_WEBHOOK_SECRET`
   - [x] `SUPABASE_SERVICE_ROLE_KEY`
-  - [ ] `OPENAI_API_KEY` (for `generate-clipart`)
+  - [ ] `OPENAI_API_KEY` (for `generate-clipart` + `analyze-store-layout`)
   - [ ] PayPal: `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_PLAN_ID`, `PAYPAL_API_BASE` (live)
 - [ ] Stripe webhook endpoint → `https://<project>.supabase.co/functions/v1/stripe-webhook` (events for Checkout + subscription lifecycle)
 - [ ] Billing Portal enabled in Stripe (for cancel / manage)
@@ -52,6 +54,19 @@ supabase functions deploy generate-clipart
 
 - Admin-only (`profiles.role = admin`). Prompt → transparent PNG preview on `/admin` → Publish uses existing `library_cliparts` / `cliparts` bucket.
 - Model: OpenAI `gpt-image-1.5`, medium quality, ~$0.03–0.05 per generation. Not available in local demo mode.
+
+### Admin store import (`import-store-app` + `analyze-store-layout`)
+
+```bash
+supabase secrets set OPENAI_API_KEY=sk-...   # shared with generate-clipart
+supabase functions deploy import-store-app
+supabase functions deploy analyze-store-layout
+```
+
+- Admin-only. Paste App Store / Play Store URL (or Apple app name) on `/admin` → scrape screenshots → vision analysis rebuilds slides as text + phone frames + optional lenses (crops UI via `screenBox`) → **Open in editor** or **Publish**.
+- Apple: iTunes Lookup + App Store HTML fallback. Play: details page scrape (Play **name search not supported** — use a `play.google.com/...details?id=` URL). Cap 6 screens. Play CDN `=wN-hM` params are layout sizes — importer requests `=w1080-rw` and filters by **decoded** WebP/JPEG dimensions (rejects icons).
+- Vision model: `gpt-4o` (~$0.01–0.05 per screen). Analysis failures fall back to a simple centered phone.
+- Store HTML can change; treat scrape failures as scraper breakage. Admin tool only — respect store ToS.
 
 
 
@@ -83,6 +98,7 @@ supabase functions deploy generate-clipart
 - [ ] Delete/hide a seed template once to confirm `catalog_hidden_templates` works
 - [ ] Blog posts under `content/blog/` render at `/blog` and `/blog/[slug]`
 - [ ] Admin: Generate sticker (AI) → preview → Publish appears in editor clipart library
+- [ ] Admin: Import from store (App Store / Play URL) → project opens → Publish to catalog
 
 
 

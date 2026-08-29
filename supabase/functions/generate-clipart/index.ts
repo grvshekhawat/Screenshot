@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 import { handleCors, jsonResponse, textResponse } from "../_shared/cors.ts"
 
 const PROMPT_SUFFIX =
-  ", sticker-style clipart, single subject, centered, clean silhouette, no text, no watermark, transparent background"
+  ", single subject clipart, centered, clean silhouette cutout, no white border, no outline stroke, no sticker rim, no halo, no text, no watermark, transparent background"
 
 const MAX_PROMPT_LEN = 500
 

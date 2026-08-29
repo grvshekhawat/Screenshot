@@ -10,6 +10,7 @@ import {
   listAllTemplates,
   listProjects,
   publishProjectAsTemplate,
+  createProject,
   upsertLibraryClipart,
   upsertTemplate,
 } from "../api/projects"
@@ -17,6 +18,9 @@ import {
   generateClipartPreview,
   pngBase64ToFile,
 } from "../api/generate-clipart"
+import { analyzeStoreLayout } from "../api/analyze-store-layout"
+import { importStoreApp } from "../api/import-store-app"
+import { buildProjectFromStoreAnalysis } from "../import-store-project"
 import { useAuth } from "../auth/AuthProvider"
 import { createSampleProject } from "../constants"
 import { IMAGE_ACCEPT, isImageFile, normalizeImageFile } from "../image-upload"
@@ -28,9 +32,12 @@ import type {
 } from "../types/cloud"
 import { TemplateThumbnail } from "../components/TemplateThumbnail"
 
+type AdminTab = "templates" | "clipart"
+
 export function AdminPage() {
   const { ready, userId, isAdmin, usingLocalBackend } = useAuth()
   const router = useRouter()
+  const [tab, setTab] = useState<AdminTab>("templates")
   const [templates, setTemplates] = useState<TemplateRecord[]>([])
   const [cliparts, setCliparts] = useState<LibraryClipartRecord[]>([])
   const [projects, setProjects] = useState<ProjectRecord[]>([])
@@ -42,6 +49,15 @@ export function AdminPage() {
   const [genCategory, setGenCategory] = useState("general")
   const [genPreviewBase64, setGenPreviewBase64] = useState<string | null>(null)
   const [genBusy, setGenBusy] = useState(false)
+  const [storeQuery, setStoreQuery] = useState("")
+  const [storeBusy, setStoreBusy] = useState(false)
+  const [storeImport, setStoreImport] = useState<{
+    projectId: string
+    title: string
+    description: string
+    screenshotCount: number
+    store: "apple" | "google"
+  } | null>(null)
 
   const reload = async () => {
     const [t, c, p] = await Promise.all([
@@ -215,6 +231,76 @@ export function AdminPage() {
     }
   }
 
+  const onImportFromStore = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setError(null)
+    setMessage(null)
+    setStoreBusy(true)
+    setStoreImport(null)
+    try {
+      setMessage("Scraping store listing…")
+      const listing = await importStoreApp({ query: storeQuery })
+      setMessage(
+        `Analyzing ${listing.assetIds.length} screens with AI (layout → components)…`,
+      )
+      const { layouts } = await analyzeStoreLayout({
+        assetIds: listing.assetIds,
+      })
+      setMessage("Building editable project from analysis…")
+      const project = await buildProjectFromStoreAnalysis({
+        title: listing.title,
+        store: listing.store,
+        orientation: listing.orientation,
+        assetIds: listing.assetIds,
+        layouts,
+      })
+      const record = await createProject(project)
+      setStoreImport({
+        projectId: record.id,
+        title: listing.title,
+        description: listing.description,
+        screenshotCount: listing.assetIds.length,
+        store: listing.store,
+      })
+      setMessage(
+        `Imported “${listing.title}” (${listing.assetIds.length} screens as editable components). Open to tweak or publish.`,
+      )
+      await reload()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Store import failed")
+      setMessage(null)
+    } finally {
+      setStoreBusy(false)
+    }
+  }
+
+  const onPublishImportedTemplate = async () => {
+    if (!storeImport) return
+    setError(null)
+    setMessage(null)
+    setBusy(true)
+    try {
+      const published = await publishProjectAsTemplate({
+        projectId: storeImport.projectId,
+        title: storeImport.title,
+        description: storeImport.description.slice(0, 280),
+        published: true,
+      })
+      setMessage(`Template “${published.title}” published to the catalog`)
+      await reload()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Publish failed")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const switchTab = (next: AdminTab) => {
+    setTab(next)
+    setError(null)
+    setMessage(null)
+  }
+
   return (
     <div className="min-h-full bg-[#0c0c10] text-zinc-100">
       <header className="flex h-14 items-center justify-between border-b border-zinc-800 px-4">
@@ -225,285 +311,404 @@ export function AdminPage() {
           Back to projects
         </Link>
       </header>
-      <main className="mx-auto max-w-4xl space-y-10 px-4 py-8">
+      <main className="mx-auto max-w-4xl space-y-6 px-4 py-8">
+        <div>
+          <h1 className="text-lg font-semibold">Admin</h1>
+          <div
+            role="tablist"
+            aria-label="Admin sections"
+            className="mt-4 flex gap-1 border-b border-zinc-800"
+          >
+            {(
+              [
+                { id: "templates", label: "Templates" },
+                { id: "clipart", label: "Clipart" },
+              ] as const
+            ).map((item) => {
+              const active = tab === item.id
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  id={`admin-tab-${item.id}`}
+                  onClick={() => switchTab(item.id)}
+                  className={`-mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
+                    active
+                      ? "border-violet-500 text-white"
+                      : "border-transparent text-zinc-500 hover:text-zinc-300"
+                  }`}
+                >
+                  {item.label}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
         {error ? <p className="text-sm text-red-400">{error}</p> : null}
         {message ? <p className="text-sm text-emerald-400">{message}</p> : null}
 
-        <section>
-          <h1 className="text-lg font-semibold">Templates</h1>
-          <p className="mt-1 text-sm text-zinc-400">
-            Design a layout in the editor, then publish that project here for
-            users to clone. Admins can publish as many templates as they want
-            and can delete catalog templates (including built-in seeds).
-          </p>
-
-          <form
-            onSubmit={(e) => void onPublishFromProject(e)}
-            className="mt-4 space-y-3 rounded-xl border border-zinc-800 bg-zinc-950 p-4"
+        {tab === "templates" ? (
+          <section
+            role="tabpanel"
+            aria-labelledby="admin-tab-templates"
+            className="space-y-4"
           >
-            <label className="block text-xs text-zinc-400">
-              Project to publish
-              <select
-                name="projectId"
-                required
-                className="mt-1 block w-full rounded border border-zinc-800 bg-zinc-900 px-2 py-2 text-sm text-white"
-                defaultValue=""
-              >
-                <option value="" disabled>
-                  {projects.length ? "Select a project…" : "No projects yet — create one in /app"}
-                </option>
-                {projects.map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="block text-xs text-zinc-400">
-              Template title
-              <input
-                name="title"
-                required
-                placeholder="Clean gradient hero"
-                className="mt-1 block w-full rounded border border-zinc-800 bg-zinc-900 px-2 py-2 text-sm text-white"
-              />
-            </label>
-            <label className="block text-xs text-zinc-400">
-              Description
-              <input
-                name="description"
-                placeholder="Short blurb for the gallery"
-                className="mt-1 block w-full rounded border border-zinc-800 bg-zinc-900 px-2 py-2 text-sm text-white"
-              />
-            </label>
-            <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm text-zinc-400">
+              Design a layout in the editor, then publish that project here for
+              users to clone. Admins can publish as many templates as they want
+              and can delete catalog templates (including built-in seeds).
+            </p>
+
+            <form
+              onSubmit={(e) => void onImportFromStore(e)}
+              className="space-y-3 rounded-xl border border-zinc-800 bg-zinc-950 p-4"
+            >
+              <h2 className="text-sm font-semibold text-zinc-200">
+                Import from store
+              </h2>
+              <p className="text-xs text-zinc-500">
+                Paste an App Store or Play Store URL (or an Apple app name). We
+                scrape listing screenshots, then AI analyzes each layout and
+                rebuilds it as editable text, phone frames, and lenses.
+              </p>
+              {usingLocalBackend ? (
+                <p className="text-xs text-amber-200/90">
+                  Store import requires Supabase +{" "}
+                  <code className="text-amber-100">import-store-app</code> and{" "}
+                  <code className="text-amber-100">analyze-store-layout</code>{" "}
+                  (plus <code className="text-amber-100">OPENAI_API_KEY</code>).
+                </p>
+              ) : null}
+              <label className="block text-xs text-zinc-400">
+                App Store / Play URL or Apple app name
+                <input
+                  value={storeQuery}
+                  onChange={(e) => setStoreQuery(e.target.value)}
+                  required
+                  disabled={usingLocalBackend || storeBusy}
+                  placeholder="https://apps.apple.com/… or https://play.google.com/store/apps/details?id=…"
+                  className="mt-1 block w-full rounded border border-zinc-800 bg-zinc-900 px-2 py-2 text-sm text-white disabled:opacity-50"
+                />
+              </label>
               <button
                 type="submit"
-                disabled={busy || projects.length === 0}
-                className="rounded-lg bg-violet-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40"
+                disabled={usingLocalBackend || storeBusy || !storeQuery.trim()}
+                className="rounded-lg bg-violet-600 px-3 py-2 text-xs font-semibold text-white hover:bg-violet-500 disabled:opacity-50"
               >
-                {busy ? "Publishing…" : "Publish as template"}
+                {storeBusy ? "Importing & analyzing…" : "Import listing"}
               </button>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void publishFromCurrentSample()}
-                className="rounded-lg border border-zinc-700 px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-900 disabled:opacity-40"
-              >
-                Or publish built-in sample
-              </button>
-            </div>
-          </form>
+              {storeImport ? (
+                <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 py-3 text-sm">
+                  <p className="font-medium text-zinc-100">{storeImport.title}</p>
+                  <p className="mt-1 text-xs text-zinc-500">
+                    {storeImport.store === "apple" ? "App Store" : "Play Store"}{" "}
+                    · {storeImport.screenshotCount} screens · project ready
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Link
+                      href={`/app/${storeImport.projectId}`}
+                      className="rounded-lg bg-zinc-100 px-3 py-2 text-xs font-semibold text-zinc-900"
+                    >
+                      Open in editor
+                    </Link>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void onPublishImportedTemplate()}
+                      className="rounded-lg border border-zinc-600 px-3 py-2 text-xs font-semibold text-zinc-100 hover:bg-zinc-800 disabled:opacity-50"
+                    >
+                      Publish to catalog
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </form>
 
-          <ul className="mt-4 space-y-2">
-            {templates.map((template) => (
-              <li
-                key={template.id}
-                className="flex items-center gap-3 rounded-lg border border-zinc-800 px-3 py-2 text-sm"
-              >
-                <TemplateThumbnail
-                  template={template}
-                  className="aspect-[16/10] h-14 w-24 shrink-0"
+            <form
+              onSubmit={(e) => void onPublishFromProject(e)}
+              className="space-y-3 rounded-xl border border-zinc-800 bg-zinc-950 p-4"
+            >
+              <label className="block text-xs text-zinc-400">
+                Project to publish
+                <select
+                  name="projectId"
+                  required
+                  className="mt-1 block w-full rounded border border-zinc-800 bg-zinc-900 px-2 py-2 text-sm text-white"
+                  defaultValue=""
+                >
+                  <option value="" disabled>
+                    {projects.length
+                      ? "Select a project…"
+                      : "No projects yet — create one in /app"}
+                  </option>
+                  {projects.map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block text-xs text-zinc-400">
+                Template title
+                <input
+                  name="title"
+                  required
+                  placeholder="Clean gradient hero"
+                  className="mt-1 block w-full rounded border border-zinc-800 bg-zinc-900 px-2 py-2 text-sm text-white"
                 />
-                <span className="min-w-0 flex-1">
-                  {template.title}{" "}
-                  <span className="text-zinc-500">
-                    ({template.published ? "published" : "draft"})
-                  </span>
-                </span>
+              </label>
+              <label className="block text-xs text-zinc-400">
+                Description
+                <input
+                  name="description"
+                  placeholder="Short blurb for the gallery"
+                  className="mt-1 block w-full rounded border border-zinc-800 bg-zinc-900 px-2 py-2 text-sm text-white"
+                />
+              </label>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="submit"
+                  disabled={busy || projects.length === 0}
+                  className="rounded-lg bg-violet-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40"
+                >
+                  {busy ? "Publishing…" : "Publish as template"}
+                </button>
                 <button
                   type="button"
-                  className="text-xs text-red-400 hover:text-red-300"
                   disabled={busy}
-                  onClick={() => {
-                    setError(null)
-                    void deleteTemplate(template.id, template.slug)
-                      .then(() => reload())
-                      .catch((err) =>
-                        setError(
-                          err instanceof Error
-                            ? err.message
-                            : "Could not delete template",
-                        ),
-                      )
+                  onClick={() => void publishFromCurrentSample()}
+                  className="rounded-lg border border-zinc-700 px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-900 disabled:opacity-40"
+                >
+                  Or publish built-in sample
+                </button>
+              </div>
+            </form>
+
+            <ul className="space-y-2">
+              {templates.map((template) => (
+                <li
+                  key={template.id}
+                  className="flex items-center gap-3 rounded-lg border border-zinc-800 px-3 py-2 text-sm"
+                >
+                  <TemplateThumbnail
+                    template={template}
+                    className="aspect-[16/10] h-14 w-24 shrink-0"
+                  />
+                  <span className="min-w-0 flex-1">
+                    {template.title}{" "}
+                    <span className="text-zinc-500">
+                      ({template.published ? "published" : "draft"})
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    className="text-xs text-red-400 hover:text-red-300"
+                    disabled={busy}
+                    onClick={() => {
+                      setError(null)
+                      void deleteTemplate(template.id, template.slug)
+                        .then(() => reload())
+                        .catch((err) =>
+                          setError(
+                            err instanceof Error
+                              ? err.message
+                              : "Could not delete template",
+                          ),
+                        )
+                    }}
+                  >
+                    Delete
+                  </button>
+                </li>
+              ))}
+              {templates.length === 0 ? (
+                <li className="text-sm text-zinc-500">No templates yet.</li>
+              ) : null}
+            </ul>
+          </section>
+        ) : null}
+
+        {tab === "clipart" ? (
+          <section
+            role="tabpanel"
+            aria-labelledby="admin-tab-clipart"
+            className="space-y-4"
+          >
+            <p className="text-sm text-zinc-400">
+              Upload a PNG or generate a transparent sticker with AI (admins
+              only). Generated assets are previewed first, then published for
+              all users.
+            </p>
+
+            <form
+              onSubmit={(e) => void onGenerateClipart(e)}
+              className="space-y-3 rounded-xl border border-zinc-800 bg-zinc-950 p-4"
+            >
+              <h2 className="text-sm font-semibold text-zinc-200">
+                Generate sticker (AI)
+              </h2>
+              {usingLocalBackend ? (
+                <p className="text-xs text-amber-200/90">
+                  AI generation requires Supabase + the{" "}
+                  <code className="text-amber-100">generate-clipart</code> Edge
+                  Function. Use file upload in local demo mode.
+                </p>
+              ) : null}
+              <label className="block text-xs text-zinc-400">
+                Prompt
+                <input
+                  value={genPrompt}
+                  onChange={(e) => setGenPrompt(e.target.value)}
+                  required
+                  maxLength={500}
+                  placeholder="girl walking"
+                  disabled={usingLocalBackend || genBusy}
+                  className="mt-1 block w-full rounded border border-zinc-800 bg-zinc-900 px-2 py-2 text-sm text-white disabled:opacity-50"
+                />
+              </label>
+              <div className="flex flex-wrap gap-3">
+                <label className="text-xs text-zinc-400">
+                  Name
+                  <input
+                    value={genName}
+                    onChange={(e) => setGenName(e.target.value)}
+                    placeholder="Girl walking"
+                    disabled={genBusy}
+                    className="mt-1 block rounded border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-sm text-white"
+                  />
+                </label>
+                <label className="text-xs text-zinc-400">
+                  Category
+                  <input
+                    value={genCategory}
+                    onChange={(e) => setGenCategory(e.target.value)}
+                    disabled={genBusy}
+                    className="mt-1 block rounded border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-sm text-white"
+                  />
+                </label>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="submit"
+                  disabled={usingLocalBackend || genBusy || !genPrompt.trim()}
+                  className="rounded-lg bg-violet-600 px-3 py-2 text-xs font-semibold text-white hover:bg-violet-500 disabled:opacity-50"
+                >
+                  {genBusy ? "Generating…" : "Generate"}
+                </button>
+                {genPreviewBase64 ? (
+                  <>
+                    <button
+                      type="button"
+                      disabled={busy || genBusy}
+                      onClick={() => void onPublishGeneratedClipart()}
+                      className="rounded-lg bg-zinc-100 px-3 py-2 text-xs font-semibold text-zinc-900 disabled:opacity-50"
+                    >
+                      Publish to library
+                    </button>
+                    <button
+                      type="button"
+                      disabled={genBusy}
+                      onClick={() => setGenPreviewBase64(null)}
+                      className="rounded-lg border border-zinc-700 px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-900"
+                    >
+                      Discard
+                    </button>
+                  </>
+                ) : null}
+              </div>
+              {genPreviewBase64 ? (
+                <div
+                  className="mt-2 inline-flex rounded-lg border border-zinc-800 p-3"
+                  style={{
+                    backgroundImage:
+                      "linear-gradient(45deg,#3f3f46 25%,transparent 25%),linear-gradient(-45deg,#3f3f46 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#3f3f46 75%),linear-gradient(-45deg,transparent 75%,#3f3f46 75%)",
+                    backgroundSize: "16px 16px",
+                    backgroundPosition: "0 0,0 8px,8px -8px,-8px 0",
+                    backgroundColor: "#27272a",
                   }}
                 >
-                  Delete
-                </button>
-              </li>
-            ))}
-            {templates.length === 0 ? (
-              <li className="text-sm text-zinc-500">No templates yet.</li>
-            ) : null}
-          </ul>
-        </section>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={`data:image/png;base64,${genPreviewBase64}`}
+                    alt="Generated clipart preview"
+                    className="h-40 w-40 object-contain"
+                  />
+                </div>
+              ) : null}
+            </form>
 
-        <section>
-          <h2 className="text-lg font-semibold">Clipart library</h2>
-          <p className="mt-1 text-sm text-zinc-400">
-            Upload a PNG or generate a transparent sticker with AI (admins only).
-            Generated assets are previewed first, then published for all users.
-          </p>
-
-          <form
-            onSubmit={(e) => void onGenerateClipart(e)}
-            className="mt-4 space-y-3 rounded-xl border border-zinc-800 bg-zinc-950 p-4"
-          >
-            <h3 className="text-sm font-semibold text-zinc-200">
-              Generate sticker (AI)
-            </h3>
-            {usingLocalBackend ? (
-              <p className="text-xs text-amber-200/90">
-                AI generation requires Supabase + the{" "}
-                <code className="text-amber-100">generate-clipart</code> Edge
-                Function. Use file upload in local demo mode.
-              </p>
-            ) : null}
-            <label className="block text-xs text-zinc-400">
-              Prompt
-              <input
-                value={genPrompt}
-                onChange={(e) => setGenPrompt(e.target.value)}
-                required
-                maxLength={500}
-                placeholder="girl walking"
-                disabled={usingLocalBackend || genBusy}
-                className="mt-1 block w-full rounded border border-zinc-800 bg-zinc-900 px-2 py-2 text-sm text-white disabled:opacity-50"
-              />
-            </label>
-            <div className="flex flex-wrap gap-3">
+            <form
+              onSubmit={(e) => void onClipartUpload(e)}
+              className="flex flex-wrap items-end gap-2 rounded-xl border border-zinc-800 bg-zinc-950 p-4"
+            >
               <label className="text-xs text-zinc-400">
                 Name
                 <input
-                  value={genName}
-                  onChange={(e) => setGenName(e.target.value)}
-                  placeholder="Girl walking"
-                  disabled={genBusy}
+                  name="name"
                   className="mt-1 block rounded border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-sm text-white"
                 />
               </label>
               <label className="text-xs text-zinc-400">
                 Category
                 <input
-                  value={genCategory}
-                  onChange={(e) => setGenCategory(e.target.value)}
-                  disabled={genBusy}
+                  name="category"
+                  defaultValue="general"
                   className="mt-1 block rounded border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-sm text-white"
                 />
               </label>
-            </div>
-            <div className="flex flex-wrap gap-2">
+              <label className="text-xs text-zinc-400">
+                File
+                <input
+                  name="file"
+                  type="file"
+                  accept={IMAGE_ACCEPT}
+                  className="mt-1 block text-sm"
+                />
+              </label>
               <button
                 type="submit"
-                disabled={usingLocalBackend || genBusy || !genPrompt.trim()}
-                className="rounded-lg bg-violet-600 px-3 py-2 text-xs font-semibold text-white hover:bg-violet-500 disabled:opacity-50"
+                className="rounded-lg bg-zinc-100 px-3 py-2 text-xs font-semibold text-zinc-900"
               >
-                {genBusy ? "Generating…" : "Generate"}
+                Upload
               </button>
-              {genPreviewBase64 ? (
-                <>
+            </form>
+
+            <div className="grid grid-cols-3 gap-3 sm:grid-cols-5">
+              {cliparts.map((clipart) => (
+                <div
+                  key={clipart.id}
+                  className="rounded-lg border border-zinc-800 p-2 text-center"
+                >
+                  {clipart.url ? (
+                    <img
+                      src={clipart.url}
+                      alt={clipart.name}
+                      className="mx-auto h-16 w-16 object-contain"
+                    />
+                  ) : null}
+                  <div className="mt-1 truncate text-[11px]">{clipart.name}</div>
                   <button
                     type="button"
-                    disabled={busy || genBusy}
-                    onClick={() => void onPublishGeneratedClipart()}
-                    className="rounded-lg bg-zinc-100 px-3 py-2 text-xs font-semibold text-zinc-900 disabled:opacity-50"
+                    className="text-[10px] text-red-400"
+                    onClick={() =>
+                      void deleteLibraryClipart(clipart.id).then(reload)
+                    }
                   >
-                    Publish to library
+                    Delete
                   </button>
-                  <button
-                    type="button"
-                    disabled={genBusy}
-                    onClick={() => setGenPreviewBase64(null)}
-                    className="rounded-lg border border-zinc-700 px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-900"
-                  >
-                    Discard
-                  </button>
-                </>
+                </div>
+              ))}
+              {cliparts.length === 0 ? (
+                <p className="col-span-full text-sm text-zinc-500">
+                  No cliparts yet.
+                </p>
               ) : null}
             </div>
-            {genPreviewBase64 ? (
-              <div
-                className="mt-2 inline-flex rounded-lg border border-zinc-800 p-3"
-                style={{
-                  backgroundImage:
-                    "linear-gradient(45deg,#3f3f46 25%,transparent 25%),linear-gradient(-45deg,#3f3f46 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#3f3f46 75%),linear-gradient(-45deg,transparent 75%,#3f3f46 75%)",
-                  backgroundSize: "16px 16px",
-                  backgroundPosition: "0 0,0 8px,8px -8px,-8px 0",
-                  backgroundColor: "#27272a",
-                }}
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={`data:image/png;base64,${genPreviewBase64}`}
-                  alt="Generated clipart preview"
-                  className="h-40 w-40 object-contain"
-                />
-              </div>
-            ) : null}
-          </form>
-
-          <form
-            onSubmit={(e) => void onClipartUpload(e)}
-            className="mt-4 flex flex-wrap items-end gap-2"
-          >
-            <label className="text-xs text-zinc-400">
-              Name
-              <input
-                name="name"
-                className="mt-1 block rounded border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-sm text-white"
-              />
-            </label>
-            <label className="text-xs text-zinc-400">
-              Category
-              <input
-                name="category"
-                defaultValue="general"
-                className="mt-1 block rounded border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-sm text-white"
-              />
-            </label>
-            <label className="text-xs text-zinc-400">
-              File
-              <input
-                name="file"
-                type="file"
-                accept={IMAGE_ACCEPT}
-                className="mt-1 block text-sm"
-              />
-            </label>
-            <button
-              type="submit"
-              className="rounded-lg bg-zinc-100 px-3 py-2 text-xs font-semibold text-zinc-900"
-            >
-              Upload
-            </button>
-          </form>
-          <div className="mt-4 grid grid-cols-3 gap-3 sm:grid-cols-5">
-            {cliparts.map((clipart) => (
-              <div
-                key={clipart.id}
-                className="rounded-lg border border-zinc-800 p-2 text-center"
-              >
-                {clipart.url ? (
-                  <img
-                    src={clipart.url}
-                    alt={clipart.name}
-                    className="mx-auto h-16 w-16 object-contain"
-                  />
-                ) : null}
-                <div className="mt-1 truncate text-[11px]">{clipart.name}</div>
-                <button
-                  type="button"
-                  className="text-[10px] text-red-400"
-                  onClick={() =>
-                    void deleteLibraryClipart(clipart.id).then(reload)
-                  }
-                >
-                  Delete
-                </button>
-              </div>
-            ))}
-          </div>
-        </section>
+          </section>
+        ) : null}
       </main>
     </div>
   )

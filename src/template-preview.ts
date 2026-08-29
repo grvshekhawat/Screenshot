@@ -477,6 +477,11 @@ function paintClipart(
 
   ctx.save()
   ctx.globalAlpha = opacity
+  const blur =
+    typeof clipart.blur === "number" && clipart.blur > 0
+      ? Math.min(48, clipart.blur)
+      : 0
+  if (blur > 0) ctx.filter = `blur(${blur}px)`
 
   if (frame && clipart.attachedFrameId === frame.id) {
     const spec = deviceSpec(frame.deviceId)

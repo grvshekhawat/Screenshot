@@ -13,6 +13,8 @@ import {
   MAX_FRAMES,
   MAX_LENSES,
   MAX_TEXTS,
+  CLIPART_WIDTH_MIN,
+  CLIPART_WIDTH_MAX,
   PALETTES,
   STORE_TARGETS,
   TEMPLATES,
@@ -1689,27 +1691,17 @@ function ClipartProperties({
       </PropertySection>
 
       <PropertySection id="position" title="Position">
-        <label className="block text-[11px] text-zinc-500">
-          Size {Math.round(activeClipart.width)}%
-          <input
-            type="range"
-            min={8}
-            max={attachFrameId ? 160 : 80}
-            step={1}
-            value={activeClipart.width}
-            onChange={(event) =>
-              updateClipart(slide.id, activeClipart.id, {
-                width: Number(event.target.value),
-              })
-            }
-            style={rangeFillStyle(
-              activeClipart.width,
-              8,
-              attachFrameId ? 160 : 80,
-            )}
-            className="range-thin mt-1.5 w-full"
-          />
-        </label>
+        <RangeValueField
+          label="Size"
+          suffix="%"
+          min={CLIPART_WIDTH_MIN}
+          max={CLIPART_WIDTH_MAX}
+          step={1}
+          value={Math.round(activeClipart.width)}
+          onChange={(value) =>
+            updateClipart(slide.id, activeClipart.id, { width: value })
+          }
+        />
         <PositionAlignControls
           x={activeClipart.x}
           y={activeClipart.y}
@@ -1750,6 +1742,17 @@ function ClipartProperties({
           value={activeClipart.shadow ?? 0}
           onChange={(value) =>
             updateClipart(slide.id, activeClipart.id, { shadow: value })
+          }
+        />
+        <RangeValueField
+          label="Blur"
+          suffix="px"
+          min={0}
+          max={48}
+          step={1}
+          value={activeClipart.blur ?? 0}
+          onChange={(value) =>
+            updateClipart(slide.id, activeClipart.id, { blur: value })
           }
         />
         <div>

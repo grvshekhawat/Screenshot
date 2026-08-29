@@ -16,6 +16,9 @@ export const MAX_FRAMES = 6
 export const MAX_TEXTS = 12
 export const MAX_CLIPARTS = 12
 export const MAX_LENSES = 4
+/** Clipart width as % of artboard (or of device when attached). */
+export const CLIPART_WIDTH_MIN = 1
+export const CLIPART_WIDTH_MAX = 500
 
 export type DeviceSpec = {
   id: DeviceId
@@ -807,20 +810,33 @@ export function createClipart(overrides: Partial<ClipartLayer> = {}): ClipartLay
     typeof overrides.shadow === "number" && Number.isFinite(overrides.shadow)
       ? Math.min(48, Math.max(0, overrides.shadow))
       : 0
+  const blur =
+    typeof overrides.blur === "number" && Number.isFinite(overrides.blur)
+      ? Math.min(48, Math.max(0, overrides.blur))
+      : 0
+  const widthRaw =
+    typeof overrides.width === "number" && Number.isFinite(overrides.width)
+      ? overrides.width
+      : 28
+  const width = Math.min(
+    CLIPART_WIDTH_MAX,
+    Math.max(CLIPART_WIDTH_MIN, widthRaw),
+  )
   return {
     assetId: "",
     x: 50,
     y: 50,
-    width: 28,
     rotation: 0,
     overflow: "cut",
     color: "#fbbf24",
     color2: "#f97316",
     colorAngle: 135,
     ...overrides,
+    width,
     aspect,
     opacity,
     shadow,
+    blur,
     recolor: overrides.recolor ?? "off",
     attachedFrameId: overrides.attachedFrameId ?? null,
     id: overrides.id ?? crypto.randomUUID(),

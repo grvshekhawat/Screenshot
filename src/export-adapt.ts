@@ -1,4 +1,4 @@
-import { DEVICES, STORE_TARGETS, deviceSpec } from "./constants"
+import { DEVICES, STORE_TARGETS, deviceSpec, CLIPART_WIDTH_MIN, CLIPART_WIDTH_MAX } from "./constants"
 import type {
   ClipartLayer,
   DeviceId,
@@ -216,8 +216,8 @@ export function adaptClipartToStoreTarget(
   const fromArt = artboardAspect(fromTargetId)
   const toArt = artboardAspect(toTargetId)
   const width = Math.min(
-    80,
-    Math.max(8, clipart.width * (fromArt / toArt)),
+    CLIPART_WIDTH_MAX,
+    Math.max(CLIPART_WIDTH_MIN, clipart.width * (fromArt / toArt)),
   )
   return { ...clipart, width }
 }

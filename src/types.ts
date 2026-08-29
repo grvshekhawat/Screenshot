@@ -128,6 +128,8 @@ export type ClipartLayer = {
   opacity: number
   /** Soft drop-shadow blur radius in artboard px (0 = none) */
   shadow: number
+  /** Gaussian blur of the clipart itself in artboard px (0 = sharp) */
+  blur: number
   /** Recolor the silhouette with a solid or gradient fill */
   recolor: ClipartRecolor
   color: string

@@ -112,15 +112,23 @@ export function ClipartVisual({
     typeof clipart.shadow === "number" && clipart.shadow > 0
       ? Math.min(48, clipart.shadow)
       : 0
+  const blur =
+    typeof clipart.blur === "number" && clipart.blur > 0
+      ? Math.min(48, clipart.blur)
+      : 0
   const color = clipart.color ?? "#fbbf24"
   const color2 = clipart.color2 ?? "#f97316"
   const colorAngle =
     typeof clipart.colorAngle === "number" ? clipart.colorAngle : 135
 
-  const filter =
-    shadow > 0
-      ? `drop-shadow(0 ${Math.max(2, shadow * 0.35)}px ${shadow}px rgba(0,0,0,0.45))`
-      : undefined
+  const filters: string[] = []
+  if (blur > 0) filters.push(`blur(${blur}px)`)
+  if (shadow > 0) {
+    filters.push(
+      `drop-shadow(0 ${Math.max(2, shadow * 0.35)}px ${shadow}px rgba(0,0,0,0.45))`,
+    )
+  }
+  const filter = filters.length > 0 ? filters.join(" ") : undefined
 
   const src = recolor === "off" ? imageUrl : bakedUrl
 

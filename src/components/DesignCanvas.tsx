@@ -6,7 +6,7 @@ import {
   type DragEvent,
   type PointerEvent,
 } from "react"
-import { STORE_TARGETS, deviceSpec } from "../constants"
+import { STORE_TARGETS, deviceSpec, CLIPART_WIDTH_MIN, CLIPART_WIDTH_MAX } from "../constants"
 import {
   clipartOverflow,
   findClipartOwner,
@@ -532,7 +532,6 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
     const originWidth = clipart.width
     const startX = event.clientX
     const startY = event.clientY
-    const maxWidth = attachedFrame ? 160 : 80
 
     const onMove = (moveEvent: globalThis.PointerEvent) => {
       const factor = resizeFactorFromCenter(
@@ -545,7 +544,10 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
         center.y,
       )
       updateClipart(owner.id, clipartId, {
-        width: Math.min(maxWidth, Math.max(8, originWidth * factor)),
+        width: Math.min(
+          CLIPART_WIDTH_MAX,
+          Math.max(CLIPART_WIDTH_MIN, originWidth * factor),
+        ),
       })
     }
 

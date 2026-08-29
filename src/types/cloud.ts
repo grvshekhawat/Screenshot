@@ -56,6 +56,8 @@ export type LibraryClipartRecord = {
 
 export function canExport(profile: Profile | null): boolean {
   if (!profile) return false
+  // Admins get clean exports without a subscription.
+  if (profile.role === "admin") return true
   if (profile.subscription_status === "active") return true
   // Canceled but still inside the paid period — keep Pro until that date.
   if (
