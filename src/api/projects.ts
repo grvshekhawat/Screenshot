@@ -2,6 +2,7 @@ import { isSupabaseConfigured } from "../config"
 import { assetIdsFromProject } from "../assets"
 import { createSampleProject, normalizeProject } from "../constants"
 import { builtInCatalogTemplates } from "../sample-templates"
+import { sampleScreenDataUrl } from "../sample-screens"
 import { getSupabase } from "../lib/supabase"
 import {
   renderProjectPreviewBlob,
@@ -271,6 +272,9 @@ export async function uploadProjectAsset(
 }
 
 export async function resolveAssetUrl(assetId: string): Promise<string | null> {
+  const sample = sampleScreenDataUrl(assetId)
+  if (sample) return sample
+
   if (assetId.startsWith("library:")) {
     const libraryId = assetId.slice("library:".length)
     if (!isSupabaseConfigured()) {

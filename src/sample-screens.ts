@@ -282,6 +282,11 @@ export function builtInSampleScreens(): SampleScreen[] {
   ]
 }
 
+/** Public catalog mock UIs — no login or storage required. */
+export function sampleScreenDataUrl(assetId: string): string | null {
+  return builtInSampleScreens().find((screen) => screen.id === assetId)?.dataUrl ?? null
+}
+
 const LW = 844
 const LH = 390
 

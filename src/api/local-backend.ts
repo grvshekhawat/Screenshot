@@ -6,7 +6,7 @@ import {
   CATALOG_SEED_VERSION,
   SEED_TEMPLATE_SPECS,
 } from "../sample-templates"
-import { builtInSampleScreens } from "../sample-screens"
+import { builtInSampleScreens, sampleScreenDataUrl } from "../sample-screens"
 import { renderProjectPreviewDataUrl } from "../template-preview"
 import type {
   LibraryClipartRecord,
@@ -260,7 +260,9 @@ export async function localLoadAsset(assetId: string): Promise<string | null> {
     const owned = assets[`${userId}:${assetId}`]
     if (owned) return owned
   }
-  return assets[`shared:${assetId}`] ?? null
+  const shared = assets[`shared:${assetId}`]
+  if (shared) return shared
+  return sampleScreenDataUrl(assetId)
 }
 
 async function localPreviewAssetUrls(
