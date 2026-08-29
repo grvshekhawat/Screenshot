@@ -7,7 +7,6 @@ import type {
   GuestText,
 } from "../overflow"
 import type {
-  Frame,
   FrameScreenSlot,
   Slide,
   TextLayer,
@@ -364,7 +363,8 @@ export function Artboard({
       )
     }
     for (const item of lensItems) {
-      const offsetX = "offsetX" in item ? item.offsetX : 0
+      const offsetX =
+        "offsetX" in item && typeof item.offsetX === "number" ? item.offsetX : 0
       nodes.set(
         item.lens.id,
         <div
@@ -372,7 +372,9 @@ export function Artboard({
           style={{
             position: "absolute",
             inset: 0,
-            transform: offsetX ? `translateX(${(offsetX / 100) * width}px)` : undefined,
+            transform: offsetX
+              ? `translateX(${(offsetX / 100) * width}px)`
+              : undefined,
             zIndex: z(item.lens.id),
           }}
         >

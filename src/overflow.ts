@@ -196,6 +196,18 @@ export function overflowsHorizontally(edges: OverflowEdges): boolean {
   return edges.left || edges.right
 }
 
+export type GuestFrame = {
+  frame: Frame
+  originSlideId: string
+  isGuest: boolean
+}
+
+export type GuestClipart = {
+  clipart: ClipartLayer
+  originSlideId: string
+  isGuest: boolean
+}
+
 export type GuestText = {
   text: TextLayer
   originSlideId: string

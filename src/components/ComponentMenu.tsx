@@ -182,14 +182,14 @@ export function ComponentMenu({
           <IconButton
             label="Cut overflow"
             active={continuityMode === "cut"}
-            onClick={onCut}
+            onClick={() => onCut?.()}
           >
             <CutIcon />
           </IconButton>
           <IconButton
             label="Continue across slides"
             active={continuityMode === "continue"}
-            onClick={onContinue}
+            onClick={() => onContinue?.()}
           >
             <ContinueIcon />
           </IconButton>
