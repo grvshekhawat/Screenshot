@@ -29,7 +29,8 @@ Cloud SaaS App Store / Play screenshot editor (**Next.js App Router** + React). 
 - Blog: MDX under `content/blog/` → `/blog`, `/blog/[slug]`
 - Crawl: `src/app/sitemap.ts`, `src/app/robots.ts` (disallow `/app`, `/admin`, `/login`)
 - Schema/RLS: `supabase/migrations/001_init.sql` (+ `002_public_catalog.sql`, `003_admin_catalog.sql`)
-- Env template: `.env.example` (`NEXT_PUBLIC_*`)
+- Env template: `.env.example` (`NEXT_PUBLIC_*` — must be static `process.env.NEXT_PUBLIC_…` reads in `src/config.ts` so Next inlines them for the client; dynamic env lookups break auth and force demo mode)
+
 - Go-live checklist: `GO_LIVE.md`
 
 ## Routes

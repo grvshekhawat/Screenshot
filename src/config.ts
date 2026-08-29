@@ -1,27 +1,27 @@
-function publicEnv(name: string): string | undefined {
-  const nextKey = `NEXT_PUBLIC_${name}`
-  const viteKey = `VITE_${name}`
-  const fromNext = process.env[nextKey]
-  if (fromNext) return fromNext
-  // Allow VITE_* during local migration if copied into .env (Next loads all .env keys server-side;
-  // only NEXT_PUBLIC_* is inlined for the browser bundle).
-  const fromVite = process.env[viteKey]
-  return fromVite || undefined
+function trimEnv(value: string | undefined): string | undefined {
+  const v = value?.trim()
+  return v || undefined
 }
 
 export const MAX_CLOUD_PROJECTS = 5
 
+/**
+ * NEXT_PUBLIC_* must be referenced as static property accesses so Next.js
+ * can inline them into the client bundle. Dynamic `process.env[key]` stays
+ * undefined in the browser and incorrectly forces local demo mode.
+ */
 export const config = {
-  supabaseUrl: publicEnv("SUPABASE_URL"),
+  supabaseUrl: trimEnv(process.env.NEXT_PUBLIC_SUPABASE_URL),
   // Prefer new publishable key (sb_publishable_…); anon key still works as fallback
   supabaseAnonKey:
-    publicEnv("SUPABASE_PUBLISHABLE_KEY") || publicEnv("SUPABASE_ANON_KEY"),
-  stripePublishableKey: publicEnv("STRIPE_PUBLISHABLE_KEY"),
-  stripePriceId: publicEnv("STRIPE_PRICE_ID"),
-  paypalClientId: publicEnv("PAYPAL_CLIENT_ID"),
-  paypalPlanId: publicEnv("PAYPAL_PLAN_ID"),
-  billingFunctionsBase: publicEnv("BILLING_FUNCTIONS_URL"),
-  appUrl: publicEnv("APP_URL"),
+    trimEnv(process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY) ||
+    trimEnv(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
+  stripePublishableKey: trimEnv(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY),
+  stripePriceId: trimEnv(process.env.NEXT_PUBLIC_STRIPE_PRICE_ID),
+  paypalClientId: trimEnv(process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID),
+  paypalPlanId: trimEnv(process.env.NEXT_PUBLIC_PAYPAL_PLAN_ID),
+  billingFunctionsBase: trimEnv(process.env.NEXT_PUBLIC_BILLING_FUNCTIONS_URL),
+  appUrl: trimEnv(process.env.NEXT_PUBLIC_APP_URL),
 }
 
 export function isSupabaseConfigured(): boolean {
@@ -44,6 +44,7 @@ export function appOrigin(): string {
 /** Canonical site origin for metadata / sitemap (server-safe). */
 export function siteOrigin(): string {
   const configured = (config.appUrl ?? "").replace(/\/$/, "")
+  if (configured && !/localhost|127\.0\.0\.1/i.test(configured)) return configured
   if (configured) return configured
   if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`
   return "https://screenshot.design"
