@@ -4,34 +4,35 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "lint": "oxlint",
-    "preview": "vite preview"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "oxlint"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",
-    "@tailwindcss/vite": "^4.3.3",
+    "@tailwindcss/postcss": "^4.3.3",
     "file-saver": "^2.0.5",
+    "gray-matter": "^4.0.3",
     "heic-to": "^1.5.2",
     "idb-keyval": "^6.3.0",
     "jszip": "^3.10.1",
     "modern-screenshot": "^4.7.0",
+    "next": "^16.3.3",
+    "next-mdx-remote": "^6.0.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "react-router-dom": "^7.18.2",
+    "reading-time": "^1.5.0",
     "tailwindcss": "^4.3.3"
   },
   "devDependencies": {
     "@types/file-saver": "^2.0.7",
+    "@types/mdx": "^2.0.14",
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
-    "@types/react-router-dom": "^5.3.3",
-    "@vitejs/plugin-react": "^6.0.4",
     "oxlint": "^1.75.0",
     "supabase": "^2.116.0",
-    "typescript": "~6.0.2",
-    "vite": "^8.2.0"
+    "typescript": "~6.0.2"
   }
 }

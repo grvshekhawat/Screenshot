@@ -1,5 +1,8 @@
+"use client"
+
 import { useEffect, useMemo, useState } from "react"
-import { Link, useNavigate } from "react-router-dom"
+import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { listPublishedTemplates } from "../api/projects"
 import { useAuth } from "../auth/AuthProvider"
 import {
@@ -12,7 +15,7 @@ import { SiteFooter } from "../components/SiteFooter"
 
 export function HomePage() {
   const { userId, ready } = useAuth()
-  const navigate = useNavigate()
+  const router = useRouter()
   const [templates, setTemplates] = useState<TemplateRecord[]>([])
   const [orientation, setOrientation] =
     useState<ArtboardOrientation>("portrait")
@@ -40,18 +43,24 @@ export function HomePage() {
     [templates, orientation],
   )
 
-  const goToEditor = () => navigate(userId ? "/app" : "/login")
+  const goToEditor = () => router.push(userId ? "/app" : "/login")
 
   return (
     <div className="flex min-h-full flex-col bg-[#0c0c10] text-zinc-100">
       <header className="flex h-14 items-center justify-between border-b border-zinc-800 px-4">
         <span className="text-sm font-semibold">Screenshot Studio</span>
         <div className="flex gap-3 text-sm">
-          <Link to="/pricing" className="text-zinc-400 hover:text-white">
+          <Link href="/templates" className="text-zinc-400 hover:text-white">
+            Templates
+          </Link>
+          <Link href="/blog" className="text-zinc-400 hover:text-white">
+            Blog
+          </Link>
+          <Link href="/pricing" className="text-zinc-400 hover:text-white">
             Pricing
           </Link>
           <Link
-            to={userId ? "/app" : "/login"}
+            href={userId ? "/app" : "/login"}
             className="rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white"
           >
             {userId ? "Open app" : "Sign in"}
@@ -61,24 +70,25 @@ export function HomePage() {
 
       <section className="mx-auto max-w-4xl px-4 py-16 text-center">
         <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">
-          App Store screenshots, without the fuss
+          App Store &amp; Play Store screenshots, without the fuss
         </h1>
         <p className="mx-auto mt-4 max-w-2xl text-base text-zinc-400">
-          Create and save up to 5 projects free, with watermarked PNG previews.
-          Subscribe when you need clean exports and multi-size ZIP packs.
+          Design iPhone, iPad, and Google Play marketing screenshots with
+          ready-made templates. Create and save up to 5 projects free (watermarked
+          PNG). Upgrade to Pro for clean exports and multi-size ZIP packs.
         </p>
         <div className="mt-8 flex justify-center gap-3">
           <Link
-            to={userId ? "/app" : "/login"}
+            href={userId ? "/app" : "/login"}
             className="rounded-lg bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-violet-500"
           >
             Get started
           </Link>
           <Link
-            to="/pricing"
+            href="/templates"
             className="rounded-lg border border-zinc-700 px-5 py-2.5 text-sm text-zinc-200 hover:bg-zinc-900"
           >
-            View pricing
+            Browse templates
           </Link>
         </div>
       </section>
@@ -88,7 +98,11 @@ export function HomePage() {
           <div>
             <h2 className="text-lg font-semibold">Templates</h2>
             <p className="mt-0.5 text-xs text-zinc-500">
-              Browse freely. Sign in to create or edit a project.
+              Browse freely.{" "}
+              <Link href="/templates" className="text-zinc-400 hover:text-white">
+                See all templates
+              </Link>
+              . Sign in to create or edit a project.
             </p>
           </div>
           <div

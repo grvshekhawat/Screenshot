@@ -1,5 +1,8 @@
-import { useState, type FormEvent } from "react"
-import { Link, Navigate, useNavigate } from "react-router-dom"
+"use client"
+
+import { useEffect, useState, type FormEvent } from "react"
+import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { useAuth } from "../auth/AuthProvider"
 import { SiteFooter } from "../components/SiteFooter"
 
@@ -11,7 +14,7 @@ export function LoginPage() {
     signUpWithPassword,
     usingLocalBackend,
   } = useAuth()
-  const navigate = useNavigate()
+  const router = useRouter()
   const [mode, setMode] = useState<"signin" | "signup">("signin")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
@@ -20,7 +23,17 @@ export function LoginPage() {
   const [busy, setBusy] = useState(false)
   const [acceptedLegal, setAcceptedLegal] = useState(false)
 
-  if (ready && userId) return <Navigate to="/app" replace />
+  useEffect(() => {
+    if (ready && userId) router.replace("/app")
+  }, [ready, userId, router])
+
+  if (ready && userId) {
+    return (
+      <div className="flex min-h-full items-center justify-center text-sm text-zinc-400">
+        Redirecting…
+      </div>
+    )
+  }
 
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault()
@@ -43,7 +56,7 @@ export function LoginPage() {
       } else {
         await signInWithPassword(email, password)
       }
-      navigate("/app")
+      router.push("/app")
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign-in failed")
     } finally {
@@ -57,10 +70,10 @@ export function LoginPage() {
   return (
     <div className="flex min-h-full flex-col bg-[#0c0c10]">
       <header className="flex h-14 items-center justify-between border-b border-zinc-800 px-4">
-        <Link to="/" className="text-sm font-semibold text-white">
+        <Link href="/" className="text-sm font-semibold text-white">
           Screenshot Studio
         </Link>
-        <Link to="/" className="text-sm text-zinc-400 hover:text-white">
+        <Link href="/" className="text-sm text-zinc-400 hover:text-white">
           ← Back to home
         </Link>
       </header>
@@ -146,7 +159,7 @@ export function LoginPage() {
                 <span>
                   I agree to the{" "}
                   <Link
-                    to="/terms"
+                    href="/terms"
                     target="_blank"
                     rel="noreferrer"
                     className="text-zinc-200 underline-offset-2 hover:text-white hover:underline"
@@ -156,7 +169,7 @@ export function LoginPage() {
                   </Link>{" "}
                   and{" "}
                   <Link
-                    to="/privacy"
+                    href="/privacy"
                     target="_blank"
                     rel="noreferrer"
                     className="text-zinc-200 underline-offset-2 hover:text-white hover:underline"
@@ -181,7 +194,7 @@ export function LoginPage() {
           ) : null}
           {error ? <p className="mt-3 text-sm text-red-400">{error}</p> : null}
           <p className="mt-4 text-center text-sm text-zinc-500">
-            <Link to="/" className="text-zinc-300 hover:text-white">
+            <Link href="/" className="text-zinc-300 hover:text-white">
               Continue browsing templates
             </Link>
           </p>

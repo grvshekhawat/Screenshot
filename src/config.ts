@@ -1,21 +1,27 @@
+function publicEnv(name: string): string | undefined {
+  const nextKey = `NEXT_PUBLIC_${name}`
+  const viteKey = `VITE_${name}`
+  const fromNext = process.env[nextKey]
+  if (fromNext) return fromNext
+  // Allow VITE_* during local migration if copied into .env (Next loads all .env keys server-side;
+  // only NEXT_PUBLIC_* is inlined for the browser bundle).
+  const fromVite = process.env[viteKey]
+  return fromVite || undefined
+}
+
 export const MAX_CLOUD_PROJECTS = 5
 
 export const config = {
-  supabaseUrl: import.meta.env.VITE_SUPABASE_URL as string | undefined,
+  supabaseUrl: publicEnv("SUPABASE_URL"),
   // Prefer new publishable key (sb_publishable_…); anon key still works as fallback
   supabaseAnonKey:
-    (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined) ||
-    (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined),
-  stripePublishableKey: import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY as
-    | string
-    | undefined,
-  stripePriceId: import.meta.env.VITE_STRIPE_PRICE_ID as string | undefined,
-  paypalClientId: import.meta.env.VITE_PAYPAL_CLIENT_ID as string | undefined,
-  paypalPlanId: import.meta.env.VITE_PAYPAL_PLAN_ID as string | undefined,
-  billingFunctionsBase: import.meta.env.VITE_BILLING_FUNCTIONS_URL as
-    | string
-    | undefined,
-  appUrl: import.meta.env.VITE_APP_URL as string | undefined,
+    publicEnv("SUPABASE_PUBLISHABLE_KEY") || publicEnv("SUPABASE_ANON_KEY"),
+  stripePublishableKey: publicEnv("STRIPE_PUBLISHABLE_KEY"),
+  stripePriceId: publicEnv("STRIPE_PRICE_ID"),
+  paypalClientId: publicEnv("PAYPAL_CLIENT_ID"),
+  paypalPlanId: publicEnv("PAYPAL_PLAN_ID"),
+  billingFunctionsBase: publicEnv("BILLING_FUNCTIONS_URL"),
+  appUrl: publicEnv("APP_URL"),
 }
 
 export function isSupabaseConfigured(): boolean {
@@ -33,4 +39,12 @@ export function appOrigin(): string {
   if (live) return live
   if (origin && !originIsLocal) return origin
   return origin || configured || ""
+}
+
+/** Canonical site origin for metadata / sitemap (server-safe). */
+export function siteOrigin(): string {
+  const configured = (config.appUrl ?? "").replace(/\/$/, "")
+  if (configured) return configured
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`
+  return "https://screenshot.design"
 }

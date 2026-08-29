@@ -1,6 +1,6 @@
 # Screenshot Studio
 
-Cloud SaaS App Store / Play screenshot editor (Vite + React). Auth, projects, templates, and clipart catalog use Supabase when configured; otherwise a **local demo backend** (`src/api/local-backend.ts`) keeps the app runnable without env keys.
+Cloud SaaS App Store / Play screenshot editor (**Next.js App Router** + React). Auth, projects, templates, and clipart catalog use Supabase when configured; otherwise a **local demo backend** (`src/api/local-backend.ts`) keeps the app runnable without env keys.
 
 ## Product rules
 
@@ -15,22 +15,26 @@ Cloud SaaS App Store / Play screenshot editor (Vite + React). Auth, projects, te
 
 ## Architecture
 
+- Framework: Next.js App Router (`src/app/`); shared UI/logic under `src/` (page components in `src/views/`). Public marketing/blog/template pages are server-rendered HTML for SEO; `/app` and `/admin` are client-heavy.
 - Auth: `src/auth/AuthProvider.tsx` — email + password (Supabase) or email demo (local). Magic links are not used.
-- Projects: `src/api/projects.ts` — cloud CRUD + 5-cap for non-admins (`enforce_project_limit`; admins skip); editor at `/app/:projectId`. Local demo backend stores projects/assets in **IndexedDB** (migrates off `localStorage` to avoid ~5MB quota errors)
+- Projects: `src/api/projects.ts` — cloud CRUD + 5-cap for non-admins (`enforce_project_limit`; admins skip); editor at `/app/[projectId]`. Local demo backend stores projects/assets in **IndexedDB** (migrates off `localStorage` to avoid ~5MB quota errors)
 - State: `src/project-store.tsx` — cloud autosave when `projectId` set; IndexedDB fallback when not
 - Billing: `src/billing/*` + Edge Functions under `supabase/functions/` (Stripe + PayPal webhooks → `profiles`)
 - Catalog: published `templates` + `library_cliparts`; admin at `/admin` (`*@admin.local` in demo, or `profiles.role = admin`). Logged-out visitors can read published templates (RLS + `GRANT SELECT` to `anon`). Landing page merges built-in seeds with cloud rows; deleted seeds stay gone via `catalog_hidden_templates` (run `003_admin_catalog.sql`). Admins can DELETE templates (RLS + grants).
-  - Templates: design in the editor → Admin → pick project → **Publish as template** (copies assets into `templates/` bucket; writes multi-slide `preview_path` strip image).
+  - Public SEO catalog: `/templates` and `/templates/[slug]` use `src/lib/templates-seo.ts` (server-safe titles/descriptions; preview `<img>` when stored). Client hydrates missing seed previews via `listPublishedTemplates` (same canvas path as Home).
+  - Templates: design in the editor → Admin → pick project → **Publish as template** (copies assets into `templates/` bucket; writes multi-slide `preview_path` strip image). Keep **slugs stable** after publish for SEO.
   - **List thumbnails are cache-first:** Home / Projects / Admin load only the stored strip image (`thumbnail_path` / `preview_path` → signed URL). They do **not** remount artboards per visit. Strip is regenerated on project create/save and template publish (and once if the cache is missing). Built-in seed previews cache in IndexedDB keyed by seed id + catalog seed version. Preview assets are inlined as data URLs; recolored clipart is canvas-baked to `<img>` so strips include clipart (CSS `mask-image` is not capture-safe).
 - Project list cards use `thumbnail_path` / `thumbnail_url` (same strip as templates), refreshed on save and when leaving the editor (`flushSave` on ← Projects / unmount). List URLs append `updated_at` as a cache-buster so the new strip shows after exit.
   - Local demo seeds 4 portrait + 4 landscape gallery templates (`sample-screens.ts` / `sample-templates.ts`, catalog seed v10). Landscape phones reuse portrait chrome rotated −90°; screenshots stay upright (counter-rotated).
+- Blog: MDX under `content/blog/` → `/blog`, `/blog/[slug]`
+- Crawl: `src/app/sitemap.ts`, `src/app/robots.ts` (disallow `/app`, `/admin`, `/login`)
 - Schema/RLS: `supabase/migrations/001_init.sql` (+ `002_public_catalog.sql`, `003_admin_catalog.sql`)
-- Env template: `.env.example`
+- Env template: `.env.example` (`NEXT_PUBLIC_*`)
 - Go-live checklist: `GO_LIVE.md`
 
 ## Routes
 
-`/` gallery · `/login` · `/pricing` · `/terms` · `/privacy` · `/app` projects · `/app/:projectId` editor · `/admin`
+`/` gallery · `/templates` · `/templates/[slug]` · `/blog` · `/blog/[slug]` · `/login` · `/pricing` · `/terms` · `/privacy` · `/app` projects · `/app/[projectId]` editor · `/admin`
 
 Support: `support@screenshot.design` (footer + legal pages).
 

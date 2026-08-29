@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom"
+import Link from "next/link"
 import { SiteFooter, SUPPORT_EMAIL } from "../components/SiteFooter"
 
 const EFFECTIVE = "August 29, 2026"
@@ -166,14 +166,14 @@ export function LegalPage({ doc }: { doc: Doc }) {
   return (
     <div className="flex min-h-full flex-col bg-[#0c0c10] text-zinc-100">
       <header className="flex h-14 items-center justify-between border-b border-zinc-800 px-4">
-        <Link to="/" className="text-sm font-semibold">
+        <Link href="/" className="text-sm font-semibold">
           Screenshot Studio
         </Link>
         <div className="flex gap-3 text-sm">
-          <Link to="/pricing" className="text-zinc-400 hover:text-white">
+          <Link href="/pricing" className="text-zinc-400 hover:text-white">
             Pricing
           </Link>
-          <Link to="/" className="text-zinc-400 hover:text-white">
+          <Link href="/" className="text-zinc-400 hover:text-white">
             Home
           </Link>
         </div>

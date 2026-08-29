@@ -45,27 +45,30 @@ Ship order: **Supabase → billing → front-end → verify → announce**.
 
 ## C. Front-end deploy
 
-- [x] Host SPA (Vercel recommended; `vercel.json` SPA rewrite already present)
+- [x] Host on Vercel as **Next.js** (Framework Preset: Next.js). Do **not** use an SPA catch-all rewrite to `index.html`.
 - [x] Custom domain (e.g. `screenshot.design`) + HTTPS
-- [ ] Production env vars (from `.env.example`):
-  - [x] `VITE_APP_URL=https://<your-domain>`
-  - [x] `VITE_SUPABASE_URL`
-  - [x] `VITE_SUPABASE_PUBLISHABLE_KEY` (or legacy anon key)
-  - [ ] `VITE_BILLING_FUNCTIONS_URL=https://<project>.supabase.co/functions/v1`
-  - [ ] `VITE_STRIPE_PUBLISHABLE_KEY` + `VITE_STRIPE_PRICE_ID`
+- [ ] Production env vars (from `.env.example` — **`NEXT_PUBLIC_*`**):
+  - [ ] `NEXT_PUBLIC_APP_URL=https://<your-domain>`
+  - [ ] `NEXT_PUBLIC_SUPABASE_URL`
+  - [ ] `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (or legacy `NEXT_PUBLIC_SUPABASE_ANON_KEY`)
+  - [ ] `NEXT_PUBLIC_BILLING_FUNCTIONS_URL=https://<project>.supabase.co/functions/v1`
+  - [ ] `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` + `NEXT_PUBLIC_STRIPE_PRICE_ID`
   - [ ] PayPal public ids if enabled
 - [ ] `npm run build` succeeds in CI / host
 - [ ] Confirm app is **not** in local-demo mode (Supabase URL + key both set)
+- [ ] Confirm public HTML: View Source on `/`, `/templates`, `/blog` shows real titles/body (not an empty root shell)
 
 
 
 ## D. Catalog / content
 
 - [ ] Sign in as admin → `/admin`
-- [ ] Publish at least a few templates (portrait + landscape)
+- [ ] Publish at least a few templates (portrait + landscape); keep **slugs stable** after publish
 - [ ] Publish clipart / shapes (and gestures if used)
-- [ ] Logged-out Home shows templates with strip thumbnails
+- [ ] Logged-out Home and `/templates` show templates with strip thumbnails
+- [ ] `/templates/[slug]` shows title, description, preview, CTA
 - [ ] Delete/hide a seed template once to confirm `catalog_hidden_templates` works
+- [ ] Blog posts under `content/blog/` render at `/blog` and `/blog/[slug]`
 
 
 
@@ -99,6 +102,7 @@ Ship order: **Supabase → billing → front-end → verify → announce**.
 - [ ] Logged-out can browse templates; cannot create projects
 - [ ] Login required to edit
 - [ ] Admin publish template / clipart / delete template
+- [ ] `/sitemap.xml` and `/robots.txt` reachable; robots disallow `/app`, `/admin`, `/login`
 
 
 
@@ -113,10 +117,19 @@ Ship order: **Supabase → billing → front-end → verify → announce**.
 
 
 
-## G. Launch
+## G. SEO / Search Console
+
+- [ ] Google Search Console → add property for `https://screenshot.design`
+- [ ] Verify ownership (DNS TXT or HTML meta / file)
+- [ ] Submit sitemap: `https://screenshot.design/sitemap.xml`
+- [ ] Spot-check indexed URLs for `/`, `/pricing`, `/templates`, `/blog`, and a few template/blog slugs
+
+
+
+## H. Launch
 
 - [ ] Final deploy from main
-- [ ] DNS live; `VITE_APP_URL` matches canonical URL
+- [ ] DNS live; `NEXT_PUBLIC_APP_URL` matches canonical URL
 - [ ] One full path as a stranger: land → template → signup → edit → export → pay
 - [ ] Announce
 

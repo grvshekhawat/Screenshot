@@ -1,5 +1,8 @@
+"use client"
+
 import { useEffect, useState, type FormEvent } from "react"
-import { Link, Navigate } from "react-router-dom"
+import Link from "next/link"
+import { useRouter } from "next/navigation"
 import {
   deleteLibraryClipart,
   deleteTemplate,
@@ -23,6 +26,7 @@ import { TemplateThumbnail } from "../components/TemplateThumbnail"
 
 export function AdminPage() {
   const { ready, userId, isAdmin, usingLocalBackend } = useAuth()
+  const router = useRouter()
   const [templates, setTemplates] = useState<TemplateRecord[]>([])
   const [cliparts, setCliparts] = useState<LibraryClipartRecord[]>([])
   const [projects, setProjects] = useState<ProjectRecord[]>([])
@@ -48,7 +52,17 @@ export function AdminPage() {
     )
   }, [isAdmin])
 
-  if (ready && !userId) return <Navigate to="/login" replace />
+  useEffect(() => {
+    if (ready && !userId) router.replace("/login")
+  }, [ready, userId, router])
+
+  if (ready && !userId) {
+    return (
+      <div className="flex min-h-full items-center justify-center text-sm text-zinc-400">
+        Redirecting…
+      </div>
+    )
+  }
   if (ready && !isAdmin) {
     return (
       <div className="flex min-h-full items-center justify-center bg-[#0c0c10] text-sm text-zinc-400">
@@ -145,10 +159,10 @@ export function AdminPage() {
   return (
     <div className="min-h-full bg-[#0c0c10] text-zinc-100">
       <header className="flex h-14 items-center justify-between border-b border-zinc-800 px-4">
-        <Link to="/app" className="text-sm font-semibold">
+        <Link href="/app" className="text-sm font-semibold">
           Admin
         </Link>
-        <Link to="/app" className="text-xs text-zinc-400 hover:text-white">
+        <Link href="/app" className="text-xs text-zinc-400 hover:text-white">
           Back to projects
         </Link>
       </header>

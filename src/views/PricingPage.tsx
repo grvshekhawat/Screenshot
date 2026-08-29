@@ -1,5 +1,8 @@
+"use client"
+
 import { useState } from "react"
-import { Link, useNavigate } from "react-router-dom"
+import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { useAuth } from "../auth/AuthProvider"
 import { SiteFooter } from "../components/SiteFooter"
 import { openCustomerPortal, startCheckout } from "../billing/checkout"
@@ -8,7 +11,7 @@ import { formatSubscriptionEndDate } from "../types/cloud"
 export function PricingPage() {
   const { userId, canExport, profile, refreshProfile, usingLocalBackend } =
     useAuth()
-  const navigate = useNavigate()
+  const router = useRouter()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -23,7 +26,7 @@ export function PricingPage() {
 
   const subscribe = async () => {
     if (!userId) {
-      navigate("/login")
+      router.push("/login")
       return
     }
     setBusy(true)
@@ -35,7 +38,7 @@ export function PricingPage() {
         window.location.href = result.url
         return
       }
-      navigate("/app")
+      router.push("/app")
     } catch (err) {
       setError(err instanceof Error ? err.message : "Checkout failed")
     } finally {
@@ -51,7 +54,7 @@ export function PricingPage() {
       if (result.url?.startsWith("http")) {
         window.location.href = result.url
       } else if (result.url) {
-        navigate(result.url)
+        router.push(result.url)
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not open portal")
@@ -63,10 +66,10 @@ export function PricingPage() {
   return (
     <div className="flex min-h-full flex-col bg-[#0c0c10] text-zinc-100">
       <header className="flex h-14 items-center justify-between border-b border-zinc-800 px-4">
-        <Link to="/" className="text-sm font-semibold">
+        <Link href="/" className="text-sm font-semibold">
           Screenshot Studio
         </Link>
-        <Link to={userId ? "/app" : "/login"} className="text-sm text-zinc-400 hover:text-white">
+        <Link href={userId ? "/app" : "/login"} className="text-sm text-zinc-400 hover:text-white">
           {userId ? "Projects" : "Sign in"}
         </Link>
       </header>

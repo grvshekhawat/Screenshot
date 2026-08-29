@@ -1,5 +1,8 @@
+"use client"
+
 import { useEffect, useMemo, useState } from "react"
-import { Link, Navigate, useNavigate } from "react-router-dom"
+import Link from "next/link"
+import { useRouter } from "next/navigation"
 import {
   cloneTemplateToProject,
   createProject,
@@ -35,19 +38,22 @@ export function ProjectsPage() {
     canExport,
     refreshProfile,
   } = useAuth()
-  const navigate = useNavigate()
+  const router = useRouter()
   const [projects, setProjects] = useState<ProjectRecord[]>([])
   const [templates, setTemplates] = useState<TemplateRecord[]>([])
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [orientation, setOrientation] = useState<ArtboardOrientation>(() => {
+  const [orientation, setOrientation] =
+    useState<ArtboardOrientation>("portrait")
+
+  useEffect(() => {
     try {
       const raw = localStorage.getItem(ORIENT_KEY)
-      return raw === "landscape" ? "landscape" : "portrait"
+      if (raw === "landscape" || raw === "portrait") setOrientation(raw)
     } catch {
-      return "portrait"
+      // ignore
     }
-  })
+  }, [])
 
   const reload = async () => {
     const [nextProjects, nextTemplates] = await Promise.all([
@@ -108,7 +114,9 @@ export function ProjectsPage() {
     }
   }, [orientation])
 
-  if (ready && !userId) return <Navigate to="/login" replace />
+  useEffect(() => {
+    if (ready && !userId) router.replace("/login")
+  }, [ready, userId, router])
 
   const visibleProjects = useMemo(
     () =>
@@ -125,12 +133,20 @@ export function ProjectsPage() {
     [templates, orientation],
   )
 
+  if (ready && !userId) {
+    return (
+      <div className="flex min-h-full items-center justify-center text-sm text-zinc-400">
+        Redirecting…
+      </div>
+    )
+  }
+
   const onCreate = async () => {
     setBusy(true)
     setError(null)
     try {
       const record = await createProject(createSampleProject(orientation))
-      navigate(`/app/${record.id}`)
+      router.push(`/app/${record.id}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not create project")
     } finally {
@@ -143,7 +159,7 @@ export function ProjectsPage() {
     setError(null)
     try {
       const record = await cloneTemplateToProject(template)
-      navigate(`/app/${record.id}`)
+      router.push(`/app/${record.id}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not use template")
     } finally {
@@ -167,7 +183,7 @@ export function ProjectsPage() {
   return (
     <div className="min-h-full bg-[#0c0c10] text-zinc-100">
       <header className="flex h-14 items-center justify-between border-b border-zinc-800 px-4">
-        <Link to="/" className="text-sm font-semibold">
+        <Link href="/" className="text-sm font-semibold">
           Screenshot Studio
         </Link>
         <div className="flex items-center gap-3 text-xs text-zinc-400">
@@ -179,11 +195,11 @@ export function ProjectsPage() {
           >
             {canExport ? "Pro" : "Free"}
           </span>
-          <Link to="/pricing" className="hover:text-white">
+          <Link href="/pricing" className="hover:text-white">
             Pricing
           </Link>
           {profile?.role === "admin" ? (
-            <Link to="/admin" className="hover:text-white">
+            <Link href="/admin" className="hover:text-white">
               Admin
             </Link>
           ) : null}
@@ -264,7 +280,7 @@ export function ProjectsPage() {
               <button
                 type="button"
                 className="w-full text-left"
-                onClick={() => navigate(`/app/${project.id}`)}
+                onClick={() => router.push(`/app/${project.id}`)}
               >
                 <ProjectThumbnail
                   project={project}

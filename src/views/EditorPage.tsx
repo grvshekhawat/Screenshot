@@ -1,11 +1,14 @@
-import { useState } from "react"
-import { Navigate, useNavigate, useParams, Link } from "react-router-dom"
+"use client"
+
+import { useEffect, useState } from "react"
+import Link from "next/link"
+import { useParams, useRouter } from "next/navigation"
 import { useAuth } from "../auth/AuthProvider"
 import { Editor } from "../components/Editor"
 import { ProjectProvider, useProject } from "../project-store"
 
 function EditorChrome() {
-  const navigate = useNavigate()
+  const router = useRouter()
   const { flushSave, saveState } = useProject()
   const [leaving, setLeaving] = useState(false)
 
@@ -17,7 +20,7 @@ function EditorChrome() {
     } catch (err) {
       console.error(err)
     }
-    navigate("/app")
+    router.push("/app")
   }
 
   return (
@@ -31,7 +34,7 @@ function EditorChrome() {
         >
           {leaving ? "Saving…" : "← Projects"}
         </button>
-        <Link to="/pricing" className="hover:text-white">
+        <Link href="/pricing" className="hover:text-white">
           Pricing
         </Link>
       </div>
@@ -43,11 +46,23 @@ function EditorChrome() {
 }
 
 export function EditorPage() {
-  const { projectId } = useParams()
+  const params = useParams<{ projectId: string }>()
+  const projectId = params.projectId
   const { ready, userId } = useAuth()
+  const router = useRouter()
 
-  if (ready && !userId) return <Navigate to="/login" replace />
-  if (!projectId) return <Navigate to="/app" replace />
+  useEffect(() => {
+    if (ready && !userId) router.replace("/login")
+    else if (!projectId) router.replace("/app")
+  }, [ready, userId, projectId, router])
+
+  if (!ready || !userId || !projectId) {
+    return (
+      <div className="flex h-full items-center justify-center text-sm text-zinc-400">
+        Loading…
+      </div>
+    )
+  }
 
   return (
     <ProjectProvider projectId={projectId}>
