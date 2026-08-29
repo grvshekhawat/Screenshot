@@ -41,29 +41,6 @@ export function HomePage() {
 
   const goToEditor = () => navigate(userId ? "/app" : "/login")
 
-  useEffect(() => {
-    if (!ready) return
-    let cancelled = false
-    void listPublishedTemplates()
-      .then((rows) => {
-        if (!cancelled) setTemplates(rows)
-      })
-      .catch(() => {
-        if (!cancelled) setTemplates([])
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [ready])
-
-  const visibleTemplates = useMemo(
-    () =>
-      templates.filter(
-        (template) => projectOrientation(template.data) === orientation,
-      ),
-    [templates, orientation],
-  )
-
   return (
     <div className="min-h-full bg-[#0c0c10] text-zinc-100">
       <header className="flex h-14 items-center justify-between border-b border-zinc-800 px-4">
