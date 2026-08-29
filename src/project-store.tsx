@@ -329,19 +329,19 @@ export function ProjectProvider({
   const [historyTick, setHistoryTick] = useState(0)
   const historyPastRef = useRef<Project[]>([])
   const historyFutureRef = useRef<Project[]>([])
-  const historyCoalesceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const historyCoalesceRef = useRef<number | null>(null)
   const projectRef = useRef(project)
   const assetUrlsRef = useRef(assetUrls)
   const readyRef = useRef(ready)
-  const autosaveTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null)
+  const autosaveTimerRef = useRef<number | null>(null)
   const saveInFlightRef = useRef<Promise<void> | null>(null)
   projectRef.current = project
   assetUrlsRef.current = assetUrls
   readyRef.current = ready
 
   const clearHistoryCoalesce = useCallback(() => {
-    if (historyCoalesceRef.current) {
-      clearTimeout(historyCoalesceRef.current)
+    if (historyCoalesceRef.current !== null) {
+      window.clearTimeout(historyCoalesceRef.current)
       historyCoalesceRef.current = null
     }
   }, [])
@@ -365,9 +365,9 @@ export function ProjectProvider({
           historyFutureRef.current = []
           setHistoryTick((tick) => tick + 1)
         } else {
-          clearTimeout(historyCoalesceRef.current)
+          window.clearTimeout(historyCoalesceRef.current)
         }
-        historyCoalesceRef.current = setTimeout(() => {
+        historyCoalesceRef.current = window.setTimeout(() => {
           historyCoalesceRef.current = null
         }, 450)
         const next = typeof updater === "function" ? updater(current) : updater
