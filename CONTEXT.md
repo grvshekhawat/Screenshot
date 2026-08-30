@@ -37,7 +37,7 @@ Cloud SaaS App Store / Play screenshot editor (**Next.js App Router** + React). 
 
 ## Routes
 
-`/` gallery · `/templates` · `/templates/[slug]` · `/blog` · `/blog/[slug]` · `/login` · `/pricing` · `/terms` · `/privacy` · `/app` projects · `/app/[projectId]` editor · `/admin`
+`/` marketing landing (hero + proof + how-it-works + templates; `HomePage.tsx`) · `/templates` · `/templates/[slug]` · `/blog` · `/blog/[slug]` · `/login` · `/pricing` · `/terms` · `/privacy` · `/app` projects · `/app/[projectId]` editor · `/admin`
 
 Support: `support@screenshot.design` (footer + legal pages).
 

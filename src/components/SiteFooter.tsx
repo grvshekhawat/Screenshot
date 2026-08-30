@@ -5,8 +5,8 @@ export const SUPPORT_EMAIL = "support@screenshot.design"
 /** Shared footer for marketing / auth pages. */
 export function SiteFooter() {
   return (
-    <footer className="mt-auto border-t border-zinc-800/80 px-4 py-8">
-      <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-3 text-xs text-zinc-500 sm:flex-row">
+    <footer className="mt-auto border-t border-white/[0.06] bg-[#07070a] px-4 py-8">
+      <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 text-xs text-zinc-500 sm:flex-row">
         <p>© {new Date().getFullYear()} Screenshot Studio</p>
         <nav className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
           <Link href="/templates" className="hover:text-zinc-300">

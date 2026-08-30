@@ -7,12 +7,12 @@ const origin = siteOrigin()
 export const metadata: Metadata = {
   title: "App Store & Play Store screenshot designer",
   description:
-    "Create App Store and Google Play marketing screenshots with templates, device frames, and multi-size ZIP exports. Free to start; Pro for clean exports.",
+    "Create polished App Store and Google Play screenshots with templates, device frames, and multi-size exports. Thousands of store screens designed. Free to start.",
   alternates: { canonical: "/" },
   openGraph: {
     title: "Screenshot Studio — App Store & Play screenshots",
     description:
-      "Design store screenshots with templates and export multi-size ZIP packs.",
+      "Design store-ready screenshots once, export every size. Templates for iPhone, iPad, and Google Play.",
     url: origin,
   },
 }
