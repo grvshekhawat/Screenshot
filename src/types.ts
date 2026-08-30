@@ -78,6 +78,10 @@ export type Frame = {
   rotation: number
   rotationX: number
   rotationY: number
+  /** Mirror horizontally around the device center */
+  flipH: boolean
+  /** Mirror vertically around the device center */
+  flipV: boolean
   /** Soft drop-shadow blur radius in artboard px (0 = hard edge when offset is set) */
   shadow: number
   shadowOffsetX: number
@@ -99,6 +103,14 @@ export type TextLayer = {
   align: TextAlign
   weight: number
   rotation: number
+  /** Perspective tilt around X (degrees) */
+  rotationX: number
+  /** Perspective tilt around Y (degrees) */
+  rotationY: number
+  /** Mirror horizontally around the text box center */
+  flipH: boolean
+  /** Mirror vertically around the text box center */
+  flipV: boolean
   /** Shadow blur radius in design px (0 = hard edge when offset is set) */
   shadow: number
   shadowOffsetX: number
@@ -123,11 +135,23 @@ export type ClipartLayer = {
   /** Natural width / height — locks proportions like phone aspect. */
   aspect: number
   rotation: number
+  /** Perspective tilt around X (degrees) */
+  rotationX: number
+  /** Perspective tilt around Y (degrees) */
+  rotationY: number
+  /** Mirror horizontally around the clipart center */
+  flipH: boolean
+  /** Mirror vertically around the clipart center */
+  flipV: boolean
   overflow: "cut" | "continue"
   /** 0–1 overall transparency */
   opacity: number
-  /** Soft drop-shadow blur radius in artboard px (0 = none) */
+  /** Soft drop-shadow blur radius in artboard px (0 = hard edge when offset is set) */
   shadow: number
+  shadowOffsetX: number
+  shadowOffsetY: number
+  /** Shadow opacity 0–100 */
+  shadowOpacity: number
   /** Gaussian blur of the clipart itself in artboard px (0 = sharp) */
   blur: number
   /** Recolor the silhouette with a solid or gradient fill */
@@ -154,12 +178,25 @@ export type LensLayer = {
   zoom: number
   /** Rotation in degrees */
   rotation: number
+  /** Perspective tilt around X (degrees) */
+  rotationX: number
+  /** Perspective tilt around Y (degrees) */
+  rotationY: number
+  /** Mirror horizontally around the lens center */
+  flipH: boolean
+  /** Mirror vertically around the lens center */
+  flipV: boolean
   /** Corner roundness, 0–50 (% of half the shorter side) */
   cornerRadius: number
   /** Border thickness in artboard px */
   borderWidth: number
   borderColor: string
+  /** Soft drop-shadow blur radius in artboard px (0 = hard edge when offset is set) */
   shadow: number
+  shadowOffsetX: number
+  shadowOffsetY: number
+  /** Shadow opacity 0–100 */
+  shadowOpacity: number
   /** When true, magnified content stays at lockedX/Y while the lens moves. */
   imageLocked: boolean
   /** Slide anchor X (%) captured when image is locked. */
@@ -179,7 +216,10 @@ export type Slide = {
   lenses: LensLayer[]
   /** Back-to-front draw order for all layers on the slide. */
   layerOrder: string[]
+  /** Primary selected layer (last clicked). Empty when nothing selected. */
   selectedId: string
+  /** All selected layer ids on this slide (includes selectedId). */
+  selectedIds: string[]
   background: SlideBackground
   templateId: TemplateId
 }

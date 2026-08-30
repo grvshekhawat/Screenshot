@@ -45,6 +45,18 @@ import {
   STORE_TARGETS,
 } from "./constants"
 import {
+  getSelectedIds,
+  patchForKind,
+  positionsFromArtboardDelta,
+  scaleLayerByFactor,
+  selectionMoveOrigins,
+  sizedPatchFromOrigin,
+  toggleIdInSelection,
+  withSlideSelection,
+  type LayerSizeOrigin,
+  type SelectionPatch,
+} from "./selection"
+import {
   getProject,
   listPublishedCliparts,
   resolveAssetUrls,
@@ -107,6 +119,8 @@ type ProjectContextValue = {
   setThumbnailLayout: (layout: ThumbnailLayout) => void
   selectSlide: (id: string) => void
   clearSelection: () => void
+  /** Clear component multi-select; keeps the active slide focused. */
+  deselectComponents: () => void
   addSlide: () => void
   insertSlideAt: (index: number) => void
   setFrameOverflow: (
@@ -136,10 +150,31 @@ type ProjectContextValue = {
   updateSlide: (id: string, patch: Partial<Slide>) => void
   applySlideTemplate: (id: string, templateId: TemplateId) => void
   reorderSlides: (from: number, to: number) => void
-  selectFrame: (slideId: string, frameId: string) => void
-  selectText: (slideId: string, textId: string) => void
-  selectClipart: (slideId: string, clipartId: string) => void
-  selectLens: (slideId: string, lensId: string) => void
+  selectFrame: (slideId: string, frameId: string, additive?: boolean) => void
+  selectText: (slideId: string, textId: string, additive?: boolean) => void
+  selectClipart: (slideId: string, clipartId: string, additive?: boolean) => void
+  selectLens: (slideId: string, lensId: string, additive?: boolean) => void
+  /** Keep multi-selection; make this id the primary (Inspector target). */
+  setSelectionPrimary: (slideId: string, id: string) => void
+  /** Ids selected on the active slide (multi-select). */
+  selectedIds: string[]
+  /** Move all selected layers by an artboard % delta (from drag origins). */
+  moveSelectionByArtboardDelta: (
+    origins: ReturnType<typeof selectionMoveOrigins>,
+    dxArtboard: number,
+    dyArtboard: number,
+  ) => void
+  /** Set shared fields on every selected layer (kind-safe field filter). */
+  patchSelectionCommon: (patch: SelectionPatch) => void
+  /** Multiply each selected layer's own size metric by factor (Inspector). */
+  scaleSelectionRelative: (factor: number) => void
+  /** Apply a resize factor to size snapshots captured at gesture start. */
+  applySelectionSizeFactor: (
+    origins: LayerSizeOrigin[],
+    factor: number,
+  ) => void
+  /** Set absolute x and/or y on every selected layer (align). */
+  alignSelection: (patch: { x?: number; y?: number }) => void
   addFrame: (slideId: string) => void
   duplicateFrame: (slideId: string, frameId: string) => void
   removeFrame: (slideId: string, frameId: string) => void
@@ -646,7 +681,22 @@ export function ProjectProvider({
     setCanvasFocused(false)
     setProjectState((current) => ({
       ...current,
-      slides: current.slides.map((slide) => ({ ...slide, selectedId: "" })),
+      slides: current.slides.map((slide) => ({
+        ...slide,
+        selectedId: "",
+        selectedIds: [],
+      })),
+    }))
+  }, [])
+
+  const deselectComponents = useCallback(() => {
+    setProjectState((current) => ({
+      ...current,
+      slides: current.slides.map((slide) => ({
+        ...slide,
+        selectedId: "",
+        selectedIds: [],
+      })),
     }))
   }, [])
 
@@ -938,6 +988,13 @@ export function ProjectProvider({
           cliparts[0]?.id ??
           lenses[0]?.id ??
           crypto.randomUUID(),
+        selectedIds: [
+          frames[0]?.id ??
+            texts[0]?.id ??
+            cliparts[0]?.id ??
+            lenses[0]?.id ??
+            "",
+        ].filter(Boolean),
         background: copyBackground(source.background),
       }
       const slides = [...current.slides]
@@ -1003,24 +1060,28 @@ export function ProjectProvider({
     })
   }, [])
 
-  const selectFrame = useCallback((slideId: string, frameId: string) => {
-    setCanvasFocused(true)
-    setProjectState((current) => ({
-      ...current,
-      slides: current.slides.map((slide) =>
-        slide.id === slideId
-          ? {
-              ...slide,
-              selectedId: frameId,
-              layerOrder: appendLayerOrder(
-                normalizeLayerOrder(slide, extraIdsFor(current, slideId)),
-                frameId,
-              ),
-            }
-          : slide,
-      ),
-    }))
-  }, [])
+  const selectFrame = useCallback(
+    (slideId: string, frameId: string, additive = false) => {
+      setCanvasFocused(true)
+      setProjectState((current) => ({
+        ...current,
+        slides: current.slides.map((slide) => {
+          if (slide.id !== slideId) return slide
+          const next = additive
+            ? toggleIdInSelection(slide, frameId)
+            : withSlideSelection(slide, [frameId], frameId)
+          return {
+            ...next,
+            layerOrder: appendLayerOrder(
+              normalizeLayerOrder(slide, extraIdsFor(current, slideId)),
+              frameId,
+            ),
+          }
+        }),
+      }))
+    },
+    [],
+  )
 
   const addFrame = useCallback((slideId: string) => {
     setCanvasFocused(true)
@@ -1049,6 +1110,7 @@ export function ProjectProvider({
           frames: [...slide.frames, next],
           layerOrder: appendLayerOrder(normalizeLayerOrder(slide, extraIdsForSlide(current, slide)), next.id),
           selectedId: next.id,
+          selectedIds: [next.id],
         }
       }),
     }))
@@ -1087,6 +1149,7 @@ export function ProjectProvider({
           frames,
           layerOrder: appendLayerOrder(normalizeLayerOrder(slide, extraIdsForSlide(current, slide)), copy.id, frameId),
           selectedId: copy.id,
+          selectedIds: [copy.id],
         }
       }),
     }))
@@ -1190,6 +1253,7 @@ export function ProjectProvider({
           texts,
           layerOrder: appendLayerOrder(normalizeLayerOrder(slide, extraIdsForSlide(current, slide)), copy.id, textId),
           selectedId: copy.id,
+          selectedIds: [copy.id],
         }
       }),
     }))
@@ -1215,24 +1279,28 @@ export function ProjectProvider({
     [],
   )
 
-  const selectText = useCallback((slideId: string, textId: string) => {
-    setCanvasFocused(true)
-    setProjectState((current) => ({
-      ...current,
-      slides: current.slides.map((slide) =>
-        slide.id === slideId
-          ? {
-              ...slide,
-              selectedId: textId,
-              layerOrder: appendLayerOrder(
-                normalizeLayerOrder(slide, extraIdsFor(current, slideId)),
-                textId,
-              ),
-            }
-          : slide,
-      ),
-    }))
-  }, [])
+  const selectText = useCallback(
+    (slideId: string, textId: string, additive = false) => {
+      setCanvasFocused(true)
+      setProjectState((current) => ({
+        ...current,
+        slides: current.slides.map((slide) => {
+          if (slide.id !== slideId) return slide
+          const next = additive
+            ? toggleIdInSelection(slide, textId)
+            : withSlideSelection(slide, [textId], textId)
+          return {
+            ...next,
+            layerOrder: appendLayerOrder(
+              normalizeLayerOrder(slide, extraIdsFor(current, slideId)),
+              textId,
+            ),
+          }
+        }),
+      }))
+    },
+    [],
+  )
 
   const addText = useCallback((slideId: string) => {
     setCanvasFocused(true)
@@ -1263,6 +1331,7 @@ export function ProjectProvider({
           texts: [...slide.texts, next],
           layerOrder: appendLayerOrder(normalizeLayerOrder(slide, extraIdsForSlide(current, slide)), next.id),
           selectedId: next.id,
+          selectedIds: [next.id],
         }
       }),
     }))
@@ -1307,24 +1376,28 @@ export function ProjectProvider({
     [],
   )
 
-  const selectClipart = useCallback((slideId: string, clipartId: string) => {
-    setCanvasFocused(true)
-    setProjectState((current) => ({
-      ...current,
-      slides: current.slides.map((slide) =>
-        slide.id === slideId
-          ? {
-              ...slide,
-              selectedId: clipartId,
-              layerOrder: appendLayerOrder(
-                normalizeLayerOrder(slide, extraIdsFor(current, slideId)),
-                clipartId,
-              ),
-            }
-          : slide,
-      ),
-    }))
-  }, [])
+  const selectClipart = useCallback(
+    (slideId: string, clipartId: string, additive = false) => {
+      setCanvasFocused(true)
+      setProjectState((current) => ({
+        ...current,
+        slides: current.slides.map((slide) => {
+          if (slide.id !== slideId) return slide
+          const next = additive
+            ? toggleIdInSelection(slide, clipartId)
+            : withSlideSelection(slide, [clipartId], clipartId)
+          return {
+            ...next,
+            layerOrder: appendLayerOrder(
+              normalizeLayerOrder(slide, extraIdsFor(current, slideId)),
+              clipartId,
+            ),
+          }
+        }),
+      }))
+    },
+    [],
+  )
 
   const addClipart = useCallback(
     (slideId: string, assetId: string, aspect = 1) => {
@@ -1347,6 +1420,7 @@ export function ProjectProvider({
             cliparts: [...slide.cliparts, next],
             layerOrder: appendLayerOrder(normalizeLayerOrder(slide, extraIdsForSlide(current, slide)), next.id),
             selectedId: next.id,
+          selectedIds: [next.id],
           }
         }),
       }))
@@ -1389,6 +1463,7 @@ export function ProjectProvider({
           cliparts,
           layerOrder: appendLayerOrder(normalizeLayerOrder(slide, extraIdsForSlide(current, slide)), copy.id, clipartId),
           selectedId: copy.id,
+          selectedIds: [copy.id],
         }
       }),
     }))
@@ -1431,6 +1506,7 @@ export function ProjectProvider({
                 frames: [...slide.frames, copy],
                 layerOrder: appendLayerOrder(normalizeLayerOrder(slide, extraIdsForSlide(current, slide)), copy.id),
                 selectedId: copy.id,
+          selectedIds: [copy.id],
               }
             }),
           }
@@ -1453,6 +1529,7 @@ export function ProjectProvider({
                 texts: [...slide.texts, copy],
                 layerOrder: appendLayerOrder(normalizeLayerOrder(slide, extraIdsForSlide(current, slide)), copy.id),
                 selectedId: copy.id,
+          selectedIds: [copy.id],
               }
             }),
           }
@@ -1481,6 +1558,7 @@ export function ProjectProvider({
                 cliparts: [...slide.cliparts, copy],
                 layerOrder: appendLayerOrder(normalizeLayerOrder(slide, extraIdsForSlide(current, slide)), copy.id),
                 selectedId: copy.id,
+          selectedIds: [copy.id],
               }
             }),
           }
@@ -1503,6 +1581,7 @@ export function ProjectProvider({
                 lenses: [...(slide.lenses ?? []), copy],
                 layerOrder: appendLayerOrder(normalizeLayerOrder(slide, extraIdsForSlide(current, slide)), copy.id),
                 selectedId: copy.id,
+          selectedIds: [copy.id],
               }
             }),
           }
@@ -1514,22 +1593,41 @@ export function ProjectProvider({
     [],
   )
 
-  const selectLens = useCallback((slideId: string, lensId: string) => {
+  const selectLens = useCallback(
+    (slideId: string, lensId: string, additive = false) => {
+      setCanvasFocused(true)
+      setProjectState((current) => ({
+        ...current,
+        slides: current.slides.map((slide) => {
+          if (slide.id !== slideId) return slide
+          const next = additive
+            ? toggleIdInSelection(slide, lensId)
+            : withSlideSelection(slide, [lensId], lensId)
+          return {
+            ...next,
+            layerOrder: appendLayerOrder(
+              normalizeLayerOrder(slide, extraIdsFor(current, slideId)),
+              lensId,
+            ),
+          }
+        }),
+      }))
+    },
+    [],
+  )
+
+  const setSelectionPrimary = useCallback((slideId: string, id: string) => {
     setCanvasFocused(true)
     setProjectState((current) => ({
       ...current,
-      slides: current.slides.map((slide) =>
-        slide.id === slideId
-          ? {
-              ...slide,
-              selectedId: lensId,
-              layerOrder: appendLayerOrder(
-                normalizeLayerOrder(slide, extraIdsFor(current, slideId)),
-                lensId,
-              ),
-            }
-          : slide,
-      ),
+      slides: current.slides.map((slide) => {
+        if (slide.id !== slideId) return slide
+        const ids = getSelectedIds(slide)
+        if (!ids.includes(id)) {
+          return withSlideSelection(slide, [id], id)
+        }
+        return withSlideSelection(slide, ids, id)
+      }),
     }))
   }, [])
 
@@ -1553,6 +1651,7 @@ export function ProjectProvider({
           lenses: [...(slide.lenses ?? []), next],
           layerOrder: appendLayerOrder(normalizeLayerOrder(slide, extraIdsForSlide(current, slide)), next.id),
           selectedId: next.id,
+          selectedIds: [next.id],
         }
       }),
     }))
@@ -1582,6 +1681,7 @@ export function ProjectProvider({
           lenses,
           layerOrder: appendLayerOrder(normalizeLayerOrder(slide, extraIdsForSlide(current, slide)), copy.id, lensId),
           selectedId: copy.id,
+          selectedIds: [copy.id],
         }
       }),
     }))
@@ -1793,6 +1893,7 @@ export function ProjectProvider({
               frames: [...slide.frames, next],
               layerOrder: appendLayerOrder(normalizeLayerOrder(slide, extraIdsForSlide(current, slide)), next.id),
               selectedId: next.id,
+          selectedIds: [next.id],
             }
           }
           return {
@@ -1839,6 +1940,7 @@ export function ProjectProvider({
             cliparts: [...slide.cliparts, next],
             layerOrder: appendLayerOrder(normalizeLayerOrder(slide, extraIdsForSlide(current, slide)), next.id),
             selectedId: next.id,
+          selectedIds: [next.id],
           }
         }),
       }))
@@ -1881,26 +1983,373 @@ export function ProjectProvider({
   const canRedo = historyFutureRef.current.length > 0
   void historyTick
 
+  const selectedIds = getSelectedIds(activeSlide)
+
+  const moveSelectionByArtboardDelta = useCallback(
+    (
+      origins: ReturnType<typeof selectionMoveOrigins>,
+      dxArtboard: number,
+      dyArtboard: number,
+    ) => {
+      if (!origins.length) return
+      const target = STORE_TARGETS[projectRef.current.targetId]
+      const moves = positionsFromArtboardDelta(
+        origins,
+        dxArtboard,
+        dyArtboard,
+        target.width,
+        target.height,
+      )
+      setProject((current) => {
+        let slides = current.slides
+        for (const move of moves) {
+          slides = slides.map((slide) => {
+            if (slide.id !== move.ownerSlideId) return slide
+            if (move.kind === "frame") {
+              return {
+                ...slide,
+                frames: slide.frames.map((frame) =>
+                  frame.id === move.id
+                    ? createFrame({ ...frame, x: move.x, y: move.y })
+                    : frame,
+                ),
+              }
+            }
+            if (move.kind === "text") {
+              return {
+                ...slide,
+                texts: slide.texts.map((text) =>
+                  text.id === move.id
+                    ? { ...text, x: move.x, y: move.y }
+                    : text,
+                ),
+              }
+            }
+            if (move.kind === "clipart") {
+              return {
+                ...slide,
+                cliparts: slide.cliparts.map((clipart) =>
+                  clipart.id === move.id
+                    ? createClipart({ ...clipart, x: move.x, y: move.y })
+                    : clipart,
+                ),
+              }
+            }
+            return {
+              ...slide,
+              lenses: (slide.lenses ?? []).map((lens) =>
+                lens.id === move.id
+                  ? createLens({ ...lens, x: move.x, y: move.y })
+                  : lens,
+              ),
+            }
+          })
+        }
+        return { ...current, slides }
+      })
+    },
+    [],
+  )
+
+  const patchSelectionCommon = useCallback((patch: SelectionPatch) => {
+    setProject((current) => {
+      const slide =
+        current.slides.find((entry) => entry.id === current.activeSlideId) ??
+        current.slides[0]
+      const ids = getSelectedIds(slide)
+      if (!ids.length) return current
+      let slides = current.slides
+      for (const id of ids) {
+        const found = findLayerInSlides(slides, id)
+        if (!found) continue
+        const kindPatch = patchForKind(found.kind, patch)
+        if (Object.keys(kindPatch).length === 0) continue
+        slides = slides.map((entry) => {
+          if (entry.id !== found.slide.id) return entry
+          if (found.kind === "frame") {
+            return {
+              ...entry,
+              frames: entry.frames.map((frame) =>
+                frame.id === id
+                  ? createFrame({ ...frame, ...kindPatch })
+                  : frame,
+              ),
+            }
+          }
+          if (found.kind === "text") {
+            return {
+              ...entry,
+              texts: entry.texts.map((text) =>
+                text.id === id ? { ...text, ...kindPatch } : text,
+              ),
+            }
+          }
+          if (found.kind === "clipart") {
+            return {
+              ...entry,
+              cliparts: entry.cliparts.map((clipart) =>
+                clipart.id === id
+                  ? createClipart({ ...clipart, ...kindPatch })
+                  : clipart,
+              ),
+            }
+          }
+          return {
+            ...entry,
+            lenses: (entry.lenses ?? []).map((lens) =>
+              lens.id === id ? createLens({ ...lens, ...kindPatch }) : lens,
+            ),
+          }
+        })
+      }
+      return { ...current, slides }
+    })
+  }, [])
+
+  const scaleSelectionRelative = useCallback((factor: number) => {
+    if (!Number.isFinite(factor) || factor === 1) return
+    setProject((current) => {
+      const slide =
+        current.slides.find((entry) => entry.id === current.activeSlideId) ??
+        current.slides[0]
+      const ids = getSelectedIds(slide)
+      if (!ids.length) return current
+      let slides = current.slides
+      for (const id of ids) {
+        const found = findLayerInSlides(slides, id)
+        if (!found) continue
+        const layer =
+          found.kind === "frame"
+            ? found.frame
+            : found.kind === "text"
+              ? found.text
+              : found.kind === "clipart"
+                ? found.clipart
+                : found.lens
+        const sized = scaleLayerByFactor(found.kind, layer, factor)
+        slides = slides.map((entry) => {
+          if (entry.id !== found.slide.id) return entry
+          if (found.kind === "frame") {
+            return {
+              ...entry,
+              frames: entry.frames.map((frame) =>
+                frame.id === id ? createFrame({ ...frame, ...sized }) : frame,
+              ),
+            }
+          }
+          if (found.kind === "text") {
+            return {
+              ...entry,
+              texts: entry.texts.map((text) =>
+                text.id === id ? { ...text, ...sized } : text,
+              ),
+            }
+          }
+          if (found.kind === "clipart") {
+            return {
+              ...entry,
+              cliparts: entry.cliparts.map((clipart) =>
+                clipart.id === id
+                  ? createClipart({ ...clipart, ...sized })
+                  : clipart,
+              ),
+            }
+          }
+          return {
+            ...entry,
+            lenses: (entry.lenses ?? []).map((lens) =>
+              lens.id === id ? createLens({ ...lens, ...sized }) : lens,
+            ),
+          }
+        })
+      }
+      return { ...current, slides }
+    })
+  }, [])
+
+  const applySelectionSizeFactor = useCallback(
+    (origins: LayerSizeOrigin[], factor: number) => {
+      if (!origins.length) return
+      setProject((current) => {
+        let slides = current.slides
+        for (const origin of origins) {
+          const patch = sizedPatchFromOrigin(origin, factor)
+          slides = slides.map((entry) => {
+            if (entry.id !== origin.ownerSlideId) return entry
+            if (origin.kind === "frame") {
+              return {
+                ...entry,
+                frames: entry.frames.map((frame) =>
+                  frame.id === origin.id
+                    ? createFrame({ ...frame, ...patch })
+                    : frame,
+                ),
+              }
+            }
+            if (origin.kind === "text") {
+              return {
+                ...entry,
+                texts: entry.texts.map((text) =>
+                  text.id === origin.id ? { ...text, ...patch } : text,
+                ),
+              }
+            }
+            if (origin.kind === "clipart") {
+              return {
+                ...entry,
+                cliparts: entry.cliparts.map((clipart) =>
+                  clipart.id === origin.id
+                    ? createClipart({ ...clipart, ...patch })
+                    : clipart,
+                ),
+              }
+            }
+            return {
+              ...entry,
+              lenses: (entry.lenses ?? []).map((lens) =>
+                lens.id === origin.id
+                  ? createLens({ ...lens, ...patch })
+                  : lens,
+              ),
+            }
+          })
+        }
+        return { ...current, slides }
+      })
+    },
+    [],
+  )
+
+  const alignSelection = useCallback((patch: { x?: number; y?: number }) => {
+    if (patch.x === undefined && patch.y === undefined) return
+    setProject((current) => {
+      const slide =
+        current.slides.find((entry) => entry.id === current.activeSlideId) ??
+        current.slides[0]
+      const ids = getSelectedIds(slide)
+      if (!ids.length) return current
+      let slides = current.slides
+      for (const id of ids) {
+        const found = findLayerInSlides(slides, id)
+        if (!found) continue
+        slides = slides.map((entry) => {
+          if (entry.id !== found.slide.id) return entry
+          if (found.kind === "frame") {
+            return {
+              ...entry,
+              frames: entry.frames.map((frame) =>
+                frame.id === id ? createFrame({ ...frame, ...patch }) : frame,
+              ),
+            }
+          }
+          if (found.kind === "text") {
+            return {
+              ...entry,
+              texts: entry.texts.map((text) =>
+                text.id === id ? { ...text, ...patch } : text,
+              ),
+            }
+          }
+          if (found.kind === "clipart") {
+            return {
+              ...entry,
+              cliparts: entry.cliparts.map((clipart) =>
+                clipart.id === id
+                  ? createClipart({ ...clipart, ...patch })
+                  : clipart,
+              ),
+            }
+          }
+          return {
+            ...entry,
+            lenses: (entry.lenses ?? []).map((lens) =>
+              lens.id === id ? createLens({ ...lens, ...patch }) : lens,
+            ),
+          }
+        })
+      }
+      return { ...current, slides }
+    })
+  }, [])
+
   const deleteSelection = useCallback(() => {
-    const slide = project.slides.find((entry) => entry.id === project.activeSlideId)
-    if (!slide || !slide.selectedId) return
-    const id = slide.selectedId
-    const found = findLayerInSlides(project.slides, id)
-    if (!found) return
-    if (found.kind === "lens") {
-      removeLens(found.slide.id, id)
-      return
-    }
-    if (found.kind === "clipart") {
-      removeClipart(found.slide.id, id)
-      return
-    }
-    if (found.kind === "text") {
-      removeText(found.slide.id, id)
-      return
-    }
-    removeFrame(found.slide.id, id)
-  }, [project, removeLens, removeClipart, removeText, removeFrame])
+    const slide = project.slides.find(
+      (entry) => entry.id === project.activeSlideId,
+    )
+    if (!slide) return
+    const ids = getSelectedIds(slide)
+    if (!ids.length) return
+    setProject((current) => {
+      let slides = current.slides
+      for (const id of ids) {
+        const found = findLayerInSlides(slides, id)
+        if (!found) continue
+        slides = slides.map((entry) => {
+          if (entry.id !== found.slide.id) return entry
+          if (found.kind === "frame") {
+            const frames = entry.frames.filter((frame) => frame.id !== id)
+            const cliparts = entry.cliparts.map((clipart) =>
+              clipart.attachedFrameId === id
+                ? createClipart({ ...clipart, attachedFrameId: null })
+                : clipart,
+            )
+            return sanitizeSlideSelection({
+              ...entry,
+              frames,
+              cliparts,
+              selectedIds: getSelectedIds(entry).filter((item) => item !== id),
+              selectedId:
+                entry.selectedId === id
+                  ? (getSelectedIds(entry).filter((item) => item !== id).at(-1) ??
+                    "")
+                  : entry.selectedId,
+            })
+          }
+          if (found.kind === "text") {
+            return sanitizeSlideSelection({
+              ...entry,
+              texts: entry.texts.filter((text) => text.id !== id),
+              selectedIds: getSelectedIds(entry).filter((item) => item !== id),
+              selectedId:
+                entry.selectedId === id
+                  ? (getSelectedIds(entry).filter((item) => item !== id).at(-1) ??
+                    "")
+                  : entry.selectedId,
+            })
+          }
+          if (found.kind === "clipart") {
+            return sanitizeSlideSelection({
+              ...entry,
+              cliparts: entry.cliparts.filter((clipart) => clipart.id !== id),
+              selectedIds: getSelectedIds(entry).filter((item) => item !== id),
+              selectedId:
+                entry.selectedId === id
+                  ? (getSelectedIds(entry).filter((item) => item !== id).at(-1) ??
+                    "")
+                  : entry.selectedId,
+            })
+          }
+          return sanitizeSlideSelection({
+            ...entry,
+            lenses: (entry.lenses ?? []).filter((lens) => lens.id !== id),
+            selectedIds: getSelectedIds(entry).filter((item) => item !== id),
+            selectedId:
+              entry.selectedId === id
+                ? (getSelectedIds(entry).filter((item) => item !== id).at(-1) ??
+                  "")
+                : entry.selectedId,
+          })
+        })
+      }
+      // Clear selection on the viewing slide after multi-delete.
+      slides = slides.map((entry) =>
+        entry.id === current.activeSlideId
+          ? { ...entry, selectedId: "", selectedIds: [] }
+          : entry,
+      )
+      return { ...current, slides }
+    })
+  }, [project])
 
   const value = useMemo<ProjectContextValue>(
     () => ({
@@ -1918,6 +2367,7 @@ export function ProjectProvider({
       activeClipart,
       activeLens,
       selectedKind: kind,
+      selectedIds,
       canvasFocused,
       setName,
       setTarget,
@@ -1925,6 +2375,7 @@ export function ProjectProvider({
       setThumbnailLayout,
       selectSlide,
       clearSelection,
+      deselectComponents,
       addSlide,
       insertSlideAt,
       setFrameOverflow,
@@ -1940,6 +2391,12 @@ export function ProjectProvider({
       selectText,
       selectClipart,
       selectLens,
+      setSelectionPrimary,
+      moveSelectionByArtboardDelta,
+      patchSelectionCommon,
+      scaleSelectionRelative,
+      applySelectionSizeFactor,
+      alignSelection,
       addFrame,
       duplicateFrame,
       removeFrame,
@@ -1989,6 +2446,7 @@ export function ProjectProvider({
       activeClipart,
       activeLens,
       kind,
+      selectedIds,
       canvasFocused,
       setName,
       setTarget,
@@ -1996,6 +2454,7 @@ export function ProjectProvider({
       setThumbnailLayout,
       selectSlide,
       clearSelection,
+      deselectComponents,
       addSlide,
       insertSlideAt,
       setFrameOverflow,
@@ -2011,6 +2470,12 @@ export function ProjectProvider({
       selectText,
       selectClipart,
       selectLens,
+      setSelectionPrimary,
+      moveSelectionByArtboardDelta,
+      patchSelectionCommon,
+      scaleSelectionRelative,
+      applySelectionSizeFactor,
+      alignSelection,
       addFrame,
       duplicateFrame,
       removeFrame,

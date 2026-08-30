@@ -192,6 +192,44 @@ export function clipartOverflow(
   }
 }
 
+export function textOverflow(
+  text: TextLayer,
+  width: number,
+  height: number,
+): OverflowEdges {
+  const { textWidth, textHeight, cx, cy } = textMetrics(text, width, height)
+  const rad = ((text.rotation ?? 0) * Math.PI) / 180
+  const cos = Math.abs(Math.cos(rad))
+  const sin = Math.abs(Math.sin(rad))
+  const halfW = (textWidth * cos + textHeight * sin) / 2
+  const halfH = (textWidth * sin + textHeight * cos) / 2
+  return {
+    left: cx - halfW < -1,
+    right: cx + halfW > width + 1,
+    top: cy - halfH < -1,
+    bottom: cy + halfH > height + 1,
+  }
+}
+
+export function lensOverflow(
+  lens: LensLayer,
+  width: number,
+  height: number,
+): OverflowEdges {
+  const { lensWidth, lensHeight, cx, cy } = lensMetrics(lens, width, height)
+  const rad = ((lens.rotation ?? 0) * Math.PI) / 180
+  const cos = Math.abs(Math.cos(rad))
+  const sin = Math.abs(Math.sin(rad))
+  const halfW = (lensWidth * cos + lensHeight * sin) / 2
+  const halfH = (lensWidth * sin + lensHeight * cos) / 2
+  return {
+    left: cx - halfW < -1,
+    right: cx + halfW > width + 1,
+    top: cy - halfH < -1,
+    bottom: cy + halfH > height + 1,
+  }
+}
+
 export function overflowsHorizontally(edges: OverflowEdges): boolean {
   return edges.left || edges.right
 }

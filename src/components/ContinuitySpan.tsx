@@ -1,4 +1,6 @@
 import type { PointerEvent } from "react"
+import { flattenedDeviceTransform } from "../device-transform"
+import { layerFlipCss } from "../layer-flip"
 import type { ClipartLayer, Frame, FrameScreenSlot } from "../types"
 import { ClipartVisual } from "./ClipartVisual"
 import { PlacedClipart } from "./PlacedClipart"
@@ -234,8 +236,14 @@ export function ContinuityClipartSpan({
                   top: centerY - clipartHeight / 2,
                   width: clipartWidth,
                   height: clipartHeight,
-                  transform: `rotate(${clipart.rotation}deg)`,
+                  transform: `${flattenedDeviceTransform(
+                    clipart.rotationX ?? 0,
+                    clipart.rotationY ?? 0,
+                    clipart.rotation,
+                    artboardWidth,
+                  )}${layerFlipCss(clipart.flipH, clipart.flipV)}`,
                   transformOrigin: "center center",
+                  transformStyle: "flat",
                   zIndex,
                   cursor: interactive ? "grab" : "default",
                   touchAction: interactive ? "none" : undefined,

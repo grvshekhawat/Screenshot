@@ -1,6 +1,7 @@
 import type { PointerEvent } from "react"
 import { deviceSpec } from "../constants"
 import { flattenedDeviceTransform } from "../device-transform"
+import { layerFlipCss } from "../layer-flip"
 import type { Frame, FrameScreenSlot } from "../types"
 import { DeviceFrame } from "./DeviceFrame"
 import { ResizeHandles, type ResizeHandle } from "./ResizeHandles"
@@ -47,12 +48,12 @@ export function PlacedDevice({
   const deviceHeight = deviceWidth / spec.aspect
   const centerX = (frame.x / 100) * width
   const centerY = (frame.y / 100) * height
-  const transform = flattenedDeviceTransform(
+  const transform = `${flattenedDeviceTransform(
     frame.rotationX,
     frame.rotationY,
     frame.rotation,
     width,
-  )
+  )}${layerFlipCss(frame.flipH, frame.flipV)}`
 
   return (
     <div

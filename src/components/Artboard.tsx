@@ -1,5 +1,14 @@
-import { useEffect, type PointerEvent, type ReactNode } from "react"
-import { layerZIndex, normalizeLayerOrder, splitBackgroundCss, templateSplit, textShadowCss } from "../constants"
+import {
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent,
+  type PointerEvent,
+  type ReactNode,
+} from "react"
+import { layerZIndex, normalizeLayerOrder, splitBackgroundCss, templateSplit, textShadowCss, cssFontFamily } from "../constants"
+import { flattenedDeviceTransform } from "../device-transform"
+import { layerFlipCss } from "../layer-flip"
 import type {
   GuestClipart,
   GuestFrame,
@@ -36,6 +45,10 @@ type ArtboardProps = {
   /** Canvas zoom — keeps resize handles usable */
   canvasScale?: number
   selectedFrameId?: string | null
+  /** All selected layer ids (multi-select highlights). */
+  selectedIds?: string[]
+  /** Text layer currently being edited inline (double-click). */
+  editingTextId?: string | null
   onFramePointerDown?: (
     frameId: string,
     event: PointerEvent<HTMLDivElement>,
@@ -44,6 +57,12 @@ type ArtboardProps = {
     textId: string,
     event: PointerEvent<HTMLDivElement>,
   ) => void
+  onTextDoubleClick?: (
+    textId: string,
+    event: MouseEvent<HTMLDivElement>,
+  ) => void
+  onTextContentChange?: (textId: string, content: string) => void
+  onTextEditEnd?: () => void
   onClipartPointerDown?: (
     clipartId: string,
     event: PointerEvent<HTMLDivElement>,
@@ -94,8 +113,13 @@ export function Artboard({
   forExport = false,
   canvasScale = 1,
   selectedFrameId = null,
+  selectedIds,
+  editingTextId = null,
   onFramePointerDown,
   onTextPointerDown,
+  onTextDoubleClick,
+  onTextContentChange,
+  onTextEditEnd,
   onClipartPointerDown,
   onLensPointerDown,
   onFrameResizeStart,
@@ -106,6 +130,15 @@ export function Artboard({
   onFrameUploadClick,
   onReady,
 }: ArtboardProps) {
+  const selectedSet = new Set(
+    selectedIds?.length
+      ? selectedIds
+      : selectedFrameId
+        ? [selectedFrameId]
+        : [],
+  )
+  const isSelected = (id: string) => selectedSet.has(id)
+
   const fontScale = width / 1320
   const extraIds = [
     ...guestFrames.map((guest) => guest.frame.id),
@@ -201,7 +234,7 @@ export function Artboard({
         height,
         overflow: "hidden",
         background: bg.type === "image" && bgImageUrl ? bg.colors[0] : colorBackground,
-        fontFamily: slide.texts[0]?.font ?? "Poppins",
+        fontFamily: cssFontFamily(slide.texts[0]?.font ?? "Poppins"),
         userSelect: interactive ? "none" : undefined,
       }}
     >
@@ -318,14 +351,16 @@ export function Artboard({
               ? (assetUrls[frame.screenshotIdB] ?? null)
               : null
           }
-          selected={selectedFrameId === frame.id}
+          selected={isSelected(frame.id)}
           zIndex={z(frame.id)}
           isGuest={Boolean(isGuest)}
           interactive={interactive}
           forExport={forExport}
           canvasScale={canvasScale}
           onPointerDown={onFramePointerDown}
-          onResizeStart={onFrameResizeStart}
+          onResizeStart={
+            selectedFrameId === frame.id ? onFrameResizeStart : undefined
+          }
           onUploadClick={onFrameUploadClick}
         />,
       )
@@ -340,13 +375,15 @@ export function Artboard({
           artboardWidth={width}
           artboardHeight={height}
           imageUrl={assetUrls[clipart.assetId] ?? null}
-          selected={selectedFrameId === clipart.id}
+          selected={isSelected(clipart.id)}
           zIndex={z(clipart.id)}
           interactive={interactive}
           forExport={forExport}
           canvasScale={canvasScale}
           onPointerDown={onClipartPointerDown}
-          onResizeStart={onClipartResizeStart}
+          onResizeStart={
+            selectedFrameId === clipart.id ? onClipartResizeStart : undefined
+          }
           onAspectChange={
             interactive && !isGuest && !forExport
               ? (clipartId, aspect) =>
@@ -364,13 +401,19 @@ export function Artboard({
           text={text}
           width={width}
           fontScale={fontScale}
-          selected={selectedFrameId === text.id}
+          selected={isSelected(text.id)}
+          editing={editingTextId === text.id}
           zIndex={z(text.id)}
           interactive={interactive}
           forExport={forExport}
           canvasScale={canvasScale}
           onPointerDown={onTextPointerDown}
-          onResizeStart={onTextResizeStart}
+          onDoubleClick={onTextDoubleClick}
+          onContentChange={onTextContentChange}
+          onEditEnd={onTextEditEnd}
+          onResizeStart={
+            selectedFrameId === text.id ? onTextResizeStart : undefined
+          }
         />,
       )
     }
@@ -402,13 +445,15 @@ export function Artboard({
             assetUrls={assetUrls}
             guestFrames={guestFrames}
             guestCliparts={guestCliparts}
-            selected={selectedFrameId === item.lens.id}
+            selected={isSelected(item.lens.id)}
             zIndex={z(item.lens.id)}
             interactive={interactive}
             forExport={forExport}
             canvasScale={canvasScale}
             onPointerDown={onLensPointerDown}
-            onResizeStart={onLensResizeStart}
+            onResizeStart={
+              selectedFrameId === item.lens.id ? onLensResizeStart : undefined
+            }
           />
         </div>,
       )
@@ -435,22 +480,30 @@ function PlacedText({
   width,
   fontScale,
   selected,
+  editing,
   zIndex,
   interactive,
   forExport = false,
   canvasScale = 1,
   onPointerDown,
+  onDoubleClick,
+  onContentChange,
+  onEditEnd,
   onResizeStart,
 }: {
   text: TextLayer
   width: number
   fontScale: number
   selected: boolean
+  editing: boolean
   zIndex: number
   interactive: boolean
   forExport?: boolean
   canvasScale?: number
   onPointerDown?: (textId: string, event: PointerEvent<HTMLDivElement>) => void
+  onDoubleClick?: (textId: string, event: MouseEvent<HTMLDivElement>) => void
+  onContentChange?: (textId: string, content: string) => void
+  onEditEnd?: () => void
   onResizeStart?: (
     textId: string,
     handle: ResizeHandle,
@@ -460,46 +513,147 @@ function PlacedText({
   const fontSize = text.size * fontScale
   const strokeWidth = text.strokeWidth ?? 0
   const strokePx = strokeWidth * fontScale
+  const [draft, setDraft] = useState(text.content)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const skipCommitRef = useRef(false)
+
+  useEffect(() => {
+    if (!editing) return
+    skipCommitRef.current = false
+    setDraft(text.content)
+    const id = window.requestAnimationFrame(() => {
+      const el = textareaRef.current
+      if (!el) return
+      el.focus()
+      el.select()
+      el.style.height = "auto"
+      el.style.height = `${el.scrollHeight}px`
+    })
+    return () => window.cancelAnimationFrame(id)
+  }, [editing, text.id])
+
   return (
     <div
       data-text-id={text.id}
+      data-text-editing={editing ? "true" : undefined}
       style={{
         position: "absolute",
         left: `${text.x}%`,
         top: `${text.y}%`,
         width: `${text.width}%`,
-        transform: `translate(-50%, -50%) rotate(${text.rotation}deg)`,
+        // Skip flip while editing so caret / typed glyphs stay readable.
+        transform: editing
+          ? `translate(-50%, -50%) rotate(${text.rotation}deg)`
+          : `translate(-50%, -50%) ${flattenedDeviceTransform(
+              text.rotationX ?? 0,
+              text.rotationY ?? 0,
+              text.rotation,
+              width,
+            )}${layerFlipCss(text.flipH, text.flipV)}`,
         textAlign: text.align,
         color: text.color,
-        fontFamily: text.font,
+        fontFamily: cssFontFamily(text.font),
         fontSize,
         fontWeight: text.weight,
         lineHeight: 1.15,
         letterSpacing: "-0.03em",
         whiteSpace: "pre-wrap",
-        paintOrder: strokeWidth > 0 ? "stroke fill" : undefined,
+        paintOrder: !editing && strokeWidth > 0 ? "stroke fill" : undefined,
         WebkitTextStroke:
-          strokeWidth > 0
+          !editing && strokeWidth > 0
             ? `${strokePx}px ${text.strokeColor || "#000000"}`
             : undefined,
-        textShadow: textShadowCss(text, fontScale),
-        cursor: interactive ? "grab" : "default",
-        touchAction: interactive ? "none" : undefined,
+        textShadow: editing ? undefined : textShadowCss(text, fontScale),
+        cursor: editing ? "text" : interactive ? "grab" : "default",
+        touchAction: interactive && !editing ? "none" : undefined,
         zIndex,
         isolation: "isolate",
         outline:
-          !forExport && selected
+          !forExport && (selected || editing)
             ? `${Math.max(2, width * 0.003)}px solid #8b5cf6`
             : undefined,
         outlineOffset: Math.max(4, width * 0.004),
         pointerEvents: interactive ? "auto" : "none",
+        userSelect: editing ? "text" : undefined,
       }}
       onPointerDown={
-        interactive ? (event) => onPointerDown?.(text.id, event) : undefined
+        interactive
+          ? (event) => {
+              if (editing) {
+                event.stopPropagation()
+                return
+              }
+              onPointerDown?.(text.id, event)
+            }
+          : undefined
+      }
+      onDoubleClick={
+        interactive && !forExport
+          ? (event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              onDoubleClick?.(text.id, event)
+            }
+          : undefined
       }
     >
-      {text.content || "Text"}
-      {!forExport && selected && interactive && onResizeStart ? (
+      {editing ? (
+        <textarea
+          ref={textareaRef}
+          value={draft}
+          rows={1}
+          aria-label="Edit text"
+          onChange={(event) => {
+            setDraft(event.target.value)
+            const el = event.target
+            el.style.height = "auto"
+            el.style.height = `${el.scrollHeight}px`
+          }}
+          onBlur={() => {
+            if (skipCommitRef.current) {
+              skipCommitRef.current = false
+              return
+            }
+            if (!editing) return
+            const value = textareaRef.current?.value ?? draft
+            onContentChange?.(text.id, value)
+            onEditEnd?.()
+          }}
+          onKeyDown={(event) => {
+            event.stopPropagation()
+            if (event.key === "Escape") {
+              event.preventDefault()
+              skipCommitRef.current = true
+              onEditEnd?.()
+            }
+          }}
+          onPointerDown={(event) => event.stopPropagation()}
+          style={{
+            display: "block",
+            width: "100%",
+            margin: 0,
+            padding: 0,
+            border: "none",
+            outline: "none",
+            resize: "none",
+            overflow: "hidden",
+            background: "transparent",
+            color: "inherit",
+            font: "inherit",
+            fontSize: "inherit",
+            fontWeight: "inherit",
+            fontFamily: "inherit",
+            lineHeight: "inherit",
+            letterSpacing: "inherit",
+            textAlign: "inherit",
+            whiteSpace: "pre-wrap",
+            caretColor: text.color || "#ffffff",
+          }}
+        />
+      ) : (
+        text.content || "Text"
+      )}
+      {!forExport && selected && interactive && !editing && onResizeStart ? (
         <ResizeHandles
           artboardWidth={width}
           canvasScale={canvasScale}

@@ -3,11 +3,14 @@ import type { OverflowEdges } from "../overflow"
 export function OverflowChoice({
   mode,
   edges,
+  noun = "item",
   onCut,
   onContinue,
 }: {
   mode: "cut" | "continue"
   edges: OverflowEdges
+  /** e.g. "phone", "text", "clipart", "lens" */
+  noun?: string
   onCut: () => void
   onContinue: () => void
 }) {
@@ -21,7 +24,7 @@ export function OverflowChoice({
   return (
     <div className="rounded-lg bg-zinc-900 p-2 ring-1 ring-amber-500/40">
       <p className="px-1 text-[11px] leading-snug text-zinc-300">
-        This device goes outside the screenshot.
+        This {noun} goes outside the screenshot.
       </p>
       <div className="mt-2 flex gap-1">
         <button

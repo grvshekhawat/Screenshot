@@ -1,6 +1,7 @@
 import { useEffect, type PointerEvent } from "react"
 import { deviceSpec } from "../constants"
 import { flattenedDeviceTransform } from "../device-transform"
+import { layerFlipCss } from "../layer-flip"
 import type { ClipartLayer, Frame } from "../types"
 import { ClipartVisual } from "./ClipartVisual"
 import { ResizeHandles, type ResizeHandle } from "./ResizeHandles"
@@ -71,12 +72,12 @@ export function PlacedClipart({
     const deviceHeight = deviceWidth / spec.aspect
     const centerX = (frame.x / 100) * artboardWidth
     const centerY = (frame.y / 100) * artboardHeight
-    const deviceTransform = flattenedDeviceTransform(
+    const deviceTransform = `${flattenedDeviceTransform(
       frame.rotationX,
       frame.rotationY,
       frame.rotation,
       artboardWidth,
-    )
+    )}${layerFlipCss(frame.flipH, frame.flipV)}`
     const clipartWidth = (clipart.width / 100) * deviceWidth
     const clipartHeight = clipartWidth / aspect
     const localX =
@@ -106,8 +107,14 @@ export function PlacedClipart({
             top: localY,
             width: clipartWidth,
             height: clipartHeight,
-            transform: `rotate(${clipart.rotation}deg)`,
+            transform: `${flattenedDeviceTransform(
+              clipart.rotationX ?? 0,
+              clipart.rotationY ?? 0,
+              clipart.rotation,
+              artboardWidth,
+            )}${layerFlipCss(clipart.flipH, clipart.flipV)}`,
             transformOrigin: "center center",
+            transformStyle: "flat",
             cursor: interactive ? "grab" : "default",
             touchAction: interactive ? "none" : undefined,
             outline:
@@ -158,8 +165,14 @@ export function PlacedClipart({
         top: centerY - clipartHeight / 2,
         width: clipartWidth,
         height: clipartHeight,
-        transform: `rotate(${clipart.rotation}deg)`,
+        transform: `${flattenedDeviceTransform(
+          clipart.rotationX ?? 0,
+          clipart.rotationY ?? 0,
+          clipart.rotation,
+          artboardWidth,
+        )}${layerFlipCss(clipart.flipH, clipart.flipV)}`,
         transformOrigin: "center center",
+        transformStyle: "flat",
         isolation: "isolate",
         zIndex,
         cursor: interactive ? "grab" : "default",

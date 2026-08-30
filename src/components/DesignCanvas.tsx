@@ -6,7 +6,9 @@ import {
   type DragEvent,
   type PointerEvent,
 } from "react"
+import { createPortal } from "react-dom"
 import { STORE_TARGETS, deviceSpec, CLIPART_WIDTH_MIN, CLIPART_WIDTH_MAX } from "../constants"
+import { isTypingTarget } from "../platform"
 import {
   clipartOverflow,
   findClipartOwner,
@@ -21,7 +23,12 @@ import {
   guestTextsForSlide,
 } from "../overflow"
 import { useProject } from "../project-store"
-import type { FrameScreenSlot, Slide } from "../types"
+import {
+  getSelectedIds,
+  selectionMoveOrigins,
+  selectionSizeOrigins,
+} from "../selection"
+import type { FrameScreenSlot, SelectedKind, Slide } from "../types"
 import { Artboard } from "./Artboard"
 import { ComponentMenu, menuLimits } from "./ComponentMenu"
 import { SLIDE_GAP_PX } from "./ContinuitySpan"
@@ -43,9 +50,15 @@ type DesignCanvasProps = {
     frameId?: string,
     slot?: FrameScreenSlot,
   ) => void
+  /** Mount point in the editor top bar for select/hand + zoom controls. */
+  chromeHost?: HTMLElement | null
 }
 
-export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
+export function DesignCanvas({
+  onUploadClick,
+  onFiles,
+  chromeHost = null,
+}: DesignCanvasProps) {
   const {
     project,
     viewProject,
@@ -61,11 +74,16 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
     selectText,
     selectClipart,
     selectLens,
+    setSelectionPrimary,
     clearSelection,
+    deselectComponents,
     updateFrame,
     updateText,
     updateClipart,
     updateLens,
+    moveSelectionByArtboardDelta,
+    applySelectionSizeFactor,
+    selectedIds,
     duplicateSlide,
     deleteSlide,
     duplicateFrame,
@@ -96,7 +114,12 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
   const [zoomPercent, setZoomPercent] = useState(100)
   const dragFrom = useRef<number | null>(null)
   const [dropIndex, setDropIndex] = useState<number | null>(null)
-  const count = project.slides.length
+  const [editingTextId, setEditingTextId] = useState<string | null>(null)
+  /** Pointer tool: select layers, or hand to pan the viewport. */
+  const [canvasTool, setCanvasTool] = useState<"select" | "hand">("select")
+  const [spacePan, setSpacePan] = useState(false)
+  const [isPanning, setIsPanning] = useState(false)
+  const panningRef = useRef(false)
   const scale =
     zoomMode === "fit"
       ? Math.max(0.04, fitScale)
@@ -104,12 +127,10 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
   const displayZoomPercent = Math.round(scale * 100)
   const minZoomPercent = 5
   const maxZoomPercent = 400
-  const hasComponentSelection = Boolean(
-    activeText ||
-      activeClipart ||
-      activeLens ||
-      (activeFrame && activeSlide.selectedId === activeFrame.id),
-  )
+  const effectiveTool: "select" | "hand" =
+    spacePan || canvasTool === "hand" ? "hand" : "select"
+  const selecting = effectiveTool === "select"
+  const hasComponentSelection = selectedIds.length > 0
   const selectedLimits = menuLimits(
     activeSlide,
     selectedKind,
@@ -124,6 +145,108 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
       target.height,
     ),
   )
+
+  const isAdditivePointer = (event: {
+    shiftKey: boolean
+    metaKey: boolean
+    ctrlKey: boolean
+  }) => event.shiftKey || event.metaKey || event.ctrlKey
+
+  const selectLayer = (
+    slide: Slide,
+    kind: SelectedKind,
+    id: string,
+    additive: boolean,
+  ) => {
+    selectSlide(slide.id)
+    if (kind === "frame") selectFrame(slide.id, id, additive)
+    else if (kind === "text") selectText(slide.id, id, additive)
+    else if (kind === "clipart") selectClipart(slide.id, id, additive)
+    else selectLens(slide.id, id, additive)
+  }
+
+  /** Resolve which ids to drag after a pointer-down on a layer. */
+  const prepareSelectionDrag = (
+    slide: Slide,
+    kind: SelectedKind,
+    id: string,
+    event: PointerEvent<HTMLDivElement>,
+  ) => {
+    const additive = isAdditivePointer(event)
+    const current = getSelectedIds(
+      project.slides.find((entry) => entry.id === slide.id) ?? slide,
+    )
+    if (additive) {
+      selectLayer(slide, kind, id, true)
+      const next = current.includes(id)
+        ? current.filter((item) => item !== id)
+        : [...current, id]
+      if (!next.includes(id)) return null
+      return next
+    }
+    if (current.includes(id) && current.length > 1) {
+      setSelectionPrimary(slide.id, id)
+      return current
+    }
+    selectLayer(slide, kind, id, false)
+    return [id]
+  }
+
+  const startSelectionDrag = (
+    slide: Slide,
+    kind: SelectedKind,
+    id: string,
+    event: PointerEvent<HTMLDivElement>,
+    options?: { dragThreshold?: number },
+  ) => {
+    if (!selecting) return
+    if (
+      (event.target as HTMLElement).closest(
+        "button, [data-component-menu], [data-resize-handle]",
+      )
+    ) {
+      return
+    }
+    if (kind === "text" && editingTextId === id) return
+    event.preventDefault()
+    event.stopPropagation()
+    const moveIds = prepareSelectionDrag(slide, kind, id, event)
+    if (!moveIds?.length) return
+    const preview =
+      event.currentTarget.closest("[data-preview-frame]") ??
+      document.querySelector(
+        `[data-slide-id="${slide.id}"] [data-preview-frame]`,
+      )
+    const startX = event.clientX
+    const startY = event.clientY
+    const origins = selectionMoveOrigins(project, moveIds)
+    const threshold = options?.dragThreshold ?? 0
+    let dragging = threshold <= 0
+
+    const onMove = (moveEvent: globalThis.PointerEvent) => {
+      if (!(preview instanceof HTMLElement)) return
+      if (!dragging) {
+        const dist = Math.hypot(
+          moveEvent.clientX - startX,
+          moveEvent.clientY - startY,
+        )
+        if (dist < threshold) return
+        dragging = true
+      }
+      const rect = preview.getBoundingClientRect()
+      const dx = ((moveEvent.clientX - startX) / rect.width) * 100
+      const dy = ((moveEvent.clientY - startY) / rect.height) * 100
+      moveSelectionByArtboardDelta(origins, dx, dy)
+    }
+
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove)
+      window.removeEventListener("pointerup", onUp)
+    }
+    window.addEventListener("pointermove", onMove)
+    window.addEventListener("pointerup", onUp)
+  }
+
   const viewActiveFrame =
     viewProject.slides
       .find((slide) => slide.id === activeSlide.id)
@@ -148,21 +271,13 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
     if (!el) return
 
     const measure = () => {
-      const gap = SLIDE_GAP_PX
-      const addBtn = 72
-      const padX = 48
-      const padY = 88
-      const count = project.slides.length
-      const availW = el.clientWidth - padX - addBtn - Math.max(0, count - 1) * gap
-      const availH = el.clientHeight - padY
-      // Landscape artboards are very wide — fit ~1 slide so phones stay large.
-      const fitCount =
-        target.orientation === "landscape"
-          ? 1
-          : Math.max(count, 1)
-      const scaleW = availW / (fitCount * target.width)
+      // Fit = page height fills the canvas area, never larger than 100%.
+      const labelH = 28 // h-7 under each slide
+      const gapY = 8 // gap-2 between page and label
+      const actionsH = 30 // copy/delete row above the page
+      const availH = el.clientHeight - labelH - gapY - actionsH
       const scaleH = availH / target.height
-      const next = Math.min(scaleW, scaleH, 1)
+      const next = Math.min(scaleH, 1)
       setFitScale(
         Number.isFinite(next) && next > 0 ? Math.max(next, 0.08) : 0.2,
       )
@@ -172,7 +287,7 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
     const observer = new ResizeObserver(measure)
     observer.observe(el)
     return () => observer.disconnect()
-  }, [target.width, target.height, target.orientation, count])
+  }, [target.height])
 
   // New store size → return to Fit so the board stays usable.
   useEffect(() => {
@@ -209,92 +324,105 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
     setZoomPercent(Math.max(minZoomPercent, Math.round(fitScale * 100)))
   }
 
-  const startFrameDrag = (
-    slide: Slide,
-    frameId: string,
-    event: PointerEvent<HTMLDivElement>,
-  ) => {
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (isTypingTarget(event.target)) return
+      if (event.code === "Space" && !event.repeat) {
+        event.preventDefault()
+        setSpacePan(true)
+        return
+      }
+      if (event.metaKey || event.ctrlKey || event.altKey) return
+      const key = event.key.toLowerCase()
+      if (key === "v") {
+        event.preventDefault()
+        setCanvasTool("select")
+      } else if (key === "h") {
+        event.preventDefault()
+        setCanvasTool("hand")
+      }
+    }
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.code === "Space") setSpacePan(false)
+    }
+    const onBlur = () => setSpacePan(false)
+    window.addEventListener("keydown", onKeyDown)
+    window.addEventListener("keyup", onKeyUp)
+    window.addEventListener("blur", onBlur)
+    return () => {
+      window.removeEventListener("keydown", onKeyDown)
+      window.removeEventListener("keyup", onKeyUp)
+      window.removeEventListener("blur", onBlur)
+    }
+  }, [])
+
+  const startPan = (event: PointerEvent<HTMLElement>) => {
+    const el = viewportRef.current
+    if (!el || panningRef.current) return
     if (
       (event.target as HTMLElement).closest(
-        "button, [data-component-menu], [data-resize-handle]",
+        "button, a, input, textarea, select, [data-canvas-zoom], [data-canvas-tools], [data-component-menu], [data-slide-actions], [data-text-editing]",
       )
     ) {
       return
     }
     event.preventDefault()
-    event.stopPropagation()
-    const owner = findFrameOwner(project.slides, frameId) ?? slide
-    const frame = owner.frames.find((item) => item.id === frameId)
-    if (!frame) return
-    selectSlide(slide.id)
-    selectFrame(slide.id, frameId)
-    const preview =
-      event.currentTarget.closest("[data-preview-frame]") ??
-      document.querySelector(
-        `[data-slide-id="${owner.id}"] [data-preview-frame]`,
-      )
+    panningRef.current = true
+    setIsPanning(true)
     const startX = event.clientX
     const startY = event.clientY
-    const origin = { x: frame.x, y: frame.y }
+    const originLeft = el.scrollLeft
+    const originTop = el.scrollTop
 
     const onMove = (moveEvent: globalThis.PointerEvent) => {
-      if (!(preview instanceof HTMLElement)) return
-      const rect = preview.getBoundingClientRect()
-      const x = origin.x + ((moveEvent.clientX - startX) / rect.width) * 100
-      const y = origin.y + ((moveEvent.clientY - startY) / rect.height) * 100
-      updateFrame(owner.id, frameId, {
-        x: Math.min(130, Math.max(-30, x)),
-        y: Math.min(130, Math.max(-30, y)),
-      })
+      el.scrollLeft = originLeft - (moveEvent.clientX - startX)
+      el.scrollTop = originTop - (moveEvent.clientY - startY)
     }
-
     const onUp = () => {
+      panningRef.current = false
+      setIsPanning(false)
       window.removeEventListener("pointermove", onMove)
       window.removeEventListener("pointerup", onUp)
     }
-
     window.addEventListener("pointermove", onMove)
     window.addEventListener("pointerup", onUp)
   }
+
+  const startFrameDrag = (
+    slide: Slide,
+    frameId: string,
+    event: PointerEvent<HTMLDivElement>,
+  ) => {
+    startSelectionDrag(slide, "frame", frameId, event)
+  }
+
+  useEffect(() => {
+    if (!editingTextId) return
+    if (activeSlide.selectedId !== editingTextId) {
+      setEditingTextId(null)
+    }
+  }, [activeSlide.selectedId, editingTextId])
 
   const startTextDrag = (
     slide: Slide,
     textId: string,
     event: PointerEvent<HTMLDivElement>,
   ) => {
-    if ((event.target as HTMLElement).closest("[data-resize-handle]")) {
-      return
-    }
-    event.preventDefault()
-    event.stopPropagation()
+    startSelectionDrag(slide, "text", textId, event, { dragThreshold: 4 })
+  }
+
+  const beginTextEdit = (slide: Slide, textId: string) => {
     const owner = findTextOwner(project.slides, textId) ?? slide
-    const text = owner.texts.find((item) => item.id === textId)
-    if (!text) return
+    if (!owner.texts.some((item) => item.id === textId)) return
     selectSlide(slide.id)
     selectText(slide.id, textId)
-    const preview = event.currentTarget.closest("[data-preview-frame]")
-    const startX = event.clientX
-    const startY = event.clientY
-    const origin = { x: text.x, y: text.y }
+    setEditingTextId(textId)
+  }
 
-    const onMove = (moveEvent: globalThis.PointerEvent) => {
-      if (!(preview instanceof HTMLElement)) return
-      const rect = preview.getBoundingClientRect()
-      const x = origin.x + ((moveEvent.clientX - startX) / rect.width) * 100
-      const y = origin.y + ((moveEvent.clientY - startY) / rect.height) * 100
-      updateText(owner.id, textId, {
-        x: Math.min(130, Math.max(-30, x)),
-        y: Math.min(130, Math.max(-30, y)),
-      })
-    }
-
-    const onUp = () => {
-      window.removeEventListener("pointermove", onMove)
-      window.removeEventListener("pointerup", onUp)
-    }
-
-    window.addEventListener("pointermove", onMove)
-    window.addEventListener("pointerup", onUp)
+  const commitTextContent = (textId: string, content: string) => {
+    const owner = findTextOwner(project.slides, textId)
+    if (!owner) return
+    updateText(owner.id, textId, { content })
   }
 
   const startClipartDrag = (
@@ -302,64 +430,7 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
     clipartId: string,
     event: PointerEvent<HTMLDivElement>,
   ) => {
-    if (
-      (event.target as HTMLElement).closest(
-        "button, [data-component-menu], [data-resize-handle]",
-      )
-    ) {
-      return
-    }
-    event.preventDefault()
-    event.stopPropagation()
-    const owner = findClipartOwner(project.slides, clipartId) ?? slide
-    const clipart = owner.cliparts.find((item) => item.id === clipartId)
-    if (!clipart) return
-    selectSlide(slide.id)
-    selectClipart(slide.id, clipartId)
-    const preview =
-      event.currentTarget.closest("[data-preview-frame]") ??
-      document.querySelector(
-        `[data-slide-id="${owner.id}"] [data-preview-frame]`,
-      )
-    const startX = event.clientX
-    const startY = event.clientY
-    const origin = { x: clipart.x, y: clipart.y }
-    const attachedFrame = clipart.attachedFrameId
-      ? owner.frames.find((frame) => frame.id === clipart.attachedFrameId)
-      : null
-
-    const onMove = (moveEvent: globalThis.PointerEvent) => {
-      if (!(preview instanceof HTMLElement)) return
-      const rect = preview.getBoundingClientRect()
-      const dxArtboard =
-        ((moveEvent.clientX - startX) / rect.width) * 100
-      const dyArtboard =
-        ((moveEvent.clientY - startY) / rect.height) * 100
-      if (attachedFrame) {
-        const spec = deviceSpec(attachedFrame.deviceId)
-        const dxDevice = dxArtboard / attachedFrame.scale
-        const dyDevice =
-          (dyArtboard * (target.height / target.width) * spec.aspect) /
-          attachedFrame.scale
-        updateClipart(owner.id, clipartId, {
-          x: Math.min(160, Math.max(-160, origin.x + dxDevice)),
-          y: Math.min(160, Math.max(-160, origin.y + dyDevice)),
-        })
-        return
-      }
-      updateClipart(owner.id, clipartId, {
-        x: Math.min(130, Math.max(-30, origin.x + dxArtboard)),
-        y: Math.min(130, Math.max(-30, origin.y + dyArtboard)),
-      })
-    }
-
-    const onUp = () => {
-      window.removeEventListener("pointermove", onMove)
-      window.removeEventListener("pointerup", onUp)
-    }
-
-    window.addEventListener("pointermove", onMove)
-    window.addEventListener("pointerup", onUp)
+    startSelectionDrag(slide, "clipart", clipartId, event)
   }
 
   const previewCenter = (
@@ -381,13 +452,22 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
     handle: ResizeHandle,
     event: PointerEvent<HTMLDivElement>,
   ) => {
+    if (!selecting) return
     event.preventDefault()
     event.stopPropagation()
     const owner = findFrameOwner(project.slides, frameId) ?? slide
     const frame = owner.frames.find((item) => item.id === frameId)
     if (!frame) return
+    const currentIds = getSelectedIds(
+      project.slides.find((entry) => entry.id === slide.id) ?? slide,
+    )
+    const resizeIds =
+      currentIds.includes(frameId) && currentIds.length > 1
+        ? currentIds
+        : [frameId]
     selectSlide(slide.id)
-    selectFrame(slide.id, frameId)
+    if (resizeIds.length > 1) setSelectionPrimary(slide.id, frameId)
+    else selectFrame(slide.id, frameId)
     const preview =
       event.currentTarget.closest("[data-preview-frame]") ??
       document.querySelector(
@@ -396,6 +476,7 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
     const center = previewCenter(preview, frame.x, frame.y)
     if (!center) return
     const originScale = frame.scale
+    const sizeOrigins = selectionSizeOrigins(project, resizeIds)
     const startX = event.clientX
     const startY = event.clientY
     const handleEl = event.currentTarget
@@ -415,6 +496,10 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
         center.x,
         center.y,
       )
+      if (resizeIds.length > 1) {
+        applySelectionSizeFactor(sizeOrigins, factor)
+        return
+      }
       updateFrame(owner.id, frameId, {
         scale: Math.min(1.1, Math.max(0.4, originScale * factor)),
       })
@@ -439,6 +524,7 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
     handle: ResizeHandle,
     event: PointerEvent<HTMLDivElement>,
   ) => {
+    if (!selecting) return
     event.preventDefault()
     event.stopPropagation()
     const owner = findTextOwner(project.slides, textId) ?? slide
@@ -474,7 +560,7 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
         })
       } else {
         updateText(owner.id, textId, {
-          size: Math.min(120, Math.max(24, Math.round(originSize * factor))),
+          size: Math.max(1, Math.round(originSize * factor)),
           width: Math.min(90, Math.max(20, originWidth * factor)),
         })
       }
@@ -494,6 +580,7 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
     handle: ResizeHandle,
     event: PointerEvent<HTMLDivElement>,
   ) => {
+    if (!selecting) return
     event.preventDefault()
     event.stopPropagation()
     const owner = findClipartOwner(project.slides, clipartId) ?? slide
@@ -564,47 +651,7 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
     lensId: string,
     event: PointerEvent<HTMLDivElement>,
   ) => {
-    if (
-      (event.target as HTMLElement).closest(
-        "button, [data-component-menu], [data-resize-handle]",
-      )
-    ) {
-      return
-    }
-    event.preventDefault()
-    event.stopPropagation()
-    const owner = findLensOwner(project.slides, lensId) ?? slide
-    const lens = (owner.lenses ?? []).find((item) => item.id === lensId)
-    if (!lens) return
-    selectSlide(slide.id)
-    selectLens(slide.id, lensId)
-    const preview =
-      event.currentTarget.closest("[data-preview-frame]") ??
-      document.querySelector(
-        `[data-slide-id="${slide.id}"] [data-preview-frame]`,
-      )
-    const startX = event.clientX
-    const startY = event.clientY
-    const origin = { x: lens.x, y: lens.y }
-
-    const onMove = (moveEvent: globalThis.PointerEvent) => {
-      if (!(preview instanceof HTMLElement)) return
-      const rect = preview.getBoundingClientRect()
-      const x = origin.x + ((moveEvent.clientX - startX) / rect.width) * 100
-      const y = origin.y + ((moveEvent.clientY - startY) / rect.height) * 100
-      updateLens(owner.id, lensId, {
-        x: Math.min(110, Math.max(-10, x)),
-        y: Math.min(110, Math.max(-10, y)),
-      })
-    }
-
-    const onUp = () => {
-      window.removeEventListener("pointermove", onMove)
-      window.removeEventListener("pointerup", onUp)
-    }
-
-    window.addEventListener("pointermove", onMove)
-    window.addEventListener("pointerup", onUp)
+    startSelectionDrag(slide, "lens", lensId, event)
   }
 
   const startLensResize = (
@@ -613,6 +660,7 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
     handle: ResizeHandle,
     event: PointerEvent<HTMLDivElement>,
   ) => {
+    if (!selecting) return
     event.preventDefault()
     event.stopPropagation()
     const owner = findLensOwner(project.slides, lensId) ?? slide
@@ -691,10 +739,16 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
   }
 
   return (
-    <section className="relative flex min-w-0 flex-1 flex-col bg-[#0c0c10]">
+    <section className="relative flex h-full min-h-0 min-w-0 flex-col bg-[#0c0c10]">
       <div
         ref={viewportRef}
-        className="flex min-h-0 flex-1 items-center overflow-auto px-6"
+        className={`flex min-h-0 flex-1 overflow-auto px-6 ${
+          effectiveTool === "hand"
+            ? isPanning
+              ? "cursor-grabbing"
+              : "cursor-grab"
+            : ""
+        }`}
         onDragOver={(event) => {
           if (event.dataTransfer.types.includes("Files")) {
             event.preventDefault()
@@ -703,10 +757,20 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
         }}
         onDrop={(event) => handleScreenshotFileDrop(event)}
         onPointerDown={(event) => {
+          // Middle mouse always pans.
+          if (event.button === 1) {
+            startPan(event)
+            return
+          }
+          if (event.button !== 0) return
+          if (effectiveTool === "hand") {
+            startPan(event)
+            return
+          }
           const targetEl = event.target as HTMLElement
           if (
             targetEl.closest(
-              "[data-slide-id], [data-component-menu], [data-continuity-span], [data-slide-label], [data-slide-actions], [data-canvas-zoom]",
+              "[data-slide-id], [data-component-menu], [data-continuity-span], [data-slide-label], [data-slide-actions], [data-canvas-zoom], [data-canvas-tools]",
             )
           ) {
             return
@@ -714,7 +778,10 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
           clearSelection()
         }}
       >
-        <div className="mx-auto py-6 pt-10">
+        {/* m-auto centers when content is smaller than the pane; unlike
+            items-center on the scroller, it still allows panning to the top
+            when zoomed in. */}
+        <div className="m-auto w-max shrink-0 py-6 pt-10">
           <div className="flex items-end gap-4">
             <div
               className="relative flex items-end"
@@ -834,7 +901,23 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
                           height: target.height * scale,
                         }}
                         onContextMenu={(event) => event.preventDefault()}
-                        onPointerDown={() => selectSlide(slide.id)}
+                        onPointerDown={(event) => {
+                          if (effectiveTool === "hand" || event.button === 1) {
+                            return
+                          }
+                          const targetEl = event.target as HTMLElement
+                          // Layer handlers stopPropagation; if a layer hit
+                          // somehow bubbles, don't treat it as empty slide.
+                          if (
+                            targetEl.closest(
+                              "[data-frame-id], [data-text-id], [data-clipart-id], [data-lens-id], [data-resize-handle], [data-component-menu], [data-continuity-span], [data-text-editing]",
+                            )
+                          ) {
+                            return
+                          }
+                          selectSlide(slide.id)
+                          deselectComponents()
+                        }}
                         onDragOver={(event) => {
                           if (!event.dataTransfer.types.includes("Files")) return
                           event.preventDefault()
@@ -891,15 +974,22 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
                               target.height,
                               stridePercent,
                             )}
-                            interactive
+                            interactive={selecting}
                             canvasScale={scale}
                             selectedFrameId={slide.selectedId}
+                            selectedIds={getSelectedIds(slide)}
+                            editingTextId={editingTextId}
                             onFramePointerDown={(frameId, event) =>
                               startFrameDrag(slide, frameId, event)
                             }
                             onTextPointerDown={(textId, event) =>
                               startTextDrag(slide, textId, event)
                             }
+                            onTextDoubleClick={(textId) =>
+                              beginTextEdit(slide, textId)
+                            }
+                            onTextContentChange={commitTextContent}
+                            onTextEditEnd={() => setEditingTextId(null)}
                             onClipartPointerDown={(clipartId, event) =>
                               startClipartDrag(slide, clipartId, event)
                             }
@@ -943,7 +1033,10 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
                       data-slide-label
                       className="relative h-7 w-full cursor-pointer text-[11px] text-zinc-500"
                       style={{ width: target.width * scale }}
-                      onClick={() => selectSlide(slide.id)}
+                      onClick={() => {
+                        selectSlide(slide.id)
+                        deselectComponents()
+                      }}
                     >
                       <div className="flex h-full items-center justify-center">
                         <span
@@ -1016,7 +1109,7 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
                 )
               })}
 
-              {canvasFocused && hasComponentSelection ? (
+              {canvasFocused && hasComponentSelection && !editingTextId ? (
                 <ComponentMenu
                   kind={selectedKind}
                   frame={selectedKind === "frame" ? activeFrame : null}
@@ -1203,83 +1296,131 @@ export function DesignCanvas({ onUploadClick, onFiles }: DesignCanvasProps) {
           </div>
         </div>
       </div>
-      <div
-        data-canvas-zoom
-        className="absolute right-4 top-4 z-50 flex items-center gap-1"
-      >
-        <div className="flex items-center gap-0.5 rounded-lg bg-zinc-950/95 p-0.5 shadow-lg ring-1 ring-white/10 backdrop-blur-sm">
-          <button
-            type="button"
-            title="Zoom out"
-            aria-label="Zoom out"
-            disabled={displayZoomPercent <= minZoomPercent}
-            onClick={(event) => {
-              event.preventDefault()
-              event.stopPropagation()
-              bumpZoom(-1)
-            }}
-            className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-300 hover:bg-zinc-800 hover:text-white disabled:opacity-30"
-          >
-            −
-          </button>
-          <button
-            type="button"
-            title={
-              zoomMode === "fit"
-                ? "Fit to view (click for 100%)"
-                : "Zoom level — click to fit"
-            }
-            aria-label={`Zoom ${displayZoomPercent} percent`}
-            onClick={(event) => {
-              event.preventDefault()
-              event.stopPropagation()
-              if (zoomMode === "fit") {
-                setZoomMode("manual")
-                setZoomPercent(100)
-              } else {
-                fitToView()
-              }
-            }}
-            className="min-w-[3.25rem] rounded-md px-1.5 py-1 text-center font-mono text-[11px] text-zinc-300 hover:bg-zinc-800 hover:text-white"
-          >
-            {displayZoomPercent}%
-          </button>
-          <button
-            type="button"
-            title="Zoom in"
-            aria-label="Zoom in"
-            disabled={displayZoomPercent >= maxZoomPercent}
-            onClick={(event) => {
-              event.preventDefault()
-              event.stopPropagation()
-              bumpZoom(1)
-            }}
-            className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-300 hover:bg-zinc-800 hover:text-white disabled:opacity-30"
-          >
-            +
-          </button>
-          <span className="mx-0.5 h-4 w-px bg-white/10" />
-          <button
-            type="button"
-            title="Fit slides to view"
-            onClick={(event) => {
-              event.preventDefault()
-              event.stopPropagation()
-              fitToView()
-            }}
-            className={`rounded-md px-2 py-1 text-[11px] hover:bg-zinc-800 hover:text-white ${
-              zoomMode === "fit"
-                ? "bg-zinc-800 text-white"
-                : "text-zinc-400"
-            }`}
-          >
-            Fit
-          </button>
-        </div>
-      </div>
+      {chromeHost
+        ? createPortal(
+            <div className="flex items-center gap-2">
+              <div
+                data-canvas-tools
+                className="flex items-center gap-0.5 rounded-md border border-zinc-800 bg-zinc-900 p-0.5"
+              >
+                <button
+                  type="button"
+                  title="Select (V)"
+                  aria-label="Select tool"
+                  aria-pressed={canvasTool === "select"}
+                  onClick={() => setCanvasTool("select")}
+                  className={`flex h-7 w-7 items-center justify-center rounded ${
+                    canvasTool === "select"
+                      ? "bg-zinc-700 text-white"
+                      : "text-zinc-400 hover:bg-zinc-800 hover:text-white"
+                  }`}
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    aria-hidden
+                  >
+                    <path d="M4.5 2.5 19 12.2l-6.4 1.4 3.2 7.3-2.6 1.1-3.2-7.3L4.5 20.5V2.5Z" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  title="Hand (H) — hold Space to pan temporarily"
+                  aria-label="Hand tool"
+                  aria-pressed={canvasTool === "hand" || spacePan}
+                  onClick={() => setCanvasTool("hand")}
+                  className={`flex h-7 w-7 items-center justify-center rounded ${
+                    canvasTool === "hand" || spacePan
+                      ? "bg-zinc-700 text-white"
+                      : "text-zinc-400 hover:bg-zinc-800 hover:text-white"
+                  }`}
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.75"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden
+                  >
+                    <path d="M8 11V6.5a1.5 1.5 0 0 1 3 0V11" />
+                    <path d="M11 10.5V5.5a1.5 1.5 0 0 1 3 0V11" />
+                    <path d="M14 10.5V7a1.5 1.5 0 0 1 3 0v6.5" />
+                    <path d="M5 12.5V11a1.5 1.5 0 0 1 3 0v1" />
+                    <path d="M5 12.5v2a7 7 0 0 0 14 0v-1.5" />
+                  </svg>
+                </button>
+              </div>
+              <div
+                data-canvas-zoom
+                className="flex items-center gap-0.5 rounded-md border border-zinc-800 bg-zinc-900 p-0.5"
+              >
+                <button
+                  type="button"
+                  title="Zoom out"
+                  aria-label="Zoom out"
+                  disabled={displayZoomPercent <= minZoomPercent}
+                  onClick={() => bumpZoom(-1)}
+                  className="flex h-7 w-7 items-center justify-center rounded text-zinc-300 hover:bg-zinc-800 hover:text-white disabled:opacity-30"
+                >
+                  −
+                </button>
+                <button
+                  type="button"
+                  title={
+                    zoomMode === "fit"
+                      ? "Fit to view (click for 100%)"
+                      : "Zoom level — click to fit"
+                  }
+                  aria-label={`Zoom ${displayZoomPercent} percent`}
+                  onClick={() => {
+                    if (zoomMode === "fit") {
+                      setZoomMode("manual")
+                      setZoomPercent(100)
+                    } else {
+                      fitToView()
+                    }
+                  }}
+                  className="min-w-[3.25rem] rounded px-1.5 py-1 text-center font-mono text-[11px] text-zinc-300 hover:bg-zinc-800 hover:text-white"
+                >
+                  {displayZoomPercent}%
+                </button>
+                <button
+                  type="button"
+                  title="Zoom in"
+                  aria-label="Zoom in"
+                  disabled={displayZoomPercent >= maxZoomPercent}
+                  onClick={() => bumpZoom(1)}
+                  className="flex h-7 w-7 items-center justify-center rounded text-zinc-300 hover:bg-zinc-800 hover:text-white disabled:opacity-30"
+                >
+                  +
+                </button>
+                <span className="mx-0.5 h-4 w-px bg-white/10" />
+                <button
+                  type="button"
+                  title="Fit page height"
+                  onClick={() => fitToView()}
+                  className={`rounded px-2 py-1 text-[11px] hover:bg-zinc-800 hover:text-white ${
+                    zoomMode === "fit"
+                      ? "bg-zinc-700 text-white"
+                      : "text-zinc-400"
+                  }`}
+                >
+                  Fit
+                </button>
+              </div>
+            </div>,
+            chromeHost,
+          )
+        : null}
       <p className="pb-3 text-center text-xs text-zinc-500">
-        {target.width} × {target.height} · {target.name} · drag ⋮⋮ to rearrange
-        · duplicate to add a slide · ⌘/Ctrl+scroll to zoom
+        {target.width} × {target.height} · {target.name} · V select · H hand ·
+        Space pan · Shift-click multi-select · ⌘/Ctrl+scroll zoom
       </p>
     </section>
   )

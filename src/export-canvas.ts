@@ -1,4 +1,5 @@
 import { domToCanvas } from "modern-screenshot"
+import { FONTS } from "./constants"
 
 export async function blobUrlToDataUrl(url: string): Promise<string> {
   const response = await fetch(url)
@@ -40,6 +41,115 @@ async function inlineImages(root: HTMLElement) {
   )
 }
 
+const GOOGLE_FONTS_HREF =
+  "https://fonts.googleapis.com/css2?family=DM+Sans:wght@500;600;700&family=Inter:wght@400;600;700&family=Lato:wght@400;700&family=Montserrat:wght@500;600;700&family=Open+Sans:wght@400;600;700&family=Outfit:wght@500;600;700&family=Playfair+Display:wght@600;700&family=Poppins:wght@500;600;700&family=Roboto:wght@400;500;700&family=Space+Grotesk:wght@500;600;700&display=swap"
+
+let cachedFontCss: string | null | undefined
+
+async function inlineCssUrls(css: string, baseHref: string): Promise<string> {
+  const urlMatches = [...css.matchAll(/url\(([^)]+)\)/g)]
+  let next = css
+  // Replace longer matches first so partial overlaps don't break data URLs.
+  const unique = [...new Set(urlMatches.map((match) => match[0]))].sort(
+    (a, b) => b.length - a.length,
+  )
+  for (const token of unique) {
+    const raw = token
+      .slice(4, -1)
+      .trim()
+      .replace(/^['"]|['"]$/g, "")
+    if (raw.startsWith("data:")) continue
+    const absolute = new URL(raw, baseHref).href
+    try {
+      const fontRes = await fetch(absolute, {
+        mode: "cors",
+        credentials: "omit",
+      })
+      if (!fontRes.ok) continue
+      const blob = await fontRes.blob()
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => {
+          if (typeof reader.result === "string") resolve(reader.result)
+          else reject(new Error("font read failed"))
+        }
+        reader.onerror = () => reject(new Error("font read failed"))
+        reader.readAsDataURL(blob)
+      })
+      next = next.split(token).join(`url("${dataUrl}")`)
+    } catch {
+      /* keep remote url */
+    }
+  }
+  return next
+}
+
+/**
+ * Self-contained @font-face CSS for modern-screenshot.
+ * When `cssText` is set, the library uses only that CSS — every url() must be
+ * inlined or fonts fall back to serif.
+ */
+async function editorFontCssText(): Promise<string | undefined> {
+  if (cachedFontCss !== undefined) return cachedFontCss ?? undefined
+  try {
+    await document.fonts.ready
+    await Promise.all(
+      FONTS.flatMap((family) => [
+        document.fonts.load(`500 48px "${family}"`).catch(() => undefined),
+        document.fonts.load(`600 48px "${family}"`).catch(() => undefined),
+        document.fonts.load(`700 48px "${family}"`).catch(() => undefined),
+      ]),
+    )
+
+    // Prefer stylesheets already in the document (CORS + crossOrigin on <link>).
+    const fromDom: string[] = []
+    for (const sheet of Array.from(document.styleSheets)) {
+      let rules: CSSRuleList
+      try {
+        rules = sheet.cssRules
+      } catch {
+        continue
+      }
+      for (const rule of Array.from(rules)) {
+        if (rule instanceof CSSFontFaceRule) {
+          fromDom.push(rule.cssText)
+        }
+      }
+    }
+    if (fromDom.length > 0) {
+      const href =
+        Array.from(document.styleSheets).find((sheet) =>
+          String(sheet.href || "").includes("fonts.googleapis.com"),
+        )?.href || GOOGLE_FONTS_HREF
+      const inlined = await inlineCssUrls(fromDom.join("\n"), href)
+      if (inlined.includes("@font-face") && inlined.includes("data:")) {
+        cachedFontCss = inlined
+        return inlined
+      }
+    }
+
+    const response = await fetch(GOOGLE_FONTS_HREF, {
+      mode: "cors",
+      credentials: "omit",
+    })
+    if (!response.ok) {
+      cachedFontCss = null
+      return undefined
+    }
+    const css = await response.text()
+    const inlined = await inlineCssUrls(css, GOOGLE_FONTS_HREF)
+    if (!inlined.includes("@font-face")) {
+      cachedFontCss = null
+      return undefined
+    }
+    cachedFontCss = inlined
+    return inlined
+  } catch {
+    cachedFontCss = null
+    return undefined
+  }
+}
+
 /** Capture the artboard div exactly as rendered — same idea as html2canvas. */
 export async function captureArtboardDom(
   artboard: HTMLElement,
@@ -55,14 +165,29 @@ export async function captureArtboardDom(
   await new Promise((resolve) => requestAnimationFrame(resolve))
   await new Promise((resolve) => requestAnimationFrame(resolve))
 
-  return domToCanvas(artboard, {
-    width,
-    height,
-    scale: 1,
-    backgroundColor: null,
-    font: {},
-    fetchFn: fetchAsset,
-  })
+  const cssText = await editorFontCssText()
+  let injected: HTMLStyleElement | null = null
+  if (cssText) {
+    injected = document.createElement("style")
+    injected.setAttribute("data-export-fonts", "true")
+    injected.textContent = cssText
+    artboard.prepend(injected)
+  }
+
+  try {
+    return await domToCanvas(artboard, {
+      width,
+      height,
+      scale: 1,
+      backgroundColor: null,
+      // Do not set preferredFormat when cssText is provided — it filters out
+      // non-woff2 faces Google may return for this UA and drops the fonts.
+      font: cssText ? { cssText } : {},
+      fetchFn: fetchAsset,
+    })
+  } finally {
+    injected?.remove()
+  }
 }
 
 export function canvasToOpaquePng(

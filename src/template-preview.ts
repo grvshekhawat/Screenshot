@@ -1,6 +1,19 @@
-import { STORE_TARGETS, deviceSpec, normalizeLayerOrder, templateSplit } from "./constants"
+import {
+  FONTS,
+  STORE_TARGETS,
+  clipartDropShadowCss,
+  deviceSpec,
+  normalizeLayerOrder,
+  templateSplit,
+} from "./constants"
+import { flattenedDeviceTransform } from "./device-transform"
 import { captureSlideToCanvas } from "./export-slide"
-import { guestClipartsForSlide, guestFramesForSlide } from "./overflow"
+import { applyLayerFlip } from "./layer-flip"
+import {
+  guestClipartsForSlide,
+  guestFramesForSlide,
+  guestTextsForSlide,
+} from "./overflow"
 import type {
   ClipartLayer,
   Frame,
@@ -15,9 +28,12 @@ import type {
 
 const DEFAULT_SLIDE_WIDTH = 420
 const MAX_PREVIEW_SLIDES = 5
-const SLIDE_GAP = 14
+/** Keep in sync with `SLIDE_GAP_PX` in ContinuitySpan / DesignCanvas. */
+const SLIDE_GAP = 16
 const PAD = 20
 const PREVIEW_ENCODE_QUALITY = 0.92
+/** Matches Artboard `fontScale = width / 1320`. */
+const TEXT_REF_WIDTH = 1320
 
 export type PreviewRenderOptions = {
   slideWidth?: number
@@ -26,11 +42,83 @@ export type PreviewRenderOptions = {
   /** Resolved asset id → object/data URL for screenshots and backgrounds. */
   assetUrls?: Record<string, string>
   /**
-   * Skip DOM/`modern-screenshot` capture and paint on canvas only.
-   * Used for built-in seed catalog thumbs — avoids capture-lock queues that
-   * leave gallery cards stuck on “Loading preview…”.
+   * When true, skip DOM capture and paint on canvas only.
+   * Seeds use this to avoid the export capture lock. Project thumbnails
+   * should leave this false so positions match the editor Artboard.
    */
   paintOnly?: boolean
+}
+
+async function ensurePreviewFonts(): Promise<void> {
+  if (typeof document === "undefined" || !document.fonts) return
+  try {
+    await document.fonts.ready
+    await Promise.all(
+      FONTS.map((family) =>
+        document.fonts
+          .load(`600 48px "${family}"`)
+          .catch(() => undefined),
+      ),
+    )
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Canvas `font` descriptor — quote multi-word families (Space Grotesk, etc.). */
+function canvasFont(
+  weight: number,
+  sizePx: number,
+  family: string | undefined,
+): string {
+  const name = (family || "Poppins").trim() || "Poppins"
+  const safe = /\s/.test(name) ? `"${name.replace(/"/g, "")}"` : name
+  return `${weight} ${sizePx}px ${safe}, system-ui, sans-serif`
+}
+
+/**
+ * Apply the same flattened perspective matrix the editor uses (Tilt X/Y + Spin).
+ * Caller must already be translated to the layer center. Does not flip.
+ */
+function applyPoseAroundOrigin(
+  ctx: CanvasRenderingContext2D,
+  rotationX: number | undefined,
+  rotationY: number | undefined,
+  rotationZ: number | undefined,
+  artboardWidth: number,
+) {
+  const rx = rotationX ?? 0
+  const ry = rotationY ?? 0
+  const rz = rotationZ ?? 0
+  if (rx !== 0 || ry !== 0) {
+    try {
+      const css = flattenedDeviceTransform(rx, ry, rz, artboardWidth)
+      const matrix = new DOMMatrix(css)
+      ctx.transform(matrix.a, matrix.b, matrix.c, matrix.d, matrix.e, matrix.f)
+      return
+    } catch {
+      /* fall through */
+    }
+  }
+  if (rz !== 0) ctx.rotate((rz * Math.PI) / 180)
+}
+
+/** Pose + flip around (cx, cy), then return to artboard space for absolute drawing. */
+function applyLayerPose(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  rotationX: number | undefined,
+  rotationY: number | undefined,
+  rotationZ: number | undefined,
+  artboardWidth: number,
+  flipH?: boolean,
+  flipV?: boolean,
+) {
+  ctx.translate(cx, cy)
+  applyPoseAroundOrigin(ctx, rotationX, rotationY, rotationZ, artboardWidth)
+  applyLayerFlip(ctx, flipH, flipV)
+  ctx.translate(-cx, -cy)
 }
 
 export function resolveThumbnailLayout(
@@ -315,9 +403,17 @@ function paintFrame(
   const bezel = ref * spec.bezel
 
   ctx.save()
-  ctx.translate(cx, cy)
-  ctx.rotate(((frame.rotation ?? 0) * Math.PI) / 180)
-  ctx.translate(-cx, -cy)
+  applyLayerPose(
+    ctx,
+    cx,
+    cy,
+    frame.rotationX,
+    frame.rotationY,
+    frame.rotation,
+    width,
+    frame.flipH,
+    frame.flipV,
+  )
 
   const blurPx = Math.min(80, Math.max(0, frame.shadow ?? 24))
   const oxPx = frame.shadowOffsetX ?? 0
@@ -426,6 +522,7 @@ function paintClipart(
   width: number,
   height: number,
   images: Map<string, HTMLImageElement>,
+  designScale = 1,
 ) {
   const img = images.get(clipart.assetId)
   if (!img) return
@@ -483,11 +580,26 @@ function paintClipart(
 
   ctx.save()
   ctx.globalAlpha = opacity
-  const blur =
+  const filterParts: string[] = []
+  const contentBlur =
     typeof clipart.blur === "number" && clipart.blur > 0
-      ? Math.min(48, clipart.blur)
+      ? Math.min(48, clipart.blur) * designScale
       : 0
-  if (blur > 0) ctx.filter = `blur(${blur}px)`
+  if (contentBlur > 0) filterParts.push(`blur(${contentBlur}px)`)
+  const dropShadow = clipartDropShadowCss({
+    shadow: (clipart.shadow ?? 0) * designScale,
+    shadowOffsetX: (clipart.shadowOffsetX ?? 0) * designScale,
+    shadowOffsetY: (clipart.shadowOffsetY ?? 0) * designScale,
+    shadowOpacity:
+      clipart.shadowOpacity ??
+      ((clipart.shadow ?? 0) > 0 ||
+      (clipart.shadowOffsetX ?? 0) !== 0 ||
+      (clipart.shadowOffsetY ?? 0) !== 0
+        ? 55
+        : 0),
+  })
+  if (dropShadow) filterParts.push(dropShadow)
+  if (filterParts.length > 0) ctx.filter = filterParts.join(" ")
 
   if (frame && clipart.attachedFrameId === frame.id) {
     const spec = deviceSpec(frame.deviceId)
@@ -498,14 +610,28 @@ function paintClipart(
     const clipartWidth = (clipart.width / 100) * deviceW
     const clipartHeight = clipartWidth / aspect
     ctx.translate(centerX, centerY)
-    ctx.rotate(((frame.rotation ?? 0) * Math.PI) / 180)
+    applyPoseAroundOrigin(
+      ctx,
+      frame.rotationX,
+      frame.rotationY,
+      frame.rotation,
+      width,
+    )
+    applyLayerFlip(ctx, frame.flipH, frame.flipV)
     ctx.translate(-deviceW / 2, -deviceH / 2)
     const localX =
       deviceW / 2 + (clipart.x / 100) * deviceW - clipartWidth / 2
     const localY =
       deviceH / 2 + (clipart.y / 100) * deviceH - clipartHeight / 2
     ctx.translate(localX + clipartWidth / 2, localY + clipartHeight / 2)
-    ctx.rotate(((clipart.rotation ?? 0) * Math.PI) / 180)
+    applyPoseAroundOrigin(
+      ctx,
+      clipart.rotationX,
+      clipart.rotationY,
+      clipart.rotation,
+      width,
+    )
+    applyLayerFlip(ctx, clipart.flipH, clipart.flipV)
     drawTinted(ctx, clipartWidth, clipartHeight)
   } else {
     const clipartWidth = (clipart.width / 100) * width
@@ -513,7 +639,14 @@ function paintClipart(
     const cx = (clipart.x / 100) * width
     const cy = (clipart.y / 100) * height
     ctx.translate(cx, cy)
-    ctx.rotate(((clipart.rotation ?? 0) * Math.PI) / 180)
+    applyPoseAroundOrigin(
+      ctx,
+      clipart.rotationX,
+      clipart.rotationY,
+      clipart.rotation,
+      width,
+    )
+    applyLayerFlip(ctx, clipart.flipH, clipart.flipV)
     drawTinted(ctx, clipartWidth, clipartHeight)
   }
 
@@ -530,11 +663,19 @@ function paintTextLayer(
   if (!content) return
   const cx = (text.x / 100) * width
   const cy = (text.y / 100) * height
-  const fontSize = Math.max(10, (text.size / 1000) * width)
+  const fontScale = width / TEXT_REF_WIDTH
+  const fontSize = Math.max(8, text.size * fontScale)
   const boxW = ((text.width || 80) / 100) * width
   ctx.save()
   ctx.translate(cx, cy)
-  ctx.rotate(((text.rotation ?? 0) * Math.PI) / 180)
+  applyPoseAroundOrigin(
+    ctx,
+    text.rotationX,
+    text.rotationY,
+    text.rotation,
+    width,
+  )
+  applyLayerFlip(ctx, text.flipH, text.flipV)
   ctx.fillStyle = text.color || "#ffffff"
   ctx.textAlign =
     text.align === "left"
@@ -544,20 +685,24 @@ function paintTextLayer(
         : "center"
   ctx.textBaseline = "middle"
   const weight = text.weight || 600
-  ctx.font = `${weight} ${fontSize}px ${text.font || "system-ui"}, system-ui, sans-serif`
+  ctx.font = canvasFont(weight, fontSize, text.font)
+  if ("letterSpacing" in ctx) {
+    ;(ctx as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing =
+      "-0.03em"
+  }
   const blur = Math.max(0, text.shadow ?? 0)
   const ox = text.shadowOffsetX ?? 0
   const oy = text.shadowOffsetY ?? (blur > 0 ? 4 : 0)
   const shadowAlpha = Math.min(1, Math.max(0, (text.shadowOpacity ?? 40) / 100))
   if (blur > 0 || ox !== 0 || oy !== 0) {
     ctx.shadowColor = `rgba(0,0,0,${shadowAlpha})`
-    ctx.shadowBlur = blur * 0.35
-    ctx.shadowOffsetX = ox * 0.35
-    ctx.shadowOffsetY = oy * 0.35
+    ctx.shadowBlur = blur * fontScale
+    ctx.shadowOffsetX = ox * fontScale
+    ctx.shadowOffsetY = oy * fontScale
   }
   if ((text.strokeWidth ?? 0) > 0) {
     ctx.strokeStyle = text.strokeColor || "#000000"
-    ctx.lineWidth = text.strokeWidth
+    ctx.lineWidth = (text.strokeWidth ?? 0) * fontScale
     ctx.lineJoin = "round"
   }
   const maxWidth = boxW
@@ -576,7 +721,7 @@ function paintTextLayer(
   if (line) lines.push(line)
   const lineHeight = fontSize * 1.15
   const startY = -((lines.length - 1) * lineHeight) / 2
-  lines.slice(0, 6).forEach((entry, index) => {
+  lines.slice(0, 8).forEach((entry, index) => {
     const y = startY + index * lineHeight
     if ((text.strokeWidth ?? 0) > 0) ctx.strokeText(entry, 0, y, maxWidth)
     ctx.fillText(entry, 0, y, maxWidth)
@@ -591,6 +736,7 @@ function paintLens(
   height: number,
   base: HTMLCanvasElement,
   images: Map<string, HTMLImageElement>,
+  designScale = 1,
 ) {
   const lensW = (lens.width / 100) * width
   const lensH = (lens.height / 100) * height
@@ -608,15 +754,34 @@ function paintLens(
 
   ctx.save()
   ctx.translate(cx, cy)
-  ctx.rotate(((lens.rotation ?? 0) * Math.PI) / 180)
-  if ((lens.shadow ?? 0) > 0) {
-    ctx.shadowColor = "rgba(0,0,0,0.45)"
-    ctx.shadowBlur = lens.shadow
-    ctx.shadowOffsetY = lens.shadow * 0.35
+  applyPoseAroundOrigin(
+    ctx,
+    lens.rotationX,
+    lens.rotationY,
+    lens.rotation,
+    width,
+  )
+  applyLayerFlip(ctx, lens.flipH, lens.flipV)
+  const blurPx = Math.min(80, Math.max(0, lens.shadow ?? 0))
+  const oxPx = lens.shadowOffsetX ?? 0
+  const oyPx =
+    lens.shadowOffsetY ?? (blurPx > 0 ? Math.max(2, Math.round(blurPx * 0.35)) : 0)
+  const opacityPct =
+    lens.shadowOpacity ??
+    (blurPx > 0 || oxPx !== 0 || oyPx !== 0 ? 55 : 0)
+  const shadowAlpha = Math.min(1, Math.max(0, opacityPct / 100))
+  if (shadowAlpha > 0 && (blurPx > 0 || oxPx !== 0 || oyPx !== 0)) {
+    ctx.shadowColor = `rgba(0,0,0,${shadowAlpha})`
+    ctx.shadowBlur = blurPx * designScale
+    ctx.shadowOffsetX = oxPx * designScale
+    ctx.shadowOffsetY = oyPx * designScale
     ctx.fillStyle = "#000"
     roundRect(ctx, -lensW / 2, -lensH / 2, lensW, lensH, radius)
     ctx.fill()
     ctx.shadowColor = "transparent"
+    ctx.shadowBlur = 0
+    ctx.shadowOffsetX = 0
+    ctx.shadowOffsetY = 0
   }
   roundRect(ctx, -lensW / 2, -lensH / 2, lensW, lensH, radius)
   ctx.clip()
@@ -634,9 +799,16 @@ function paintLens(
   if ((lens.borderWidth ?? 0) > 0) {
     ctx.save()
     ctx.translate(cx, cy)
-    ctx.rotate(((lens.rotation ?? 0) * Math.PI) / 180)
+    applyPoseAroundOrigin(
+      ctx,
+      lens.rotationX,
+      lens.rotationY,
+      lens.rotation,
+      width,
+    )
+    applyLayerFlip(ctx, lens.flipH, lens.flipV)
     ctx.strokeStyle = lens.borderColor || "#ffffff"
-    ctx.lineWidth = Math.max(1, lens.borderWidth)
+    ctx.lineWidth = Math.max(1, (lens.borderWidth ?? 0) * designScale)
     roundRect(ctx, -lensW / 2, -lensH / 2, lensW, lensH, radius)
     ctx.stroke()
     ctx.restore()
@@ -652,15 +824,31 @@ function paintSlideFallback(
   designScale = 1,
   allSlides: Slide[] = [slide],
   slideIndex = 0,
+  /** Match editor: 100 + (gapPx / slideWidthPx) * 100 when slides have a gap. */
+  stridePercent = 100,
 ) {
   paintBackground(ctx, slide.background, width, height, slide.templateId, images)
 
-  const guests = guestFramesForSlide(allSlides, slideIndex, width, height)
+  const guests = guestFramesForSlide(
+    allSlides,
+    slideIndex,
+    width,
+    height,
+    stridePercent,
+  )
   const guestCliparts = guestClipartsForSlide(
     allSlides,
     slideIndex,
     width,
     height,
+    stridePercent,
+  )
+  const guestTexts = guestTextsForSlide(
+    allSlides,
+    slideIndex,
+    width,
+    height,
+    stridePercent,
   )
   const framesById = new Map<string, Frame>(
     [
@@ -674,7 +862,12 @@ function paintSlideFallback(
       ...guestCliparts.map((guest) => guest.clipart),
     ].map((clipart) => [clipart.id, clipart]),
   )
-  const textsById = new Map(slide.texts.map((text) => [text.id, text]))
+  const textsById = new Map<string, TextLayer>(
+    [
+      ...slide.texts,
+      ...guestTexts.map((guest) => guest.text),
+    ].map((text) => [text.id, text]),
+  )
   const order = normalizeLayerOrder(slide)
   const extraIds = [
     ...framesById.keys(),
@@ -702,7 +895,15 @@ function paintSlideFallback(
         const attached = clipart.attachedFrameId
           ? (framesById.get(clipart.attachedFrameId) ?? null)
           : null
-        paintClipart(target, clipart, attached, width, height, images)
+        paintClipart(
+          target,
+          clipart,
+          attached,
+          width,
+          height,
+          images,
+          designScale,
+        )
         continue
       }
       const text = textsById.get(id)
@@ -719,7 +920,7 @@ function paintSlideFallback(
   for (const id of [...order, ...extraIds]) {
     const lens = (slide.lenses ?? []).find((item) => item.id === id)
     if (lens) {
-      paintLens(ctx, lens, width, height, base, images)
+      paintLens(ctx, lens, width, height, base, images, designScale)
       continue
     }
     const frame = framesById.get(id)
@@ -732,7 +933,7 @@ function paintSlideFallback(
       const attached = clipart.attachedFrameId
         ? (framesById.get(clipart.attachedFrameId) ?? null)
         : null
-      paintClipart(ctx, clipart, attached, width, height, images)
+      paintClipart(ctx, clipart, attached, width, height, images, designScale)
       continue
     }
     const text = textsById.get(id)
@@ -758,6 +959,7 @@ export async function renderProjectPreviewCanvas(
   project: Project,
   options: PreviewRenderOptions = {},
 ): Promise<HTMLCanvasElement> {
+  await ensurePreviewFonts()
   const layout = resolveThumbnailLayout(project, options.layout)
   const landscapeBoard =
     STORE_TARGETS[project.targetId]?.orientation === "landscape"
@@ -768,8 +970,6 @@ export async function renderProjectPreviewCanvas(
   const { width: artW, height: artH } = artboardSize(project)
   const slides = previewSlides(project)
   const slideH = Math.max(1, Math.round(slideWidth * (artH / artW)))
-  // Shadow / stroke values are authored in native artboard px — scale to preview.
-  const designScale = slideWidth / Math.max(1, artW)
 
   // Landscape → 2-row grid; portrait stack; else 1-row strip.
   const useLandGrid = landscapeBoard && layout !== "portrait"
@@ -837,7 +1037,8 @@ export async function renderProjectPreviewCanvas(
       slideWidth,
       slideH,
       images,
-      designScale,
+      artW,
+      artH,
       assetUrls,
       project.slides,
       options.paintOnly === true,
@@ -855,7 +1056,8 @@ async function paintPreviewCell(
   slideWidth: number,
   slideH: number,
   images: Map<string, HTMLImageElement>,
-  designScale = 1,
+  nativeWidth: number,
+  nativeHeight: number,
   assetUrls: Record<string, string> = {},
   allSlides: Slide[] = [slide],
   paintOnly = false,
@@ -869,40 +1071,74 @@ async function paintPreviewCell(
     0,
     allSlides.findIndex((entry) => entry.id === slide.id),
   )
-  if (paintOnly) {
+  // Same gap compensation as DesignCanvas (stride > 100) so continued layers
+  // line up across the strip the way they do in the editor.
+  const stridePercent =
+    100 + (SLIDE_GAP / Math.max(1, slideWidth)) * 100
+
+  // Paint/capture at native artboard size (correct tilt perspective + positions),
+  // then scale into the thumb cell — matches a CSS-scaled editor artboard.
+  const paintNative = (target: CanvasRenderingContext2D) => {
     paintSlideFallback(
-      ctx,
+      target,
       slide,
-      slideWidth,
-      slideH,
+      nativeWidth,
+      nativeHeight,
       images,
-      designScale,
+      1,
       allSlides,
       slideIndex,
+      stridePercent,
     )
+  }
+
+  if (paintOnly) {
+    if (slideWidth === nativeWidth && slideH === nativeHeight) {
+      paintNative(ctx)
+    } else {
+      const native = document.createElement("canvas")
+      native.width = nativeWidth
+      native.height = nativeHeight
+      const nctx = native.getContext("2d")
+      if (nctx) {
+        paintNative(nctx)
+        ctx.drawImage(native, 0, 0, slideWidth, slideH)
+      } else {
+        paintSlideFallback(
+          ctx,
+          slide,
+          slideWidth,
+          slideH,
+          images,
+          slideWidth / Math.max(1, nativeWidth),
+          allSlides,
+          slideIndex,
+          stridePercent,
+        )
+      }
+    }
   } else {
     try {
       const captured = await captureSlideToCanvas(
         slide,
         slideIndex,
         allSlides,
-        slideWidth,
-        slideH,
+        nativeWidth,
+        nativeHeight,
         assetUrls,
         true,
+        stridePercent,
       )
       ctx.drawImage(captured, 0, 0, slideWidth, slideH)
     } catch {
-      paintSlideFallback(
-        ctx,
-        slide,
-        slideWidth,
-        slideH,
-        images,
-        designScale,
-        allSlides,
-        slideIndex,
-      )
+      const native = document.createElement("canvas")
+      native.width = nativeWidth
+      native.height = nativeHeight
+      const nctx = native.getContext("2d")
+      if (nctx) {
+        paintNative(nctx)
+        ctx.drawImage(native, 0, 0, slideWidth, slideH)
+      }
     }
   }
   ctx.restore()

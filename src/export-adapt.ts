@@ -135,9 +135,7 @@ export function adaptTextToStoreTarget(
   if (fromTargetId === toTargetId) return text
   const fromArt = artboardAspect(fromTargetId)
   const toArt = artboardAspect(toTargetId)
-  const size = Math.round(
-    Math.min(120, Math.max(22, text.size * (fromArt / toArt))),
-  )
+  const size = Math.round(Math.max(1, text.size * (fromArt / toArt)))
   let y = text.y
   if (isIpadStoreTarget(toTargetId) && text.y < 28) {
     y = Math.max(6, text.y * 0.85)

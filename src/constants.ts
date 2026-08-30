@@ -11,6 +11,7 @@ import type {
   TemplateId,
   TextLayer,
 } from "./types"
+import { normalizeFlipFlag, normalizeTilt } from "./layer-flip"
 
 export const MAX_FRAMES = 6
 export const MAX_TEXTS = 12
@@ -235,6 +236,13 @@ export const FONTS = [
   "DM Sans",
   "Outfit",
 ] as const
+
+/** CSS `font-family` value — quotes multi-word names so capture/DOM parse correctly. */
+export function cssFontFamily(font: string | undefined | null): string {
+  const name = (font || "Poppins").trim() || "Poppins"
+  const safe = /\s/.test(name) ? `"${name.replace(/["']/g, "")}"` : name
+  return `${safe}, system-ui, sans-serif`
+}
 
 export function defaultBackground(
   overrides: Partial<SlideBackground> = {},
@@ -611,6 +619,8 @@ export function createFrame(
     shadowOffsetX,
     shadowOffsetY,
     shadowOpacity,
+    flipH: normalizeFlipFlag(rest.flipH),
+    flipV: normalizeFlipFlag(rest.flipV),
     id: id ?? crypto.randomUUID(),
   }
 }
@@ -701,27 +711,66 @@ export function removeFromLayerOrder(order: string[], id: string): string[] {
   return order.filter((item) => item !== id)
 }
 
-/** Ensure selectedId and layer order stay valid after edits. */
+/** Ensure selectedId / selectedIds and layer order stay valid after edits. */
 export function sanitizeSlideSelection(slide: Slide): Slide {
   const layerOrder = normalizeLayerOrder(slide)
-  const selectedExists =
-    slide.frames.some((frame) => frame.id === slide.selectedId) ||
-    slide.texts.some((text) => text.id === slide.selectedId) ||
-    slide.cliparts.some((clipart) => clipart.id === slide.selectedId) ||
-    (slide.lenses ?? []).some((lens) => lens.id === slide.selectedId) ||
-    layerOrder.includes(slide.selectedId)
+  const rawIds =
+    Array.isArray(slide.selectedIds) && slide.selectedIds.length > 0
+      ? slide.selectedIds
+      : slide.selectedId
+        ? [slide.selectedId]
+        : []
+  const seen = new Set<string>()
+  const wanted: string[] = []
+  for (const id of rawIds) {
+    if (!id || seen.has(id)) continue
+    seen.add(id)
+    wanted.push(id)
+  }
+  const exists = (id: string) =>
+    slide.frames.some((frame) => frame.id === id) ||
+    slide.texts.some((text) => text.id === id) ||
+    slide.cliparts.some((clipart) => clipart.id === id) ||
+    (slide.lenses ?? []).some((lens) => lens.id === id) ||
+    layerOrder.includes(id)
+  const valid = wanted.filter(exists)
+  if (valid.length > 0) {
+    const selectedId =
+      slide.selectedId && valid.includes(slide.selectedId)
+        ? slide.selectedId
+        : valid[valid.length - 1]!
+    return {
+      ...slide,
+      lenses: slide.lenses ?? [],
+      layerOrder,
+      selectedId,
+      selectedIds: valid,
+    }
+  }
+  // Intentional empty selection.
+  if (!slide.selectedId && (!slide.selectedIds || slide.selectedIds.length === 0)) {
+    return {
+      ...slide,
+      lenses: slide.lenses ?? [],
+      layerOrder,
+      selectedId: "",
+      selectedIds: [],
+    }
+  }
+  // Had a selection but ids are gone — fall back to topmost layer.
+  const fallback =
+    layerOrder[layerOrder.length - 1] ??
+    slide.frames[0]?.id ??
+    slide.texts[0]?.id ??
+    slide.cliparts[0]?.id ??
+    slide.lenses?.[0]?.id ??
+    ""
   return {
     ...slide,
     lenses: slide.lenses ?? [],
     layerOrder,
-    selectedId: selectedExists
-      ? slide.selectedId
-      : (layerOrder[layerOrder.length - 1] ??
-        slide.frames[0]?.id ??
-        slide.texts[0]?.id ??
-        slide.cliparts[0]?.id ??
-        slide.lenses?.[0]?.id ??
-        ""),
+    selectedId: fallback,
+    selectedIds: fallback ? [fallback] : [],
   }
 }
 
@@ -756,6 +805,25 @@ export function createLens(overrides: Partial<LensLayer> & { shape?: string } = 
     typeof rest.shadow === "number" && Number.isFinite(rest.shadow)
       ? Math.min(80, Math.max(0, rest.shadow))
       : 18
+  const shadowOffsetX =
+    typeof rest.shadowOffsetX === "number" &&
+    Number.isFinite(rest.shadowOffsetX)
+      ? Math.min(40, Math.max(-40, rest.shadowOffsetX))
+      : 0
+  const shadowOffsetY =
+    typeof rest.shadowOffsetY === "number" &&
+    Number.isFinite(rest.shadowOffsetY)
+      ? Math.min(40, Math.max(-40, rest.shadowOffsetY))
+      : shadow > 0
+        ? Math.max(2, Math.round(shadow * 0.35))
+        : 0
+  const shadowOpacity =
+    typeof rest.shadowOpacity === "number" &&
+    Number.isFinite(rest.shadowOpacity)
+      ? Math.min(100, Math.max(0, rest.shadowOpacity))
+      : shadow > 0 || shadowOffsetX !== 0 || shadowOffsetY !== 0
+        ? 55
+        : 0
   const x =
     typeof rest.x === "number" && Number.isFinite(rest.x)
       ? Math.min(100, Math.max(0, rest.x))
@@ -785,12 +853,19 @@ export function createLens(overrides: Partial<LensLayer> & { shape?: string } = 
     cornerRadius,
     borderWidth,
     shadow,
+    shadowOffsetX,
+    shadowOffsetY,
+    shadowOpacity,
     borderColor: rest.borderColor ?? "#ffffff",
     imageLocked,
     lockedX,
     lockedY,
     lockedImageId,
     overflow: rest.overflow === "continue" ? "continue" : "cut",
+    flipH: normalizeFlipFlag(rest.flipH),
+    flipV: normalizeFlipFlag(rest.flipV),
+    rotationX: normalizeTilt(rest.rotationX),
+    rotationY: normalizeTilt(rest.rotationY),
     id: rest.id ?? crypto.randomUUID(),
   }
 }
@@ -808,8 +883,27 @@ export function createClipart(overrides: Partial<ClipartLayer> = {}): ClipartLay
       : 1
   const shadow =
     typeof overrides.shadow === "number" && Number.isFinite(overrides.shadow)
-      ? Math.min(48, Math.max(0, overrides.shadow))
+      ? Math.min(80, Math.max(0, overrides.shadow))
       : 0
+  const shadowOffsetX =
+    typeof overrides.shadowOffsetX === "number" &&
+    Number.isFinite(overrides.shadowOffsetX)
+      ? Math.min(40, Math.max(-40, overrides.shadowOffsetX))
+      : 0
+  const shadowOffsetY =
+    typeof overrides.shadowOffsetY === "number" &&
+    Number.isFinite(overrides.shadowOffsetY)
+      ? Math.min(40, Math.max(-40, overrides.shadowOffsetY))
+      : shadow > 0
+        ? Math.max(2, Math.round(shadow * 0.35))
+        : 0
+  const shadowOpacity =
+    typeof overrides.shadowOpacity === "number" &&
+    Number.isFinite(overrides.shadowOpacity)
+      ? Math.min(100, Math.max(0, overrides.shadowOpacity))
+      : shadow > 0 || shadowOffsetX !== 0 || shadowOffsetY !== 0
+        ? 55
+        : 0
   const blur =
     typeof overrides.blur === "number" && Number.isFinite(overrides.blur)
       ? Math.min(48, Math.max(0, overrides.blur))
@@ -836,9 +930,16 @@ export function createClipart(overrides: Partial<ClipartLayer> = {}): ClipartLay
     aspect,
     opacity,
     shadow,
+    shadowOffsetX,
+    shadowOffsetY,
+    shadowOpacity,
     blur,
     recolor: overrides.recolor ?? "off",
     attachedFrameId: overrides.attachedFrameId ?? null,
+    flipH: normalizeFlipFlag(overrides.flipH),
+    flipV: normalizeFlipFlag(overrides.flipV),
+    rotationX: normalizeTilt(overrides.rotationX),
+    rotationY: normalizeTilt(overrides.rotationY),
     id: overrides.id ?? crypto.randomUUID(),
   }
 }
@@ -907,6 +1008,10 @@ export function createText(overrides: Partial<TextLayer> = {}): TextLayer {
     shadowOffsetY,
     shadowOpacity,
     strokeWidth,
+    flipH: normalizeFlipFlag(overrides.flipH),
+    flipV: normalizeFlipFlag(overrides.flipV),
+    rotationX: normalizeTilt(overrides.rotationX),
+    rotationY: normalizeTilt(overrides.rotationY),
     id: overrides.id ?? crypto.randomUUID(),
   }
 }
@@ -945,6 +1050,40 @@ export function textShadowPreset(
 }
 
 export const deviceShadowPreset = textShadowPreset
+
+/** CSS `drop-shadow(...)` fragment for clipart filter chains. */
+export function clipartDropShadowCss(
+  clipart: Pick<
+    ClipartLayer,
+    "shadow" | "shadowOffsetX" | "shadowOffsetY" | "shadowOpacity"
+  >,
+): string | undefined {
+  const blur = clipart.shadow ?? 0
+  const ox = clipart.shadowOffsetX ?? 0
+  const oy = clipart.shadowOffsetY ?? 0
+  const opacityPct = clipart.shadowOpacity ?? 0
+  if (blur <= 0 && ox === 0 && oy === 0) return undefined
+  const opacity = Math.min(1, Math.max(0, opacityPct / 100))
+  if (opacity <= 0) return undefined
+  return `drop-shadow(${ox}px ${oy}px ${Math.min(80, blur)}px rgba(0,0,0,${opacity}))`
+}
+
+/** CSS box-shadow for lenses (outer wrapper — must not use overflow:hidden). */
+export function lensShadowCss(
+  lens: Pick<
+    LensLayer,
+    "shadow" | "shadowOffsetX" | "shadowOffsetY" | "shadowOpacity"
+  >,
+): string | undefined {
+  const blur = lens.shadow ?? 0
+  const ox = lens.shadowOffsetX ?? 0
+  const oy = lens.shadowOffsetY ?? 0
+  const opacityPct = lens.shadowOpacity ?? 0
+  if (blur <= 0 && ox === 0 && oy === 0) return undefined
+  const opacity = Math.min(1, Math.max(0, opacityPct / 100))
+  if (opacity <= 0) return undefined
+  return `${ox}px ${oy}px ${Math.min(80, blur)}px rgba(0,0,0,${opacity})`
+}
 
 export function deviceShadowCss(
   frame: Pick<
@@ -1216,6 +1355,12 @@ export function createSlide(overrides: SlideDraft = {}): Slide {
       overrides.layerOrder ??
       defaultLayerOrder({ frames, texts, cliparts, lenses }),
     selectedId,
+    selectedIds:
+      overrides.selectedIds && overrides.selectedIds.length > 0
+        ? overrides.selectedIds
+        : selectedId
+          ? [selectedId]
+          : [],
     background: overrides.background
       ? defaultBackground(overrides.background)
       : defaultBackground(),

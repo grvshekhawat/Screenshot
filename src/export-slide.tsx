@@ -17,6 +17,8 @@ type ExportSlideProps = {
   height: number
   assetUrls: Record<string, string>
   showLenses?: boolean
+  /** Continuity offset between slides; >100 when a gap sits between artboards. */
+  stridePercent?: number
   onReady?: () => void
 }
 
@@ -28,12 +30,37 @@ function ExportSlide({
   height,
   assetUrls,
   showLenses = true,
+  stridePercent = 100,
   onReady,
 }: ExportSlideProps) {
-  const guestFrames = guestFramesForSlide(slides, slideIndex, width, height)
-  const guestCliparts = guestClipartsForSlide(slides, slideIndex, width, height)
-  const guestTexts = guestTextsForSlide(slides, slideIndex, width, height)
-  const guestLenses = guestLensesForSlide(slides, slideIndex, width, height)
+  const guestFrames = guestFramesForSlide(
+    slides,
+    slideIndex,
+    width,
+    height,
+    stridePercent,
+  )
+  const guestCliparts = guestClipartsForSlide(
+    slides,
+    slideIndex,
+    width,
+    height,
+    stridePercent,
+  )
+  const guestTexts = guestTextsForSlide(
+    slides,
+    slideIndex,
+    width,
+    height,
+    stridePercent,
+  )
+  const guestLenses = guestLensesForSlide(
+    slides,
+    slideIndex,
+    width,
+    height,
+    stridePercent,
+  )
   return (
     <Artboard
       slide={slide}
@@ -72,6 +99,7 @@ export async function captureSlideToCanvas(
   height: number,
   assetUrls: Record<string, string>,
   showLenses = true,
+  stridePercent = 100,
 ): Promise<HTMLCanvasElement> {
   return withCaptureLock(async () => {
     const host = document.createElement("div")
@@ -109,6 +137,7 @@ export async function captureSlideToCanvas(
             height={height}
             assetUrls={assetUrls}
             showLenses={showLenses}
+            stridePercent={stridePercent}
             onReady={onReady}
           />,
         )

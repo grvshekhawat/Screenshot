@@ -1,7 +1,9 @@
 import {
   createContext,
   useContext,
+  useEffect,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react"
 import {
@@ -18,9 +20,9 @@ import {
   PALETTES,
   STORE_TARGETS,
   TEMPLATES,
+  cssFontFamily,
   splitBackgroundCss,
   templateSplit,
-  textShadowPreset,
   deviceShadowPreset,
   maxFittingDeviceScale,
 } from "../constants"
@@ -31,19 +33,146 @@ import {
   gestureAttachPreset,
   type GestureAttachPreset,
 } from "../clipart-attach"
-import { clipartOverflow, frameOverflow, overflowsHorizontally } from "../overflow"
+import { clipartOverflow, frameOverflow, lensOverflow, overflowsHorizontally, textOverflow } from "../overflow"
 import { useProject } from "../project-store"
 import type {
   DeviceId,
+  Frame,
   FrameScreenSlot,
+  ClipartLayer,
+  LensLayer,
   SelectedKind,
   SizeEditMode,
   Slide,
   StoreTargetId,
   TextAlign,
+  TextLayer,
 } from "../types"
+import {
+  getPropertyClipboard,
+  patchFromPropertyClipboard,
+  propertyClipboardSummary,
+  setPropertyClipboard,
+  subscribePropertyClipboard,
+} from "../property-clipboard"
+import type { SelectionPatch } from "../selection"
+import {
+  getSelectedIds,
+  pickSectionPatch,
+  resolveSelectedLayers,
+  SECTION_LABELS,
+  selectionMoveOrigins,
+  uniformSelectionKind,
+  type PropertySectionId,
+} from "../selection"
 import { OverflowChoice } from "./OverflowChoice"
 import { ScreenshotDropZone } from "./ScreenshotDropZone"
+
+type PatchableLayer = Frame | TextLayer | ClipartLayer | LensLayer
+
+type PropertyCopyContextValue = {
+  kind: SelectedKind
+  copySection: (section: PropertySectionId) => void
+  copyField: (key: keyof SelectionPatch, label: string) => void
+}
+
+const PropertyCopyContext = createContext<PropertyCopyContextValue | null>(null)
+
+function PropertyCopyProvider({
+  kind,
+  layer,
+  children,
+}: {
+  kind: SelectedKind
+  layer: PatchableLayer
+  children: ReactNode
+}) {
+  const value: PropertyCopyContextValue = {
+    kind,
+    copySection: (section) => {
+      const patch = pickSectionPatch(layer, section)
+      if (Object.keys(patch).length === 0) return
+      setPropertyClipboard({
+        scope: "section",
+        section,
+        patch,
+        sourceKind: kind,
+        label: SECTION_LABELS[section],
+      })
+    },
+    copyField: (key, label) => {
+      const next = (layer as unknown as Record<string, unknown>)[key]
+      if (next === undefined) return
+      setPropertyClipboard({
+        scope: "field",
+        key,
+        value: next as SelectionPatch[keyof SelectionPatch],
+        sourceKind: kind,
+        label,
+      })
+    },
+  }
+  return (
+    <PropertyCopyContext.Provider value={value}>
+      {children}
+    </PropertyCopyContext.Provider>
+  )
+}
+
+function usePropertyClipboardEntry() {
+  return useSyncExternalStore(
+    subscribePropertyClipboard,
+    getPropertyClipboard,
+    getPropertyClipboard,
+  )
+}
+
+function PastePropertiesAction({
+  targetKind,
+  onPaste,
+}: {
+  targetKind: SelectedKind
+  onPaste: (patch: SelectionPatch) => void
+}) {
+  const entry = usePropertyClipboardEntry()
+  if (!entry) return null
+  const patch = patchFromPropertyClipboard(entry, targetKind)
+  if (Object.keys(patch).length === 0) return null
+  return (
+    <button
+      type="button"
+      title={propertyClipboardSummary(entry)}
+      className="text-zinc-400 hover:text-white"
+      onClick={() => onPaste(patch)}
+    >
+      Paste props
+    </button>
+  )
+}
+
+function CopyPropButton({
+  title,
+  onClick,
+}: {
+  title: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      onClick={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        onClick()
+      }}
+      className="shrink-0 rounded px-1 py-0.5 text-[10px] font-medium text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
+    >
+      Copy
+    </button>
+  )
+}
 
 export type MenuId = "content" | "background" | "template" | "export"
 
@@ -104,6 +233,7 @@ export function Inspector({
     activeClipart,
     activeLens,
     selectedKind: kind,
+    selectedIds,
     setTarget,
     setSizeEditMode,
     updateSlide,
@@ -119,6 +249,11 @@ export function Inspector({
     updateFrame,
     moveFrame,
     addText,
+    patchSelectionCommon,
+    scaleSelectionRelative,
+    alignSelection,
+    moveSelectionByArtboardDelta,
+    deleteSelection,
     duplicateText,
     removeText,
     updateText,
@@ -138,6 +273,8 @@ export function Inspector({
     copyComponentToSlide,
     setFrameOverflow,
     setClipartOverflow,
+    setTextOverflow,
+    setLensOverflow,
   } = useProject()
 
   const slide = activeSlide
@@ -150,10 +287,36 @@ export function Inspector({
   const clipartEdges = activeClipart
     ? clipartOverflow(activeClipart, target.width, target.height)
     : null
+  const textEdges = activeText
+    ? textOverflow(activeText, target.width, target.height)
+    : null
+  const lensEdges = activeLens
+    ? lensOverflow(activeLens, target.width, target.height)
+    : null
 
   const [contentTab, setContentTab] = useState<
     "phone" | "text" | "clipart" | "lens"
   >("phone")
+
+  const selectionKey = selectedIds.join("|")
+
+  // Canvas selection → Content panel: open Content, switch tab, highlight row.
+  useEffect(() => {
+    if (!selectionKey) return
+    const tab =
+      kind === "frame"
+        ? "phone"
+        : kind === "text"
+          ? "text"
+          : kind === "clipart"
+            ? "clipart"
+            : kind === "lens"
+              ? "lens"
+              : null
+    if (!tab) return
+    setContentTab(tab)
+    onMenuChange("content")
+  }, [kind, selectionKey, onMenuChange])
 
   const toggleMenu = (id: MenuId) =>
     onMenuChange(menu === id ? null : id)
@@ -206,6 +369,7 @@ export function Inspector({
                     tab={contentTab}
                     onTabChange={setContentTab}
                     slide={slide}
+                    selectedIds={selectedIds}
                     assetUrls={assetUrls}
                     libraryCliparts={libraryCliparts}
                     onUploadClick={onUploadClick}
@@ -273,7 +437,7 @@ export function Inspector({
                   <ExportPanel
                     projectTargetId={project.targetId}
                     sizeEditMode={project.sizeEditMode ?? "current"}
-                    hasComponentSelection={Boolean(slide.selectedId)}
+                    hasComponentSelection={selectedIds.length > 0}
                     targetName={target.name}
                     busy={busy}
                     canExportClean={canExportClean}
@@ -298,19 +462,43 @@ export function Inspector({
             Properties
           </h2>
           <p className="mt-0.5 text-[11px] text-zinc-600">
-            {kind === "frame"
-              ? "Phone"
-              : kind === "text"
-                ? "Text"
-                : kind === "clipart"
-                  ? "Clipart"
-                  : kind === "lens"
-                    ? "Lens"
-                    : "Nothing selected"}
+            {selectedIds.length > 1
+              ? `${selectedIds.length} selected`
+              : kind === "frame"
+                ? "Phone"
+                : kind === "text"
+                  ? "Text"
+                  : kind === "clipart"
+                    ? "Clipart"
+                    : kind === "lens"
+                      ? "Lens"
+                      : "Nothing selected"}
           </p>
         </div>
         <div className="flex-1 px-3 py-1">
-          {kind === "frame" && frame ? (
+          {selectedIds.length > 1 ? (
+            <MultiSelectionProperties
+              count={selectedIds.length}
+              primary={
+                kind === "frame"
+                  ? frame
+                  : kind === "text"
+                    ? activeText
+                    : kind === "clipart"
+                      ? activeClipart
+                      : activeLens
+              }
+              kind={kind}
+              selectedIds={selectedIds}
+              project={project}
+              patchSelectionCommon={patchSelectionCommon}
+              scaleSelectionRelative={scaleSelectionRelative}
+              alignSelection={alignSelection}
+              moveSelectionByArtboardDelta={moveSelectionByArtboardDelta}
+              deleteSelection={deleteSelection}
+            />
+          ) : null}
+          {selectedIds.length <= 1 && kind === "frame" && frame ? (
             <PhoneProperties
               slide={slide}
               frame={frame}
@@ -331,19 +519,21 @@ export function Inspector({
               setFrameOverflow={setFrameOverflow}
             />
           ) : null}
-          {kind === "text" && activeText ? (
+          {selectedIds.length <= 1 && kind === "text" && activeText ? (
             <TextProperties
               slide={slide}
               activeText={activeText}
+              edges={textEdges}
               projectSlides={project.slides}
               updateText={updateText}
               duplicateText={duplicateText}
               removeText={removeText}
               moveText={moveText}
               copyComponentToSlide={copyComponentToSlide}
+              setTextOverflow={setTextOverflow}
             />
           ) : null}
-          {kind === "clipart" && activeClipart ? (
+          {selectedIds.length <= 1 && kind === "clipart" && activeClipart ? (
             <ClipartProperties
               slide={slide}
               activeClipart={activeClipart}
@@ -359,10 +549,11 @@ export function Inspector({
               setClipartOverflow={setClipartOverflow}
             />
           ) : null}
-          {kind === "lens" && activeLens ? (
+          {selectedIds.length <= 1 && kind === "lens" && activeLens ? (
             <LensProperties
               slide={slide}
               activeLens={activeLens}
+              edges={lensEdges}
               projectSlides={project.slides}
               updateLens={updateLens}
               lockLensImage={lockLensImage}
@@ -370,16 +561,13 @@ export function Inspector({
               removeLens={removeLens}
               moveLens={moveLens}
               copyComponentToSlide={copyComponentToSlide}
+              setLensOverflow={setLensOverflow}
             />
           ) : null}
-          {!kind ||
-          (kind === "frame" && !frame) ||
-          (kind === "text" && !activeText) ||
-          (kind === "clipart" && !activeClipart) ||
-          (kind === "lens" && !activeLens) ? (
+          {selectedIds.length === 0 ? (
             <p className="text-[11px] leading-relaxed text-zinc-500">
               Select a phone, text, clipart, or lens on the canvas to edit its
-              properties here.
+              properties here. Shift-click or ⌘/Ctrl-click to multi-select.
             </p>
           ) : null}
         </div>
@@ -392,6 +580,7 @@ function ContentTools({
   tab,
   onTabChange,
   slide,
+  selectedIds,
   assetUrls,
   libraryCliparts,
   onUploadClick,
@@ -410,6 +599,7 @@ function ContentTools({
   tab: "phone" | "text" | "clipart" | "lens"
   onTabChange: (tab: "phone" | "text" | "clipart" | "lens") => void
   slide: Slide
+  selectedIds: string[]
   assetUrls: Record<string, string>
   libraryCliparts: { id: string; name: string; category: string; url: string }[]
   onUploadClick: (
@@ -434,6 +624,11 @@ function ContentTools({
   addLens: (slideId: string) => void
   addLibraryClipart: (slideId: string, libraryId: string, url: string) => void
 }) {
+  const selectedSet = new Set(
+    selectedIds.length > 0 ? selectedIds : getSelectedIds(slide),
+  )
+  const isRowSelected = (id: string) => selectedSet.has(id)
+
   return (
     <div>
       <div className="mb-3 flex flex-wrap gap-1 rounded-lg bg-zinc-900 p-1">
@@ -478,7 +673,7 @@ function ContentTools({
                   selectFrame(slide.id, item.id)
                 }}
                 className={`w-full rounded-lg px-3 py-2 text-left text-sm ${
-                  item.id === slide.selectedId
+                  isRowSelected(item.id)
                     ? "bg-violet-600 text-white"
                     : "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"
                 }`}
@@ -492,13 +687,28 @@ function ContentTools({
             Select a phone to edit it in Properties, or upload a screenshot
             there.
           </p>
-          {slide.frames.some((item) => item.id === slide.selectedId) ? (
+          {slide.frames.some((item) => isRowSelected(item.id)) ? (
             <div className="mt-2">
               <ScreenshotDropZone
                 label="Upload screenshot"
-                onClick={() => onUploadClick(slide.selectedId, slide.id, "a")}
+                onClick={() =>
+                  onUploadClick(
+                    selectedIds.find((id) =>
+                      slide.frames.some((frame) => frame.id === id),
+                    ) ?? slide.selectedId,
+                    slide.id,
+                    "a",
+                  )
+                }
                 onDropFiles={(files) =>
-                  onScreenshotFiles(files, slide.id, slide.selectedId, "a")
+                  onScreenshotFiles(
+                    files,
+                    slide.id,
+                    selectedIds.find((id) =>
+                      slide.frames.some((frame) => frame.id === id),
+                    ) ?? slide.selectedId,
+                    "a",
+                  )
                 }
               />
             </div>
@@ -523,7 +733,7 @@ function ContentTools({
                 type="button"
                 onClick={() => selectText(slide.id, item.id)}
                 className={`w-full truncate rounded-lg px-3 py-2 text-left text-sm ${
-                  item.id === slide.selectedId
+                  isRowSelected(item.id)
                     ? "bg-violet-600 text-white"
                     : "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"
                 }`}
@@ -600,7 +810,7 @@ function ContentTools({
                 type="button"
                 onClick={() => selectClipart(slide.id, item.id)}
                 className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm ${
-                  item.id === slide.selectedId
+                  isRowSelected(item.id)
                     ? "bg-violet-600 text-white"
                     : "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"
                 }`}
@@ -646,7 +856,7 @@ function ContentTools({
                   selectLens(slide.id, item.id)
                 }}
                 className={`w-full rounded-lg px-3 py-2 text-left text-sm ${
-                  item.id === slide.selectedId
+                  isRowSelected(item.id)
                     ? "bg-violet-600 text-white"
                     : "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"
                 }`}
@@ -865,7 +1075,7 @@ function PhoneProperties({
   const scalePercent = Math.round((frame.scale / fitScale) * 100)
 
   return (
-    <>
+    <PropertyCopyProvider kind="frame" layer={frame}>
       <PropertyAccordion defaultOpen="screen">
       <PropertySection id="screen" title="Screen">
         <div className="flex gap-1 rounded-lg bg-zinc-900 p-1">
@@ -986,28 +1196,30 @@ function PhoneProperties({
             </div>
           </>
         )}
-      </PropertySection>
-
-      <PropertySection id="device" title="Device">
-        <div className="grid grid-cols-1 gap-1.5">
-          {deviceOptions.map((id) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => updateFrame(slide.id, frame.id, { deviceId: id })}
-              className={`rounded-lg px-3 py-2 text-left text-sm ${
-                frame.deviceId === id
-                  ? "bg-violet-600 text-white"
-                  : "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"
-              }`}
-            >
-              {DEVICES[id].name}
-            </button>
-          ))}
+        <div>
+          <p className="mb-1.5 text-[11px] text-zinc-500">Device</p>
+          <div className="grid grid-cols-1 gap-1.5">
+            {deviceOptions.map((id) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() =>
+                  updateFrame(slide.id, frame.id, { deviceId: id })
+                }
+                className={`rounded-lg px-3 py-2 text-left text-sm ${
+                  frame.deviceId === id
+                    ? "bg-violet-600 text-white"
+                    : "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"
+                }`}
+              >
+                {DEVICES[id].name}
+              </button>
+            ))}
+          </div>
         </div>
       </PropertySection>
 
-      <PropertySection id="position" title="Position">
+      <PropertySection id="position" title="Position" copySection="position">
         <PositionAlignControls
           x={frame.x}
           y={frame.y}
@@ -1015,7 +1227,7 @@ function PhoneProperties({
         />
       </PropertySection>
 
-      <PropertySection id="transform" title="Transform">
+      <PropertySection id="transform" title="Transform" copySection="transform">
         <RangeValueField
           label="Scale"
           suffix="%"
@@ -1023,6 +1235,7 @@ function PhoneProperties({
           max={110}
           step={1}
           value={Math.min(110, Math.max(40, scalePercent))}
+          copyKey="scale"
           onChange={(value) =>
             updateFrame(slide.id, frame.id, {
               scale: (value / 100) * fitScale,
@@ -1036,6 +1249,7 @@ function PhoneProperties({
           max={45}
           step={1}
           value={frame.rotationX}
+          copyKey="rotationX"
           onChange={(value) =>
             updateFrame(slide.id, frame.id, { rotationX: value })
           }
@@ -1047,6 +1261,7 @@ function PhoneProperties({
           max={45}
           step={1}
           value={frame.rotationY}
+          copyKey="rotationY"
           onChange={(value) =>
             updateFrame(slide.id, frame.id, { rotationY: value })
           }
@@ -1058,121 +1273,30 @@ function PhoneProperties({
           max={180}
           step={1}
           value={frame.rotation}
+          copyKey="rotation"
           onChange={(value) =>
             updateFrame(slide.id, frame.id, { rotation: value })
           }
         />
-        <div>
-          <p className="mb-1.5 text-[11px] text-zinc-500">Shadow</p>
-          <div className="flex gap-1 rounded-lg bg-zinc-900 p-1">
-            {(
-              [
-                ["none", "None"],
-                ["soft", "Soft"],
-                ["hard", "Hard"],
-              ] as const
-            ).map(([id, label]) => {
-              const blur = frame.shadow ?? 0
-              const ox = frame.shadowOffsetX ?? 0
-              const oy = frame.shadowOffsetY ?? 0
-              const active =
-                id === "none"
-                  ? blur <= 0 && ox === 0 && oy === 0
-                  : id === "hard"
-                    ? blur <= 0 && (ox !== 0 || oy !== 0)
-                    : blur > 0
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() =>
-                    updateFrame(
-                      slide.id,
-                      frame.id,
-                      deviceShadowPreset(id, 24),
-                    )
-                  }
-                  className={`flex-1 rounded-md px-2 py-1.5 text-[11px] ${
-                    active
-                      ? "bg-violet-600 text-white"
-                      : "text-zinc-400 hover:bg-zinc-800 hover:text-white"
-                  }`}
-                >
-                  {label}
-                </button>
-              )
-            })}
-          </div>
-        </div>
-        {(frame.shadow ?? 0) > 0 ||
-        (frame.shadowOffsetX ?? 0) !== 0 ||
-        (frame.shadowOffsetY ?? 0) !== 0 ? (
-          <>
-            <RangeValueField
-              label="Blur"
-              suffix="px"
-              min={0}
-              max={80}
-              step={1}
-              value={frame.shadow ?? 0}
-              onChange={(value) =>
-                updateFrame(slide.id, frame.id, {
-                  shadow: value,
-                  shadowOpacity:
-                    (frame.shadowOpacity ?? 0) > 0 ? frame.shadowOpacity : 55,
-                })
-              }
-            />
-            <RangeValueField
-              label="Offset X"
-              suffix="px"
-              min={-40}
-              max={40}
-              step={1}
-              value={frame.shadowOffsetX ?? 0}
-              onChange={(value) =>
-                updateFrame(slide.id, frame.id, {
-                  shadowOffsetX: value,
-                  shadowOpacity:
-                    (frame.shadowOpacity ?? 0) > 0 ? frame.shadowOpacity : 70,
-                })
-              }
-            />
-            <RangeValueField
-              label="Offset Y"
-              suffix="px"
-              min={-40}
-              max={40}
-              step={1}
-              value={frame.shadowOffsetY ?? 0}
-              onChange={(value) =>
-                updateFrame(slide.id, frame.id, {
-                  shadowOffsetY: value,
-                  shadowOpacity:
-                    (frame.shadowOpacity ?? 0) > 0 ? frame.shadowOpacity : 70,
-                })
-              }
-            />
-            <RangeValueField
-              label="Opacity"
-              suffix="%"
-              min={5}
-              max={100}
-              step={1}
-              value={frame.shadowOpacity ?? 55}
-              onChange={(value) =>
-                updateFrame(slide.id, frame.id, { shadowOpacity: value })
-              }
-            />
-          </>
-        ) : null}
+        <FlipControls
+          flipH={frame.flipH}
+          flipV={frame.flipV}
+          onChange={(patch) => updateFrame(slide.id, frame.id, patch)}
+        />
       </PropertySection>
+
+      <ShadowSection
+        value={frame}
+        softSize={24}
+        onChange={(patch) => updateFrame(slide.id, frame.id, patch)}
+      />
 
       {edges && overflowsHorizontally(edges) ? (
         <PropertySection id="edges" title="Edges">
           <OverflowChoice
             mode={frame.overflow}
             edges={edges}
+            noun="phone"
             onCut={() => setFrameOverflow(slide.id, frame.id, "cut", edges)}
             onContinue={() =>
               setFrameOverflow(slide.id, frame.id, "continue", edges)
@@ -1183,6 +1307,10 @@ function PhoneProperties({
       </PropertyAccordion>
 
       <ActionRow>
+        <PastePropertiesAction
+          targetKind="frame"
+          onPaste={(patch) => updateFrame(slide.id, frame.id, patch)}
+        />
         <button
           type="button"
           className="text-zinc-400 hover:text-white"
@@ -1208,6 +1336,8 @@ function PhoneProperties({
               rotation: 0,
               rotationX: 0,
               rotationY: 0,
+              flipH: false,
+              flipV: false,
             })
           }
         >
@@ -1237,31 +1367,35 @@ function PhoneProperties({
           Delete
         </button>
       </ActionRow>
-    </>
+    </PropertyCopyProvider>
   )
 }
 
 function TextProperties({
   slide,
   activeText,
+  edges,
   projectSlides,
   updateText,
   duplicateText,
   removeText,
   moveText,
   copyComponentToSlide,
+  setTextOverflow,
 }: {
   slide: Slide
   activeText: NonNullable<ReturnType<typeof useProject>["activeText"]>
+  edges: ReturnType<typeof textOverflow> | null
   projectSlides: Slide[]
   updateText: ReturnType<typeof useProject>["updateText"]
   duplicateText: (slideId: string, textId: string) => void
   removeText: (slideId: string, textId: string) => void
   moveText: ReturnType<typeof useProject>["moveText"]
   copyComponentToSlide: ReturnType<typeof useProject>["copyComponentToSlide"]
+  setTextOverflow: ReturnType<typeof useProject>["setTextOverflow"]
 }) {
   return (
-    <>
+    <PropertyCopyProvider kind="text" layer={activeText}>
       <PropertyAccordion defaultOpen="content">
       <PropertySection id="content" title="Content">
         <label className="block text-[11px] text-zinc-500">
@@ -1296,27 +1430,48 @@ function TextProperties({
         <p
           className="truncate text-lg text-white"
           style={{
-            fontFamily: activeText.font,
+            fontFamily: cssFontFamily(activeText.font),
             fontWeight: activeText.weight,
           }}
         >
           {activeText.content.trim() || "Font preview"}
         </p>
         <label className="block text-[11px] text-zinc-500">
-          Size {activeText.size}px
-          <input
-            type="range"
-            min={24}
-            max={120}
-            value={activeText.size}
-            onChange={(event) =>
-              updateText(slide.id, activeText.id, {
-                size: Number(event.target.value),
-              })
-            }
-            style={rangeFillStyle(activeText.size, 24, 120)}
-            className="range-thin mt-1.5 w-full"
-          />
+          Size
+          <div className="mt-1 flex items-center gap-2">
+            <input
+              type="range"
+              min={12}
+              max={Math.max(200, activeText.size)}
+              value={activeText.size}
+              onChange={(event) =>
+                updateText(slide.id, activeText.id, {
+                  size: Number(event.target.value),
+                })
+              }
+              style={rangeFillStyle(
+                activeText.size,
+                12,
+                Math.max(200, activeText.size),
+              )}
+              className="range-thin min-w-0 flex-1"
+            />
+            <input
+              type="number"
+              min={1}
+              value={activeText.size}
+              onChange={(event) => {
+                const next = Number(event.target.value)
+                if (!Number.isFinite(next)) return
+                updateText(slide.id, activeText.id, {
+                  size: Math.max(1, Math.round(next)),
+                })
+              }}
+              className="w-16 rounded-md border border-zinc-800 bg-zinc-900 px-1.5 py-1 text-right font-mono text-xs text-zinc-200"
+              aria-label="Text size in pixels"
+            />
+            <span className="text-[10px] text-zinc-600">px</span>
+          </div>
         </label>
         <div>
           <p className="mb-1.5 text-[11px] text-zinc-500">Weight</p>
@@ -1367,144 +1522,38 @@ function TextProperties({
         </div>
       </PropertySection>
 
-      <PropertySection id="style" title="Style">
-        <div>
-          <p className="mb-1.5 text-[11px] text-zinc-500">Shadow</p>
-          <div className="flex gap-1 rounded-lg bg-zinc-900 p-1">
-            {(
-              [
-                ["none", "None"],
-                ["soft", "Soft"],
-                ["hard", "Hard"],
-              ] as const
-            ).map(([id, label]) => {
-              const blur = activeText.shadow ?? 0
-              const ox = activeText.shadowOffsetX ?? 0
-              const oy = activeText.shadowOffsetY ?? 0
-              const active =
-                id === "none"
-                  ? blur <= 0 && ox === 0 && oy === 0
-                  : id === "hard"
-                    ? blur <= 0 && (ox !== 0 || oy !== 0)
-                    : blur > 0
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() =>
-                    updateText(
-                      slide.id,
-                      activeText.id,
-                      textShadowPreset(id, Math.max(12, activeText.size * 0.18)),
-                    )
-                  }
-                  className={`flex-1 rounded-md px-2 py-1.5 text-[11px] ${
-                    active
-                      ? "bg-violet-600 text-white"
-                      : "text-zinc-400 hover:bg-zinc-800 hover:text-white"
-                  }`}
-                >
-                  {label}
-                </button>
-              )
-            })}
-          </div>
-        </div>
-        {(activeText.shadow ?? 0) > 0 ||
-        (activeText.shadowOffsetX ?? 0) !== 0 ||
-        (activeText.shadowOffsetY ?? 0) !== 0 ? (
-          <>
-            <RangeValueField
-              label="Blur"
-              suffix="px"
-              min={0}
-              max={48}
-              step={1}
-              value={activeText.shadow ?? 0}
-              onChange={(value) =>
-                updateText(slide.id, activeText.id, {
-                  shadow: value,
-                  shadowOpacity:
-                    (activeText.shadowOpacity ?? 0) > 0
-                      ? activeText.shadowOpacity
-                      : 55,
-                })
-              }
-            />
-            <RangeValueField
-              label="Offset X"
-              suffix="px"
-              min={-40}
-              max={40}
-              step={1}
-              value={activeText.shadowOffsetX ?? 0}
-              onChange={(value) =>
-                updateText(slide.id, activeText.id, {
-                  shadowOffsetX: value,
-                  shadowOpacity:
-                    (activeText.shadowOpacity ?? 0) > 0
-                      ? activeText.shadowOpacity
-                      : 70,
-                })
-              }
-            />
-            <RangeValueField
-              label="Offset Y"
-              suffix="px"
-              min={-40}
-              max={40}
-              step={1}
-              value={activeText.shadowOffsetY ?? 0}
-              onChange={(value) =>
-                updateText(slide.id, activeText.id, {
-                  shadowOffsetY: value,
-                  shadowOpacity:
-                    (activeText.shadowOpacity ?? 0) > 0
-                      ? activeText.shadowOpacity
-                      : 70,
-                })
-              }
-            />
-            <RangeValueField
-              label="Opacity"
-              suffix="%"
-              min={5}
-              max={100}
-              step={1}
-              value={activeText.shadowOpacity ?? 55}
-              onChange={(value) =>
-                updateText(slide.id, activeText.id, { shadowOpacity: value })
-              }
-            />
-          </>
-        ) : null}
-        <RangeValueField
-          label="Outline"
-          suffix="px"
-          min={0}
-          max={24}
-          step={1}
-          value={activeText.strokeWidth ?? 0}
-          onChange={(value) =>
-            updateText(slide.id, activeText.id, { strokeWidth: value })
-          }
-        />
-        {(activeText.strokeWidth ?? 0) > 0 ? (
-          <ColorField
-            label="Outline color"
-            value={activeText.strokeColor || "#000000"}
-            onChange={(value) =>
-              updateText(slide.id, activeText.id, { strokeColor: value })
-            }
-          />
-        ) : null}
-      </PropertySection>
-
-      <PropertySection id="position" title="Position">
+      <PropertySection id="position" title="Position" copySection="position">
         <PositionAlignControls
           x={activeText.x}
           y={activeText.y}
           onChange={(patch) => updateText(slide.id, activeText.id, patch)}
+        />
+      </PropertySection>
+
+      <PropertySection id="transform" title="Transform" copySection="transform">
+        <RangeValueField
+          label="Tilt X"
+          suffix="°"
+          min={-45}
+          max={45}
+          step={1}
+          value={activeText.rotationX ?? 0}
+          copyKey="rotationX"
+          onChange={(value) =>
+            updateText(slide.id, activeText.id, { rotationX: value })
+          }
+        />
+        <RangeValueField
+          label="Tilt Y"
+          suffix="°"
+          min={-45}
+          max={45}
+          step={1}
+          value={activeText.rotationY ?? 0}
+          copyKey="rotationY"
+          onChange={(value) =>
+            updateText(slide.id, activeText.id, { rotationY: value })
+          }
         />
         <RangeValueField
           label="Spin"
@@ -1513,14 +1562,70 @@ function TextProperties({
           max={180}
           step={1}
           value={activeText.rotation}
+          copyKey="rotation"
           onChange={(value) =>
             updateText(slide.id, activeText.id, { rotation: value })
           }
         />
+        <FlipControls
+          flipH={activeText.flipH}
+          flipV={activeText.flipV}
+          onChange={(patch) => updateText(slide.id, activeText.id, patch)}
+        />
       </PropertySection>
+
+      <PropertySection id="style" title="Style" copySection="style">
+        <RangeValueField
+          label="Outline"
+          suffix="px"
+          min={0}
+          max={24}
+          step={1}
+          value={activeText.strokeWidth ?? 0}
+          copyKey="strokeWidth"
+          onChange={(value) =>
+            updateText(slide.id, activeText.id, { strokeWidth: value })
+          }
+        />
+        {(activeText.strokeWidth ?? 0) > 0 ? (
+          <ColorField
+            label="Outline color"
+            value={activeText.strokeColor || "#000000"}
+            copyKey="strokeColor"
+            onChange={(value) =>
+              updateText(slide.id, activeText.id, { strokeColor: value })
+            }
+          />
+        ) : null}
+      </PropertySection>
+
+      <ShadowSection
+        value={activeText}
+        softSize={Math.max(12, activeText.size * 0.18)}
+        blurMax={48}
+        onChange={(patch) => updateText(slide.id, activeText.id, patch)}
+      />
+
+      {edges && overflowsHorizontally(edges) ? (
+        <PropertySection id="edges" title="Edges">
+          <OverflowChoice
+            mode={activeText.overflow}
+            edges={edges}
+            noun="text"
+            onCut={() => setTextOverflow(slide.id, activeText.id, "cut")}
+            onContinue={() =>
+              setTextOverflow(slide.id, activeText.id, "continue")
+            }
+          />
+        </PropertySection>
+      ) : null}
       </PropertyAccordion>
 
       <ActionRow>
+        <PastePropertiesAction
+          targetKind="text"
+          onPaste={(patch) => updateText(slide.id, activeText.id, patch)}
+        />
         <button
           type="button"
           className="text-zinc-400 hover:text-white"
@@ -1544,6 +1649,10 @@ function TextProperties({
               x: 50,
               y: 12,
               rotation: 0,
+              rotationX: 0,
+              rotationY: 0,
+              flipH: false,
+              flipV: false,
             })
           }
         >
@@ -1573,7 +1682,7 @@ function TextProperties({
           Delete
         </button>
       </ActionRow>
-    </>
+    </PropertyCopyProvider>
   )
 }
 
@@ -1647,7 +1756,7 @@ function ClipartProperties({
   }
 
   return (
-    <>
+    <PropertyCopyProvider kind="clipart" layer={activeClipart}>
       <PropertyAccordion defaultOpen="attach">
       <PropertySection id="attach" title="Attach">
         <label className="block text-[11px] text-zinc-500">
@@ -1690,23 +1799,51 @@ function ClipartProperties({
         ) : null}
       </PropertySection>
 
-      <PropertySection id="position" title="Position">
-        <RangeValueField
-          label="Size"
-          suffix="%"
-          min={CLIPART_WIDTH_MIN}
-          max={CLIPART_WIDTH_MAX}
-          step={1}
-          value={Math.round(activeClipart.width)}
-          onChange={(value) =>
-            updateClipart(slide.id, activeClipart.id, { width: value })
-          }
-        />
+      <PropertySection id="position" title="Position" copySection="position">
         <PositionAlignControls
           x={activeClipart.x}
           y={activeClipart.y}
           mode={attachFrameId ? "attached" : "slide"}
           onChange={(patch) => updateClipart(slide.id, activeClipart.id, patch)}
+        />
+      </PropertySection>
+
+      <PropertySection id="transform" title="Transform" copySection="transform">
+        <RangeValueField
+          label="Scale"
+          suffix="%"
+          min={CLIPART_WIDTH_MIN}
+          max={CLIPART_WIDTH_MAX}
+          step={1}
+          value={Math.round(activeClipart.width)}
+          copyKey="width"
+          onChange={(value) =>
+            updateClipart(slide.id, activeClipart.id, { width: value })
+          }
+        />
+        <RangeValueField
+          label="Tilt X"
+          suffix="°"
+          min={-45}
+          max={45}
+          step={1}
+          value={activeClipart.rotationX ?? 0}
+          copyKey="rotationX"
+          onChange={(value) =>
+            updateClipart(slide.id, activeClipart.id, { rotationX: value })
+          }
+        />
+        <RangeValueField
+          label="Tilt Y"
+          suffix="°"
+          min={-45}
+          max={45}
+          step={1}
+          value={activeClipart.rotationY ?? 0}
+          copyKey="rotationY"
+          onChange={(value) =>
+            updateClipart(slide.id, activeClipart.id, { rotationY: value })
+          }
         />
         <RangeValueField
           label="Spin"
@@ -1715,13 +1852,21 @@ function ClipartProperties({
           max={180}
           step={1}
           value={activeClipart.rotation}
+          copyKey="rotation"
           onChange={(value) =>
             updateClipart(slide.id, activeClipart.id, { rotation: value })
           }
         />
+        <FlipControls
+          flipH={activeClipart.flipH}
+          flipV={activeClipart.flipV}
+          onChange={(patch) =>
+            updateClipart(slide.id, activeClipart.id, patch)
+          }
+        />
       </PropertySection>
 
-      <PropertySection id="appearance" title="Appearance">
+      <PropertySection id="style" title="Style" copySection="style">
         <RangeValueField
           label="Opacity"
           suffix="%"
@@ -1729,19 +1874,9 @@ function ClipartProperties({
           max={100}
           step={1}
           value={Math.round((activeClipart.opacity ?? 1) * 100)}
+          copyKey="opacity"
           onChange={(value) =>
             updateClipart(slide.id, activeClipart.id, { opacity: value / 100 })
-          }
-        />
-        <RangeValueField
-          label="Shadow"
-          suffix="px"
-          min={0}
-          max={48}
-          step={1}
-          value={activeClipart.shadow ?? 0}
-          onChange={(value) =>
-            updateClipart(slide.id, activeClipart.id, { shadow: value })
           }
         />
         <RangeValueField
@@ -1751,6 +1886,7 @@ function ClipartProperties({
           max={48}
           step={1}
           value={activeClipart.blur ?? 0}
+          copyKey="blur"
           onChange={(value) =>
             updateClipart(slide.id, activeClipart.id, { blur: value })
           }
@@ -1791,6 +1927,7 @@ function ClipartProperties({
                   : "Color"
               }
               value={activeClipart.color ?? "#fbbf24"}
+              copyKey="color"
               onChange={(value) =>
                 updateClipart(slide.id, activeClipart.id, { color: value })
               }
@@ -1799,6 +1936,7 @@ function ClipartProperties({
               <ColorField
                 label="Color B"
                 value={activeClipart.color2 ?? "#f97316"}
+                copyKey="color2"
                 onChange={(value) =>
                   updateClipart(slide.id, activeClipart.id, { color2: value })
                 }
@@ -1814,6 +1952,7 @@ function ClipartProperties({
             max={360}
             step={1}
             value={activeClipart.colorAngle ?? 135}
+            copyKey="colorAngle"
             onChange={(value) =>
               updateClipart(slide.id, activeClipart.id, { colorAngle: value })
             }
@@ -1821,11 +1960,18 @@ function ClipartProperties({
         ) : null}
       </PropertySection>
 
+      <ShadowSection
+        value={activeClipart}
+        softSize={16}
+        onChange={(patch) => updateClipart(slide.id, activeClipart.id, patch)}
+      />
+
       {edges && overflowsHorizontally(edges) ? (
         <PropertySection id="edges" title="Edges">
           <OverflowChoice
             mode={activeClipart.overflow}
             edges={edges}
+            noun="clipart"
             onCut={() =>
               setClipartOverflow(slide.id, activeClipart.id, "cut", edges)
             }
@@ -1838,6 +1984,12 @@ function ClipartProperties({
       </PropertyAccordion>
 
       <ActionRow>
+        <PastePropertiesAction
+          targetKind="clipart"
+          onPaste={(patch) =>
+            updateClipart(slide.id, activeClipart.id, patch)
+          }
+        />
         <button
           type="button"
           className="text-zinc-400 hover:text-white"
@@ -1877,13 +2029,14 @@ function ClipartProperties({
           Delete
         </button>
       </ActionRow>
-    </>
+    </PropertyCopyProvider>
   )
 }
 
 function LensProperties({
   slide,
   activeLens,
+  edges,
   projectSlides,
   updateLens,
   lockLensImage,
@@ -1891,9 +2044,11 @@ function LensProperties({
   removeLens,
   moveLens,
   copyComponentToSlide,
+  setLensOverflow,
 }: {
   slide: Slide
   activeLens: NonNullable<ReturnType<typeof useProject>["activeLens"]>
+  edges: ReturnType<typeof lensOverflow> | null
   projectSlides: Slide[]
   updateLens: ReturnType<typeof useProject>["updateLens"]
   lockLensImage: ReturnType<typeof useProject>["lockLensImage"]
@@ -1901,6 +2056,7 @@ function LensProperties({
   removeLens: (slideId: string, lensId: string) => void
   moveLens: ReturnType<typeof useProject>["moveLens"]
   copyComponentToSlide: ReturnType<typeof useProject>["copyComponentToSlide"]
+  setLensOverflow: ReturnType<typeof useProject>["setLensOverflow"]
 }) {
   const [locking, setLocking] = useState(false)
   const isLocked =
@@ -1920,7 +2076,7 @@ function LensProperties({
   }
 
   return (
-    <>
+    <PropertyCopyProvider kind="lens" layer={activeLens}>
       <PropertyAccordion defaultOpen="image">
       <PropertySection id="image" title="Image">
         <label className="flex items-center justify-between gap-3">
@@ -1946,26 +2102,15 @@ function LensProperties({
         </label>
       </PropertySection>
 
-      <PropertySection id="position" title="Position">
+      <PropertySection id="position" title="Position" copySection="position">
         <PositionAlignControls
           x={activeLens.x}
           y={activeLens.y}
           onChange={(patch) => updateLens(slide.id, activeLens.id, patch)}
         />
-        <RangeValueField
-          label="Spin"
-          suffix="°"
-          min={-180}
-          max={180}
-          step={1}
-          value={activeLens.rotation ?? 0}
-          onChange={(value) =>
-            updateLens(slide.id, activeLens.id, { rotation: value })
-          }
-        />
       </PropertySection>
 
-      <PropertySection id="size" title="Size">
+      <PropertySection id="transform" title="Transform" copySection="transform">
         <RangeValueField
           label="Width"
           suffix="%"
@@ -1973,6 +2118,7 @@ function LensProperties({
           max={100}
           step={1}
           value={activeLens.width}
+          copyKey="width"
           onChange={(value) =>
             updateLens(slide.id, activeLens.id, { width: value })
           }
@@ -1984,6 +2130,7 @@ function LensProperties({
           max={100}
           step={1}
           value={activeLens.height}
+          copyKey="height"
           onChange={(value) =>
             updateLens(slide.id, activeLens.id, { height: value })
           }
@@ -1995,10 +2142,55 @@ function LensProperties({
           max={4}
           step={0.05}
           value={activeLens.zoom}
+          copyKey="zoom"
           onChange={(value) =>
             updateLens(slide.id, activeLens.id, { zoom: value })
           }
         />
+        <RangeValueField
+          label="Tilt X"
+          suffix="°"
+          min={-45}
+          max={45}
+          step={1}
+          value={activeLens.rotationX ?? 0}
+          copyKey="rotationX"
+          onChange={(value) =>
+            updateLens(slide.id, activeLens.id, { rotationX: value })
+          }
+        />
+        <RangeValueField
+          label="Tilt Y"
+          suffix="°"
+          min={-45}
+          max={45}
+          step={1}
+          value={activeLens.rotationY ?? 0}
+          copyKey="rotationY"
+          onChange={(value) =>
+            updateLens(slide.id, activeLens.id, { rotationY: value })
+          }
+        />
+        <RangeValueField
+          label="Spin"
+          suffix="°"
+          min={-180}
+          max={180}
+          step={1}
+          value={activeLens.rotation ?? 0}
+          copyKey="rotation"
+          onChange={(value) =>
+            updateLens(slide.id, activeLens.id, { rotation: value })
+          }
+        />
+        <FlipControls
+          flipH={activeLens.flipH}
+          flipV={activeLens.flipV}
+          onChange={(patch) => updateLens(slide.id, activeLens.id, patch)}
+        />
+      </PropertySection>
+
+      <PropertySection id="style" title="Style" copySection="style">
         <RangeValueField
           label="Corner roundness"
           suffix="%"
@@ -2006,13 +2198,11 @@ function LensProperties({
           max={50}
           step={1}
           value={activeLens.cornerRadius}
+          copyKey="cornerRadius"
           onChange={(value) =>
             updateLens(slide.id, activeLens.id, { cornerRadius: value })
           }
         />
-      </PropertySection>
-
-      <PropertySection id="style" title="Style">
         <RangeValueField
           label="Border"
           suffix="px"
@@ -2020,6 +2210,7 @@ function LensProperties({
           max={160}
           step={1}
           value={activeLens.borderWidth}
+          copyKey="borderWidth"
           onChange={(value) =>
             updateLens(slide.id, activeLens.id, { borderWidth: value })
           }
@@ -2027,25 +2218,39 @@ function LensProperties({
         <ColorField
           label="Border color"
           value={activeLens.borderColor}
+          copyKey="borderColor"
           onChange={(value) =>
             updateLens(slide.id, activeLens.id, { borderColor: value })
           }
         />
-        <RangeValueField
-          label="Shadow"
-          suffix="px"
-          min={0}
-          max={80}
-          step={1}
-          value={activeLens.shadow}
-          onChange={(value) =>
-            updateLens(slide.id, activeLens.id, { shadow: value })
-          }
-        />
       </PropertySection>
+
+      <ShadowSection
+        value={activeLens}
+        softSize={18}
+        onChange={(patch) => updateLens(slide.id, activeLens.id, patch)}
+      />
+
+      {edges && overflowsHorizontally(edges) ? (
+        <PropertySection id="edges" title="Edges">
+          <OverflowChoice
+            mode={activeLens.overflow}
+            edges={edges}
+            noun="lens"
+            onCut={() => setLensOverflow(slide.id, activeLens.id, "cut")}
+            onContinue={() =>
+              setLensOverflow(slide.id, activeLens.id, "continue")
+            }
+          />
+        </PropertySection>
+      ) : null}
       </PropertyAccordion>
 
       <ActionRow>
+        <PastePropertiesAction
+          targetKind="lens"
+          onPaste={(patch) => updateLens(slide.id, activeLens.id, patch)}
+        />
         <button
           type="button"
           className="text-zinc-400 hover:text-white"
@@ -2085,7 +2290,7 @@ function LensProperties({
           Delete
         </button>
       </ActionRow>
-    </>
+    </PropertyCopyProvider>
   )
 }
 
@@ -2359,7 +2564,7 @@ function PropertyAccordion({
   defaultOpen: string
   children: ReactNode
 }) {
-  const [openId, setOpenId] = useState(defaultOpen)
+  const [openId, setOpenId] = useState<string | null>(defaultOpen)
   return (
     <PropertyAccordionContext.Provider value={{ openId, setOpenId }}>
       {children}
@@ -2368,49 +2573,61 @@ function PropertyAccordion({
 }
 
 const PropertyAccordionContext = createContext<{
-  openId: string
-  setOpenId: (id: string) => void
+  openId: string | null
+  setOpenId: (id: string | null) => void
 } | null>(null)
 
 function PropertySection({
   id,
   title,
   children,
+  copySection,
 }: {
   id: string
   title: string
   children: ReactNode
+  /** When set, shows Copy for all fields in this inspector section. */
+  copySection?: PropertySectionId
 }) {
   const accordion = useContext(PropertyAccordionContext)
+  const propertyCopy = useContext(PropertyCopyContext)
   const open = accordion ? accordion.openId === id : false
   return (
     <div className="border-b border-zinc-800/90">
-      <button
-        type="button"
-        onClick={() => accordion?.setOpenId(id)}
-        aria-expanded={open}
-        className="flex w-full items-center justify-between gap-2 py-2.5 text-left"
-      >
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-          {title}
-        </span>
-        <svg
-          viewBox="0 0 12 12"
-          className={`h-3 w-3 shrink-0 text-zinc-500 transition-transform ${
-            open ? "rotate-180" : ""
-          }`}
-          aria-hidden
+      <div className="flex items-center gap-1 py-2.5">
+        <button
+          type="button"
+          onClick={() => accordion?.setOpenId(open ? null : id)}
+          aria-expanded={open}
+          className="flex min-w-0 flex-1 items-center gap-2 text-left"
         >
-          <path
-            d="M2.5 4.25 6 7.75l3.5-3.5"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
+          <span className="min-w-0 flex-1 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+            {title}
+          </span>
+          <svg
+            viewBox="0 0 12 12"
+            className={`h-3 w-3 shrink-0 text-zinc-500 transition-transform ${
+              open ? "rotate-180" : ""
+            }`}
+            aria-hidden
+          >
+            <path
+              d="M2.5 4.25 6 7.75l3.5-3.5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+        {copySection && propertyCopy ? (
+          <CopyPropButton
+            title={`Copy ${title} section`}
+            onClick={() => propertyCopy.copySection(copySection)}
           />
-        </svg>
-      </button>
+        ) : null}
+      </div>
       {open ? <div className="flex flex-col gap-3 pb-3">{children}</div> : null}
     </div>
   )
@@ -2510,13 +2727,17 @@ function ColorField({
   label,
   value,
   onChange,
+  copyKey,
 }: {
   label: string
   value: string
   onChange: (value: string) => void
+  /** Also copy this property into the in-app property clipboard. */
+  copyKey?: keyof SelectionPatch
 }) {
   const [draft, setDraft] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const propertyCopy = useContext(PropertyCopyContext)
   const display = draft ?? value
 
   const commit = (raw: string) => {
@@ -2527,12 +2748,18 @@ function ColorField({
 
   const copyColor = async () => {
     const hex = normalizeHexColor(draft ?? value) ?? value
+    if (copyKey && propertyCopy) {
+      propertyCopy.copyField(copyKey, label)
+    }
     try {
       await navigator.clipboard.writeText(hex)
       setCopied(true)
       window.setTimeout(() => setCopied(false), 1200)
     } catch {
-      /* clipboard may be blocked */
+      if (copyKey && propertyCopy) {
+        setCopied(true)
+        window.setTimeout(() => setCopied(false), 1200)
+      }
     }
   }
 
@@ -2593,6 +2820,568 @@ function ColorField({
         </button>
       </span>
     </label>
+  )
+}
+
+function MultiSelectionProperties({
+  count,
+  primary,
+  kind,
+  selectedIds,
+  project,
+  patchSelectionCommon,
+  scaleSelectionRelative,
+  alignSelection,
+  moveSelectionByArtboardDelta,
+  deleteSelection,
+}: {
+  count: number
+  primary: Frame | TextLayer | ClipartLayer | LensLayer | null
+  kind: SelectedKind
+  selectedIds: string[]
+  project: import("../types").Project
+  patchSelectionCommon: (patch: SelectionPatch) => void
+  scaleSelectionRelative: (factor: number) => void
+  alignSelection: (patch: { x?: number; y?: number }) => void
+  moveSelectionByArtboardDelta: (
+    origins: ReturnType<typeof selectionMoveOrigins>,
+    dx: number,
+    dy: number,
+  ) => void
+  deleteSelection: () => void
+}) {
+  const layers = resolveSelectedLayers(project, selectedIds)
+  const uniform = uniformSelectionKind(layers)
+  const target = STORE_TARGETS[project.targetId]
+  const landscapeArtboard = target.orientation === "landscape"
+  const deviceOptions = (Object.keys(DEVICES) as DeviceId[]).filter((id) =>
+    landscapeArtboard ? id.endsWith("-land") : !id.endsWith("-land"),
+  )
+
+  const framePrimary =
+    uniform === "frame" && primary && "scale" in primary
+      ? (primary as Frame)
+      : null
+  const textPrimary =
+    uniform === "text" && primary && "content" in primary
+      ? (primary as TextLayer)
+      : null
+  const clipartPrimary =
+    uniform === "clipart" && primary && "assetId" in primary
+      ? (primary as ClipartLayer)
+      : null
+  const lensPrimary =
+    uniform === "lens" && primary && "zoom" in primary
+      ? (primary as LensLayer)
+      : null
+
+  const fitScale = framePrimary
+    ? maxFittingDeviceScale(framePrimary.deviceId, target.width, target.height)
+    : 1
+
+  const x = primary && "x" in primary ? primary.x : 50
+  const y = primary && "y" in primary ? primary.y : 50
+  const rotation = primary && "rotation" in primary ? primary.rotation : 0
+  const flipH = Boolean(primary && "flipH" in primary && primary.flipH)
+  const flipV = Boolean(primary && "flipV" in primary && primary.flipV)
+  const shadow = {
+    shadow: primary && "shadow" in primary ? primary.shadow : 0,
+    shadowOffsetX:
+      primary && "shadowOffsetX" in primary ? primary.shadowOffsetX : 0,
+    shadowOffsetY:
+      primary && "shadowOffsetY" in primary ? primary.shadowOffsetY : 0,
+    shadowOpacity:
+      primary && "shadowOpacity" in primary ? primary.shadowOpacity : 55,
+  }
+
+  const nudgeGroup = (dx: number, dy: number) => {
+    const origins = selectionMoveOrigins(project, selectedIds)
+    moveSelectionByArtboardDelta(origins, dx, dy)
+  }
+
+  const kindLabel =
+    uniform === "frame"
+      ? "phones"
+      : uniform === "text"
+        ? "text layers"
+        : uniform === "clipart"
+          ? "cliparts"
+          : uniform === "lens"
+            ? "lenses"
+            : "mixed layers"
+
+  const body = (
+    <div className="space-y-1 pb-4">
+      <p className="px-1 py-2 text-[11px] leading-relaxed text-zinc-500">
+        Editing {count} {kindLabel}
+        {uniform
+          ? ". All shared properties for this type apply to every selected item."
+          : ". Only properties shared across different types are shown."}
+      </p>
+
+      <PropertyAccordion defaultOpen="multi-position">
+        <PropertySection
+          id="multi-position"
+          title="Position"
+          copySection={primary ? "position" : undefined}
+        >
+          <PositionAlignControls
+            x={x}
+            y={y}
+            onChange={(patch) => alignSelection(patch)}
+          />
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <label className="text-[11px] text-zinc-500">
+              X (primary)
+              <input
+                type="number"
+                value={Math.round(x * 10) / 10}
+                onChange={(event) => {
+                  const next = Number(event.target.value)
+                  if (!Number.isFinite(next)) return
+                  nudgeGroup(next - x, 0)
+                }}
+                className="mt-1 w-full rounded-md border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-xs text-zinc-200"
+              />
+            </label>
+            <label className="text-[11px] text-zinc-500">
+              Y (primary)
+              <input
+                type="number"
+                value={Math.round(y * 10) / 10}
+                onChange={(event) => {
+                  const next = Number(event.target.value)
+                  if (!Number.isFinite(next)) return
+                  nudgeGroup(0, next - y)
+                }}
+                className="mt-1 w-full rounded-md border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-xs text-zinc-200"
+              />
+            </label>
+          </div>
+        </PropertySection>
+
+        {framePrimary ? (
+          <PropertySection id="multi-device" title="Device">
+            <div className="grid grid-cols-1 gap-1.5">
+              {deviceOptions.map((id) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => patchSelectionCommon({ deviceId: id })}
+                  className={`rounded-md px-2 py-1.5 text-left text-xs ${
+                    framePrimary.deviceId === id
+                      ? "bg-violet-600 text-white"
+                      : "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"
+                  }`}
+                >
+                  {DEVICES[id].name}
+                </button>
+              ))}
+            </div>
+          </PropertySection>
+        ) : null}
+
+        {textPrimary ? (
+          <PropertySection id="multi-content" title="Content">
+            <label className="block text-[11px] text-zinc-500">
+              Font
+              <select
+                value={textPrimary.font}
+                onChange={(event) =>
+                  patchSelectionCommon({ font: event.target.value })
+                }
+                className="mt-1 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-2 text-sm text-white outline-none"
+              >
+                {FONTS.map((font) => (
+                  <option key={font} value={font} style={{ fontFamily: font }}>
+                    {font}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block text-[11px] text-zinc-500">
+              Size
+              <div className="mt-1 flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  value={textPrimary.size}
+                  onChange={(event) => {
+                    const next = Number(event.target.value)
+                    if (!Number.isFinite(next)) return
+                    patchSelectionCommon({ size: Math.max(1, Math.round(next)) })
+                  }}
+                  className="w-full rounded-md border border-zinc-800 bg-zinc-900 px-2 py-1.5 font-mono text-xs text-zinc-200"
+                />
+                <span className="shrink-0 text-[10px] text-zinc-600">px</span>
+              </div>
+            </label>
+            <RangeValueField
+              label="Box width"
+              suffix="%"
+              min={10}
+              max={120}
+              step={1}
+              value={textPrimary.width}
+              onChange={(value) => patchSelectionCommon({ width: value })}
+            />
+            <ColorField
+              label="Color"
+              value={textPrimary.color}
+              onChange={(value) => patchSelectionCommon({ color: value })}
+            />
+            <label className="block text-[11px] text-zinc-500">
+              Weight
+              <select
+                value={textPrimary.weight}
+                onChange={(event) =>
+                  patchSelectionCommon({
+                    weight: Number(event.target.value),
+                  })
+                }
+                className="mt-1 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-2 text-sm text-white outline-none"
+              >
+                {[400, 500, 600, 700, 800].map((weight) => (
+                  <option key={weight} value={weight}>
+                    {weight}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div>
+              <p className="mb-1.5 text-[11px] text-zinc-500">Align</p>
+              <div className="flex gap-1 rounded-lg bg-zinc-900 p-1">
+                {(["left", "center", "right"] as const).map((align) => (
+                  <button
+                    key={align}
+                    type="button"
+                    onClick={() => patchSelectionCommon({ align })}
+                    className={`flex-1 rounded-md px-2 py-1.5 text-[11px] capitalize ${
+                      textPrimary.align === align
+                        ? "bg-violet-600 text-white"
+                        : "text-zinc-400 hover:bg-zinc-800 hover:text-white"
+                    }`}
+                  >
+                    {align}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </PropertySection>
+        ) : null}
+
+        <PropertySection
+          id="multi-transform"
+          title="Transform"
+          copySection={primary ? "transform" : undefined}
+        >
+          {framePrimary ? (
+            <RangeValueField
+              label="Scale"
+              suffix="%"
+              min={40}
+              max={110}
+              step={1}
+              value={Math.min(
+                110,
+                Math.max(40, Math.round((framePrimary.scale / fitScale) * 100)),
+              )}
+              onChange={(value) =>
+                patchSelectionCommon({
+                  scale: (value / 100) * fitScale,
+                })
+              }
+            />
+          ) : null}
+          {clipartPrimary ? (
+            <RangeValueField
+              label="Scale"
+              suffix="%"
+              min={CLIPART_WIDTH_MIN}
+              max={CLIPART_WIDTH_MAX}
+              step={1}
+              value={Math.round(clipartPrimary.width)}
+              onChange={(value) => patchSelectionCommon({ width: value })}
+            />
+          ) : null}
+          {lensPrimary ? (
+            <>
+              <RangeValueField
+                label="Width"
+                suffix="%"
+                min={6}
+                max={100}
+                step={1}
+                value={lensPrimary.width}
+                onChange={(value) => patchSelectionCommon({ width: value })}
+              />
+              <RangeValueField
+                label="Height"
+                suffix="%"
+                min={6}
+                max={100}
+                step={1}
+                value={lensPrimary.height}
+                onChange={(value) => patchSelectionCommon({ height: value })}
+              />
+              <RangeValueField
+                label="Zoom"
+                suffix="×"
+                min={1.25}
+                max={4}
+                step={0.05}
+                value={lensPrimary.zoom}
+                onChange={(value) => patchSelectionCommon({ zoom: value })}
+              />
+            </>
+          ) : null}
+          {uniform ? (
+            <>
+              <RangeValueField
+                label="Tilt X"
+                suffix="°"
+                min={-45}
+                max={45}
+                step={1}
+                value={
+                  (primary && "rotationX" in primary
+                    ? primary.rotationX
+                    : 0) ?? 0
+                }
+                onChange={(value) =>
+                  patchSelectionCommon({ rotationX: value })
+                }
+              />
+              <RangeValueField
+                label="Tilt Y"
+                suffix="°"
+                min={-45}
+                max={45}
+                step={1}
+                value={
+                  (primary && "rotationY" in primary
+                    ? primary.rotationY
+                    : 0) ?? 0
+                }
+                onChange={(value) =>
+                  patchSelectionCommon({ rotationY: value })
+                }
+              />
+            </>
+          ) : null}
+          <RangeValueField
+            label="Spin"
+            suffix="°"
+            min={-180}
+            max={180}
+            step={1}
+            value={rotation}
+            onChange={(value) => patchSelectionCommon({ rotation: value })}
+          />
+          <div>
+            <p className="mb-1.5 text-[11px] text-zinc-500">
+              Scale all (relative)
+            </p>
+            <div className="flex gap-1">
+              {[0.9, 0.95, 1.05, 1.1].map((factor) => (
+                <button
+                  key={factor}
+                  type="button"
+                  onClick={() => scaleSelectionRelative(factor)}
+                  className="flex-1 rounded-md bg-zinc-900 px-2 py-1.5 text-[11px] text-zinc-300 hover:bg-zinc-800 hover:text-white"
+                >
+                  {factor < 1 ? "−" : "+"}
+                  {Math.round(Math.abs(factor - 1) * 100)}%
+                </button>
+              ))}
+            </div>
+          </div>
+          <FlipControls
+            flipH={flipH}
+            flipV={flipV}
+            onChange={(patch) => patchSelectionCommon(patch)}
+          />
+        </PropertySection>
+
+        {textPrimary ? (
+          <PropertySection id="multi-style" title="Style" copySection="style">
+            <RangeValueField
+              label="Outline"
+              suffix="px"
+              min={0}
+              max={24}
+              step={1}
+              value={textPrimary.strokeWidth ?? 0}
+              onChange={(value) =>
+                patchSelectionCommon({ strokeWidth: value })
+              }
+            />
+            {(textPrimary.strokeWidth ?? 0) > 0 ? (
+              <ColorField
+                label="Outline color"
+                value={textPrimary.strokeColor || "#000000"}
+                onChange={(value) =>
+                  patchSelectionCommon({ strokeColor: value })
+                }
+              />
+            ) : null}
+          </PropertySection>
+        ) : null}
+
+        {clipartPrimary ? (
+          <PropertySection id="multi-style" title="Style" copySection="style">
+            <RangeValueField
+              label="Opacity"
+              suffix="%"
+              min={0}
+              max={100}
+              step={1}
+              value={Math.round((clipartPrimary.opacity ?? 1) * 100)}
+              onChange={(value) =>
+                patchSelectionCommon({ opacity: value / 100 })
+              }
+            />
+            <RangeValueField
+              label="Blur"
+              suffix="px"
+              min={0}
+              max={48}
+              step={1}
+              value={clipartPrimary.blur ?? 0}
+              onChange={(value) => patchSelectionCommon({ blur: value })}
+            />
+            <div>
+              <p className="mb-1.5 text-[11px] text-zinc-500">Recolor</p>
+              <div className="flex gap-1 rounded-lg bg-zinc-900 p-1">
+                {(
+                  [
+                    ["off", "Original"],
+                    ["solid", "Solid"],
+                    ["gradient", "Gradient"],
+                  ] as const
+                ).map(([mode, label]) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => patchSelectionCommon({ recolor: mode })}
+                    className={`flex-1 rounded-md px-2 py-1.5 text-[11px] ${
+                      (clipartPrimary.recolor ?? "off") === mode
+                        ? "bg-violet-600 text-white"
+                        : "text-zinc-400 hover:bg-zinc-800 hover:text-white"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {(clipartPrimary.recolor ?? "off") !== "off" ? (
+              <div className="flex flex-col gap-2">
+                <ColorField
+                  label={
+                    (clipartPrimary.recolor ?? "off") === "gradient"
+                      ? "Color A"
+                      : "Color"
+                  }
+                  value={clipartPrimary.color ?? "#fbbf24"}
+                  onChange={(value) => patchSelectionCommon({ color: value })}
+                />
+                {(clipartPrimary.recolor ?? "off") === "gradient" ? (
+                  <ColorField
+                    label="Color B"
+                    value={clipartPrimary.color2 ?? "#f97316"}
+                    onChange={(value) =>
+                      patchSelectionCommon({ color2: value })
+                    }
+                  />
+                ) : null}
+              </div>
+            ) : null}
+            {(clipartPrimary.recolor ?? "off") === "gradient" ? (
+              <RangeValueField
+                label="Gradient angle"
+                suffix="°"
+                min={0}
+                max={360}
+                step={1}
+                value={clipartPrimary.colorAngle ?? 135}
+                onChange={(value) =>
+                  patchSelectionCommon({ colorAngle: value })
+                }
+              />
+            ) : null}
+          </PropertySection>
+        ) : null}
+
+        {lensPrimary ? (
+          <PropertySection id="multi-style" title="Style" copySection="style">
+            <RangeValueField
+              label="Corner roundness"
+              suffix="%"
+              min={0}
+              max={50}
+              step={1}
+              value={lensPrimary.cornerRadius}
+              onChange={(value) =>
+                patchSelectionCommon({ cornerRadius: value })
+              }
+            />
+            <RangeValueField
+              label="Border"
+              suffix="px"
+              min={0}
+              max={160}
+              step={1}
+              value={lensPrimary.borderWidth}
+              onChange={(value) =>
+                patchSelectionCommon({ borderWidth: value })
+              }
+            />
+            <ColorField
+              label="Border color"
+              value={lensPrimary.borderColor}
+              onChange={(value) =>
+                patchSelectionCommon({ borderColor: value })
+              }
+            />
+          </PropertySection>
+        ) : null}
+
+        <ShadowSection
+          value={shadow}
+          softSize={
+            textPrimary
+              ? Math.max(12, textPrimary.size * 0.18)
+              : framePrimary
+                ? 24
+                : 18
+          }
+          blurMax={textPrimary ? 48 : 80}
+          onChange={(patch) => patchSelectionCommon(patch)}
+        />
+      </PropertyAccordion>
+
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1 pt-3">
+        <PastePropertiesAction
+          targetKind={kind}
+          onPaste={(patch) => patchSelectionCommon(patch)}
+        />
+        <button
+          type="button"
+          onClick={() => deleteSelection()}
+          className="rounded-md border border-red-900/60 bg-red-950/40 px-2 py-1.5 text-xs text-red-300 hover:bg-red-950/70"
+        >
+          Delete {count} layers
+        </button>
+      </div>
+    </div>
+  )
+
+  if (!primary) return body
+  return (
+    <PropertyCopyProvider kind={kind} layer={primary}>
+      {body}
+    </PropertyCopyProvider>
   )
 }
 
@@ -2678,6 +3467,7 @@ function PositionAlignControls({
           max={max}
           step={1}
           value={Math.round(x)}
+          copyKey="x"
           onChange={(value) => onChange({ x: value })}
         />
         <RangeValueField
@@ -2687,6 +3477,7 @@ function PositionAlignControls({
           max={max}
           step={1}
           value={Math.round(y)}
+          copyKey="y"
           onChange={(value) => onChange({ y: value })}
         />
       </div>
@@ -2707,6 +3498,171 @@ function rangeFillStyle(
   return { ["--range-fill"]: `${pct}%` } as import("react").CSSProperties
 }
 
+function FlipControls({
+  flipH,
+  flipV,
+  onChange,
+}: {
+  flipH?: boolean
+  flipV?: boolean
+  onChange: (patch: { flipH?: boolean; flipV?: boolean }) => void
+}) {
+  const h = Boolean(flipH)
+  const v = Boolean(flipV)
+  return (
+    <div>
+      <p className="mb-1.5 text-[11px] text-zinc-500">Flip</p>
+      <div className="flex gap-1 rounded-lg bg-zinc-900 p-1">
+        <button
+          type="button"
+          aria-pressed={h}
+          onClick={() => onChange({ flipH: !h })}
+          className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium ${
+            h
+              ? "bg-violet-600 text-white"
+              : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+          }`}
+        >
+          Horizontal
+        </button>
+        <button
+          type="button"
+          aria-pressed={v}
+          onClick={() => onChange({ flipV: !v })}
+          className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium ${
+            v
+              ? "bg-violet-600 text-white"
+              : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+          }`}
+        >
+          Vertical
+        </button>
+      </div>
+    </div>
+  )
+}
+
+type ShadowFields = {
+  shadow?: number
+  shadowOffsetX?: number
+  shadowOffsetY?: number
+  shadowOpacity?: number
+}
+
+/** Dedicated accordion section — shared by device, text, clipart, lens. */
+function ShadowSection({
+  value,
+  softSize = 18,
+  blurMax = 80,
+  onChange,
+}: {
+  value: ShadowFields
+  /** Soft preset base size (px). */
+  softSize?: number
+  blurMax?: number
+  onChange: (patch: ShadowFields) => void
+}) {
+  const blur = value.shadow ?? 0
+  const ox = value.shadowOffsetX ?? 0
+  const oy = value.shadowOffsetY ?? 0
+  const opacity = value.shadowOpacity ?? 55
+  const hasShadow = blur > 0 || ox !== 0 || oy !== 0
+
+  return (
+    <PropertySection id="shadow" title="Shadow" copySection="shadow">
+      <div className="flex gap-1 rounded-lg bg-zinc-900 p-1">
+        {(
+          [
+            ["none", "None"],
+            ["soft", "Soft"],
+            ["hard", "Hard"],
+          ] as const
+        ).map(([id, label]) => {
+          const active =
+            id === "none"
+              ? !hasShadow
+              : id === "hard"
+                ? blur <= 0 && (ox !== 0 || oy !== 0)
+                : blur > 0
+          return (
+            <button
+              key={id}
+              type="button"
+              onClick={() => onChange(deviceShadowPreset(id, softSize))}
+              className={`flex-1 rounded-md px-2 py-1.5 text-[11px] ${
+                active
+                  ? "bg-violet-600 text-white"
+                  : "text-zinc-400 hover:bg-zinc-800 hover:text-white"
+              }`}
+            >
+              {label}
+            </button>
+          )
+        })}
+      </div>
+      {hasShadow ? (
+        <>
+          <RangeValueField
+            label="Blur"
+            suffix="px"
+            min={0}
+            max={blurMax}
+            step={1}
+            value={blur}
+            copyKey="shadow"
+            onChange={(next) =>
+              onChange({
+                shadow: next,
+                shadowOpacity: opacity > 0 ? opacity : 55,
+              })
+            }
+          />
+          <RangeValueField
+            label="Offset X"
+            suffix="px"
+            min={-40}
+            max={40}
+            step={1}
+            value={ox}
+            copyKey="shadowOffsetX"
+            onChange={(next) =>
+              onChange({
+                shadowOffsetX: next,
+                shadowOpacity: opacity > 0 ? opacity : 70,
+              })
+            }
+          />
+          <RangeValueField
+            label="Offset Y"
+            suffix="px"
+            min={-40}
+            max={40}
+            step={1}
+            value={oy}
+            copyKey="shadowOffsetY"
+            onChange={(next) =>
+              onChange({
+                shadowOffsetY: next,
+                shadowOpacity: opacity > 0 ? opacity : 70,
+              })
+            }
+          />
+          <RangeValueField
+            label="Opacity"
+            suffix="%"
+            min={0}
+            max={100}
+            step={1}
+            value={opacity}
+            copyKey="shadowOpacity"
+            onChange={(next) => onChange({ shadowOpacity: next })}
+          />
+        </>
+      ) : null}
+    </PropertySection>
+  )
+}
+
 function RangeValueField({
   label,
   suffix,
@@ -2716,6 +3672,7 @@ function RangeValueField({
   value,
   onChange,
   className = "",
+  copyKey,
 }: {
   label: string
   suffix?: string
@@ -2725,8 +3682,10 @@ function RangeValueField({
   value: number
   onChange: (value: number) => void
   className?: string
+  copyKey?: keyof SelectionPatch
 }) {
   const [draft, setDraft] = useState<string | null>(null)
+  const propertyCopy = useContext(PropertyCopyContext)
   const clamp = (next: number) => Math.min(max, Math.max(min, next))
   const display = draft ?? String(value)
   const clamped = clamp(value)
@@ -2741,7 +3700,15 @@ function RangeValueField({
   return (
     <div className={`block text-[11px] text-zinc-500 ${className}`}>
       <div className="flex items-center justify-between gap-2">
-        <span>{label}</span>
+        <span className="flex items-center gap-1">
+          <span>{label}</span>
+          {copyKey && propertyCopy ? (
+            <CopyPropButton
+              title={`Copy ${label}`}
+              onClick={() => propertyCopy.copyField(copyKey, label)}
+            />
+          ) : null}
+        </span>
         <span className="flex items-center gap-1">
           <input
             type="number"

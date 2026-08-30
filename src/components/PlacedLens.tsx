@@ -1,4 +1,7 @@
 import type { PointerEvent } from "react"
+import { lensShadowCss } from "../constants"
+import { flattenedDeviceTransform } from "../device-transform"
+import { layerFlipCss } from "../layer-flip"
 import type { LensLayer, Slide } from "../types"
 import {
   guestClipartsForSlide,
@@ -71,7 +74,7 @@ export function PlacedLens({
   const zoom = lens.zoom
   const radius = `${(lens.cornerRadius / 100) * Math.min(lensW, lensH)}px`
   const border = Math.max(0, lens.borderWidth)
-  const shadow = Math.max(0, lens.shadow)
+  const dropShadow = lensShadowCss(lens)
   const slideIndex = slides?.findIndex((entry) => entry.id === slide.id) ?? -1
   const contentGuests: GuestFrame[] =
     slides && slideIndex >= 0
@@ -96,17 +99,20 @@ export function PlacedLens({
         width: lensW,
         height: lensH,
         borderRadius: radius,
-        overflow: "hidden",
-        transform: `rotate(${lens.rotation ?? 0}deg)`,
+        // Shadow on the outer shell — overflow:hidden would clip it.
+        boxShadow: dropShadow,
+        transform: `${flattenedDeviceTransform(
+          lens.rotationX ?? 0,
+          lens.rotationY ?? 0,
+          lens.rotation ?? 0,
+          width,
+        )}${layerFlipCss(lens.flipH, lens.flipV)}`,
         transformOrigin: "center center",
+        transformStyle: "flat",
         zIndex,
         cursor: interactive ? "grab" : "default",
         touchAction: interactive ? "none" : undefined,
         pointerEvents: interactive ? "auto" : "none",
-        boxShadow:
-          shadow > 0
-            ? `0 ${shadow * 0.35}px ${shadow}px rgba(0,0,0,0.45)`
-            : undefined,
         outline:
           !forExport && selected
             ? `${Math.max(2, width * 0.003)}px solid #8b5cf6`
@@ -118,59 +124,69 @@ export function PlacedLens({
       }
     >
       <div
-        aria-hidden
         style={{
           position: "absolute",
-          left: lensW / 2 - contentCx * zoom,
-          top: lensH / 2 - contentCy * zoom,
-          width,
-          height,
-          transform: `scale(${zoom})`,
-          transformOrigin: "0 0",
+          inset: 0,
+          borderRadius: radius,
+          overflow: "hidden",
           pointerEvents: "none",
         }}
       >
-        {showLockedSnapshot && lockedImageUrl ? (
-          <img
-            src={lockedImageUrl}
-            alt=""
-            draggable={false}
-            crossOrigin={
-              lockedImageUrl.startsWith("http") ? "anonymous" : undefined
-            }
-            style={{
-              display: "block",
-              width,
-              height,
-              pointerEvents: "none",
-            }}
-          />
-        ) : (
-          <Artboard
-            slide={slide}
-            slides={slides}
-            width={width}
-            height={height}
-            assetUrls={assetUrls}
-            guestFrames={contentGuests}
-            guestCliparts={contentGuestCliparts}
-            showLenses={false}
-            forExport
-          />
-        )}
-      </div>
-      {border > 0 ? (
         <div
           aria-hidden
           style={{
             position: "absolute",
-            inset: 0,
-            borderRadius: radius,
-            boxShadow: `inset 0 0 0 ${border}px ${lens.borderColor}`,
+            left: lensW / 2 - contentCx * zoom,
+            top: lensH / 2 - contentCy * zoom,
+            width,
+            height,
+            transform: `scale(${zoom})`,
+            transformOrigin: "0 0",
             pointerEvents: "none",
           }}
-        />
-      ) : null}
+        >
+          {showLockedSnapshot && lockedImageUrl ? (
+            <img
+              src={lockedImageUrl}
+              alt=""
+              draggable={false}
+              crossOrigin={
+                lockedImageUrl.startsWith("http") ? "anonymous" : undefined
+              }
+              style={{
+                display: "block",
+                width,
+                height,
+                pointerEvents: "none",
+              }}
+            />
+          ) : (
+            <Artboard
+              slide={slide}
+              slides={slides}
+              width={width}
+              height={height}
+              assetUrls={assetUrls}
+              guestFrames={contentGuests}
+              guestCliparts={contentGuestCliparts}
+              showLenses={false}
+              forExport
+            />
+          )}
+        </div>
+        {border > 0 ? (
+          <div
+            aria-hidden
+            style={{
+              position: "absolute",
+              inset: 0,
+              borderRadius: radius,
+              boxShadow: `inset 0 0 0 ${border}px ${lens.borderColor}`,
+              pointerEvents: "none",
+            }}
+          />
+        ) : null}
+      </div>
       {!forExport && selected && interactive && onResizeStart ? (
         <ResizeHandles
           artboardWidth={width}

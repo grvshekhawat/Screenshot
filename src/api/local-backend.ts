@@ -185,6 +185,8 @@ export async function localCreateProject(
   try {
     thumbnail_path = await renderProjectPreviewDataUrl(data, {
       assetUrls: await localPreviewAssetUrls(data),
+      // DOM capture at native size → scale into strip (matches editor positions).
+      paintOnly: false,
     })
   } catch {
     thumbnail_path = null
@@ -217,6 +219,8 @@ export async function localSaveProject(
   try {
     thumbnail_path = await renderProjectPreviewDataUrl(data, {
       assetUrls: await localPreviewAssetUrls(data),
+      // DOM capture at native size → scale into strip (matches editor positions).
+      paintOnly: false,
     })
   } catch {
     // Keep previous thumbnail if render fails.

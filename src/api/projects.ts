@@ -181,6 +181,7 @@ async function withProjectThumbnail(
     if (!isSupabaseConfigured()) {
       const thumbnail_url = await renderProjectPreviewDataUrl(data, {
         assetUrls: await resolvePreviewAssetUrls(data),
+        paintOnly: false,
       })
       await local.localSetProjectThumbnail(project.id, thumbnail_url)
       return { ...project, thumbnail_path: thumbnail_url, thumbnail_url }
@@ -214,14 +215,20 @@ async function buildProjectThumbnailPath(
     const data = normalizeProject(project)
     const assetUrls = await resolvePreviewAssetUrls(data)
     if (!isSupabaseConfigured()) {
-      return await renderProjectPreviewDataUrl(data, { assetUrls })
+      return await renderProjectPreviewDataUrl(data, {
+        assetUrls,
+        paintOnly: false,
+      })
     }
     const supabase = getSupabase()!
     const {
       data: { user },
     } = await supabase.auth.getUser()
     if (!user) return null
-    const blob = await renderProjectPreviewBlob(data, { assetUrls })
+    const blob = await renderProjectPreviewBlob(data, {
+      assetUrls,
+      paintOnly: false,
+    })
     const path = `${user.id}/${projectId}/thumbnail.webp`
     const { error } = await supabase.storage
       .from("project-assets")

@@ -36,6 +36,7 @@ export function Editor() {
     setTarget,
     setSizeEditMode,
     canvasFocused,
+    selectedIds,
     attachScreenshot,
     attachClipart,
     attachBackgroundImage,
@@ -60,9 +61,11 @@ export function Editor() {
   const [onboarding, setOnboarding] = useState<OnboardingProgress>(() =>
     loadOnboardingProgress(),
   )
+  const [canvasChromeHost, setCanvasChromeHost] =
+    useState<HTMLDivElement | null>(null)
 
   const hasComponentSelection = Boolean(
-    canvasFocused && activeSlide.selectedId,
+    canvasFocused && selectedIds.length > 0,
   )
 
   const markOnboarding = (patch: Partial<OnboardingProgress>) => {
@@ -313,6 +316,11 @@ export function Editor() {
             Redo
           </button>
         </div>
+        <div
+          ref={setCanvasChromeHost}
+          className="flex shrink-0 items-center"
+          aria-label="Canvas tools"
+        />
         <button
           type="button"
           disabled={saveState === "saving"}
@@ -390,7 +398,11 @@ export function Editor() {
           onTemplatePicked={() => markOnboarding({ template: true })}
         >
           <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
-            <DesignCanvas onUploadClick={openUpload} onFiles={onFiles} />
+            <DesignCanvas
+              onUploadClick={openUpload}
+              onFiles={onFiles}
+              chromeHost={canvasChromeHost}
+            />
             {showOnboarding ? (
               <EditorOnboarding
                 completed={onboardingCompleted}
