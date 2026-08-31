@@ -31,6 +31,10 @@ import {
 import type { FrameScreenSlot, SelectedKind, Slide } from "../types"
 import { Artboard } from "./Artboard"
 import { ComponentMenu, menuLimits } from "./ComponentMenu"
+import {
+  canGroupSelection,
+  canUngroupSelection,
+} from "../groups"
 import { SLIDE_GAP_PX } from "./ContinuitySpan"
 import { screenshotDropTargetFromEvent } from "./ScreenshotDropZone"
 import {
@@ -104,6 +108,8 @@ export function DesignCanvas({
     setClipartOverflow,
     setTextOverflow,
     setLensOverflow,
+    groupSelection,
+    ungroupSelection,
     canvasFocused,
   } = useProject()
   const target = STORE_TARGETS[project.targetId]
@@ -1131,6 +1137,8 @@ export function DesignCanvas({
                   canDelete={selectedLimits.canDelete}
                   canMoveUp={selectedLimits.canMoveUp}
                   canMoveDown={selectedLimits.canMoveDown}
+                  canGroup={canGroupSelection(activeSlide, selectedIds)}
+                  canUngroup={canUngroupSelection(activeSlide, selectedIds)}
                   slides={project.slides}
                   currentSlideId={activeSlide.id}
                   onDuplicate={() => {
@@ -1214,6 +1222,8 @@ export function DesignCanvas({
                     if (activeFrame)
                       moveFrame(activeSlide.id, activeFrame.id, "back")
                   }}
+                  onGroup={() => groupSelection()}
+                  onUngroup={() => ungroupSelection()}
                   onCut={
                     selectedKind === "clipart" && activeClipart
                       ? () =>

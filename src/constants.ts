@@ -11,6 +11,7 @@ import type {
   TemplateId,
   TextLayer,
 } from "./types"
+import { normalizeGroups } from "./groups"
 import { normalizeFlipFlag, normalizeTilt } from "./layer-flip"
 
 export const MAX_FRAMES = 6
@@ -714,6 +715,7 @@ export function removeFromLayerOrder(order: string[], id: string): string[] {
 /** Ensure selectedId / selectedIds and layer order stay valid after edits. */
 export function sanitizeSlideSelection(slide: Slide): Slide {
   const layerOrder = normalizeLayerOrder(slide)
+  const groups = normalizeGroups(slide)
   const rawIds =
     Array.isArray(slide.selectedIds) && slide.selectedIds.length > 0
       ? slide.selectedIds
@@ -742,6 +744,7 @@ export function sanitizeSlideSelection(slide: Slide): Slide {
     return {
       ...slide,
       lenses: slide.lenses ?? [],
+      groups,
       layerOrder,
       selectedId,
       selectedIds: valid,
@@ -752,6 +755,7 @@ export function sanitizeSlideSelection(slide: Slide): Slide {
     return {
       ...slide,
       lenses: slide.lenses ?? [],
+      groups,
       layerOrder,
       selectedId: "",
       selectedIds: [],
@@ -768,6 +772,7 @@ export function sanitizeSlideSelection(slide: Slide): Slide {
   return {
     ...slide,
     lenses: slide.lenses ?? [],
+    groups,
     layerOrder,
     selectedId: fallback,
     selectedIds: fallback ? [fallback] : [],
@@ -1361,6 +1366,13 @@ export function createSlide(overrides: SlideDraft = {}): Slide {
         : selectedId
           ? [selectedId]
           : [],
+    groups: normalizeGroups({
+      frames,
+      texts,
+      cliparts,
+      lenses,
+      groups: overrides.groups,
+    }),
     background: overrides.background
       ? defaultBackground(overrides.background)
       : defaultBackground(),

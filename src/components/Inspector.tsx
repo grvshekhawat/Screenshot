@@ -65,6 +65,10 @@ import {
   uniformSelectionKind,
   type PropertySectionId,
 } from "../selection"
+import {
+  canGroupSelection,
+  canUngroupSelection,
+} from "../groups"
 import { OverflowChoice } from "./OverflowChoice"
 import { ScreenshotDropZone } from "./ScreenshotDropZone"
 
@@ -260,6 +264,8 @@ export function Inspector({
     alignSelection,
     moveSelectionByArtboardDelta,
     deleteSelection,
+    groupSelection,
+    ungroupSelection,
     duplicateText,
     removeText,
     updateText,
@@ -502,6 +508,8 @@ export function Inspector({
               alignSelection={alignSelection}
               moveSelectionByArtboardDelta={moveSelectionByArtboardDelta}
               deleteSelection={deleteSelection}
+              groupSelection={groupSelection}
+              ungroupSelection={ungroupSelection}
             />
           ) : null}
           {selectedIds.length <= 1 && kind === "frame" && frame ? (
@@ -2857,6 +2865,8 @@ function MultiSelectionProperties({
   alignSelection,
   moveSelectionByArtboardDelta,
   deleteSelection,
+  groupSelection,
+  ungroupSelection,
 }: {
   count: number
   primary: Frame | TextLayer | ClipartLayer | LensLayer | null
@@ -2872,9 +2882,16 @@ function MultiSelectionProperties({
     dy: number,
   ) => void
   deleteSelection: () => void
+  groupSelection: () => void
+  ungroupSelection: () => void
 }) {
   const layers = resolveSelectedLayers(project, selectedIds)
   const uniform = uniformSelectionKind(layers)
+  const activeSlide =
+    project.slides.find((slide) => slide.id === project.activeSlideId) ??
+    project.slides[0]
+  const showGroup = canGroupSelection(activeSlide, selectedIds)
+  const showUngroup = canUngroupSelection(activeSlide, selectedIds)
   const target = STORE_TARGETS[project.targetId]
   const landscapeArtboard = target.orientation === "landscape"
   const deviceOptions = (Object.keys(DEVICES) as DeviceId[]).filter((id) =>
@@ -3389,6 +3406,26 @@ function MultiSelectionProperties({
           targetKind={kind}
           onPaste={(patch) => patchSelectionCommon(patch)}
         />
+        {showGroup ? (
+          <button
+            type="button"
+            className={ACTION_BTN}
+            onClick={() => groupSelection()}
+            title="Group (⌘/Ctrl+G)"
+          >
+            Group
+          </button>
+        ) : null}
+        {showUngroup ? (
+          <button
+            type="button"
+            className={ACTION_BTN}
+            onClick={() => ungroupSelection()}
+            title="Ungroup (⌘/Ctrl+Shift+G)"
+          >
+            Ungroup
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={() => deleteSelection()}

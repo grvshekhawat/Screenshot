@@ -30,6 +30,8 @@ type ComponentMenuProps = {
   canDelete: boolean
   canMoveUp: boolean
   canMoveDown: boolean
+  canGroup?: boolean
+  canUngroup?: boolean
   slides: Slide[]
   currentSlideId: string
   /** Shift menu when rendered on the multi-slide track */
@@ -38,6 +40,8 @@ type ComponentMenuProps = {
   onDelete: () => void
   onMoveUp: () => void
   onMoveDown: () => void
+  onGroup?: () => void
+  onUngroup?: () => void
   onCopyToSlide: (targetSlideId: string) => void
   onCut?: () => void
   onContinue?: () => void
@@ -55,6 +59,8 @@ export function ComponentMenu({
   canDelete,
   canMoveUp,
   canMoveDown,
+  canGroup = false,
+  canUngroup = false,
   slides,
   currentSlideId,
   offsetLeft = 0,
@@ -62,6 +68,8 @@ export function ComponentMenu({
   onDelete,
   onMoveUp,
   onMoveDown,
+  onGroup,
+  onUngroup,
   onCopyToSlide,
   onCut,
   onContinue,
@@ -85,7 +93,11 @@ export function ComponentMenu({
   const canCopy =
     otherSlides.length > 0 &&
     otherSlides.some(({ slide }) => canCopyComponentToSlide(kind, slide))
-  const buttonCount = 5 + (showContinuity ? 2 : 0)
+  const buttonCount =
+    5 +
+    (showContinuity ? 2 : 0) +
+    (canGroup ? 1 : 0) +
+    (canUngroup ? 1 : 0)
   const menuWidth = buttonCount * 26 + 6
   const menuHeight = 28
   const anchor = menuAnchor({
@@ -193,6 +205,21 @@ export function ComponentMenu({
           >
             <ContinueIcon />
           </IconButton>
+        </>
+      ) : null}
+      {(canGroup && onGroup) || (canUngroup && onUngroup) ? (
+        <>
+          <span className="mx-0.5 h-3.5 w-px bg-white/15" />
+          {canGroup && onGroup ? (
+            <IconButton label="Group (⌘G)" onClick={onGroup}>
+              <GroupIcon />
+            </IconButton>
+          ) : null}
+          {canUngroup && onUngroup ? (
+            <IconButton label="Ungroup (⌘⇧G)" onClick={onUngroup}>
+              <UngroupIcon />
+            </IconButton>
+          ) : null}
         </>
       ) : null}
       <span className="mx-0.5 h-3.5 w-px bg-white/15" />
@@ -442,6 +469,26 @@ function DeleteIcon() {
   return (
     <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
       <path d="M2.5 3.5h7M5 3.5V2.5h2v1M4 5v4M6 5v4M8 5v4M3.5 3.5l.5 7h4l.5-7" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function GroupIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+      <rect x="1.5" y="1.5" width="4" height="4" rx="0.75" stroke="currentColor" />
+      <rect x="6.5" y="6.5" width="4" height="4" rx="0.75" stroke="currentColor" />
+      <path d="M5.5 3.5h1.5M8.5 5.5V7" stroke="currentColor" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function UngroupIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+      <rect x="1.5" y="1.5" width="4" height="4" rx="0.75" stroke="currentColor" />
+      <rect x="6.5" y="6.5" width="4" height="4" rx="0.75" stroke="currentColor" />
+      <path d="M5.5 3.5h3M8.5 3.5v3" stroke="currentColor" strokeLinecap="round" />
     </svg>
   )
 }

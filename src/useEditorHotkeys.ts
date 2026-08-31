@@ -6,13 +6,16 @@ import {
 } from "./property-clipboard"
 import { useProject } from "./project-store"
 import { getSelectedIds } from "./selection"
+import { canGroupSelection, canUngroupSelection } from "./groups"
 
-/** Platform-aware editor shortcuts: Undo / Redo / Delete / Paste props. */
+/** Platform-aware editor shortcuts: Undo / Redo / Delete / Paste props / Group. */
 export function useEditorHotkeys() {
   const {
     undo,
     redo,
     deleteSelection,
+    groupSelection,
+    ungroupSelection,
     canvasFocused,
     patchSelectionCommon,
     selectedKind,
@@ -53,6 +56,21 @@ export function useEditorHotkeys() {
         return
       }
 
+      // Group / ungroup
+      if (mod && key === "g" && !event.altKey) {
+        const ids = getSelectedIds(activeSlide)
+        if (event.shiftKey) {
+          if (!canUngroupSelection(activeSlide, ids)) return
+          event.preventDefault()
+          ungroupSelection()
+          return
+        }
+        if (!canGroupSelection(activeSlide, ids)) return
+        event.preventDefault()
+        groupSelection()
+        return
+      }
+
       if (
         (event.key === "Delete" || event.key === "Backspace") &&
         !mod &&
@@ -70,6 +88,8 @@ export function useEditorHotkeys() {
     undo,
     redo,
     deleteSelection,
+    groupSelection,
+    ungroupSelection,
     canvasFocused,
     patchSelectionCommon,
     selectedKind,

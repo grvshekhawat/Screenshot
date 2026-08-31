@@ -208,6 +208,12 @@ export type LensLayer = {
   overflow: "cut" | "continue"
 }
 
+export type LayerGroup = {
+  id: string
+  /** Member layer ids on this slide (frames, texts, cliparts, lenses). */
+  memberIds: string[]
+}
+
 export type Slide = {
   id: string
   frames: Frame[]
@@ -216,6 +222,8 @@ export type Slide = {
   lenses: LensLayer[]
   /** Back-to-front draw order for all layers on the slide. */
   layerOrder: string[]
+  /** Persistent multi-layer groups (metadata; members stay normal layers). */
+  groups?: LayerGroup[]
   /** Primary selected layer (last clicked). Empty when nothing selected. */
   selectedId: string
   /** All selected layer ids on this slide (includes selectedId). */

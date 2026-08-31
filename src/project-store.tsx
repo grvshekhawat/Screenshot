@@ -57,6 +57,13 @@ import {
   type SelectionPatch,
 } from "./selection"
 import {
+  applyGroupSelection,
+  applyUngroupSelection,
+  canGroupSelection,
+  canUngroupSelection,
+  expandSelectionToGroups,
+} from "./groups"
+import {
   getProject,
   listPublishedCliparts,
   resolveAssetUrls,
@@ -231,6 +238,10 @@ type ProjectContextValue = {
   canUndo: boolean
   canRedo: boolean
   deleteSelection: () => void
+  /** Persist current multi-selection as a slide group. */
+  groupSelection: () => void
+  /** Dissolve groups intersecting the current selection. */
+  ungroupSelection: () => void
 }
 
 const ProjectContext = createContext<ProjectContextValue | null>(null)
@@ -1067,9 +1078,24 @@ export function ProjectProvider({
         ...current,
         slides: current.slides.map((slide) => {
           if (slide.id !== slideId) return slide
-          const next = additive
-            ? toggleIdInSelection(slide, frameId)
-            : withSlideSelection(slide, [frameId], frameId)
+          let next: Slide
+          if (additive) {
+            const toggled = toggleIdInSelection(slide, frameId)
+            const ids = getSelectedIds(toggled)
+            next = ids.includes(frameId)
+              ? withSlideSelection(
+                  toggled,
+                  expandSelectionToGroups(toggled, ids),
+                  frameId,
+                )
+              : toggled
+          } else {
+            next = withSlideSelection(
+              slide,
+              expandSelectionToGroups(slide, [frameId]),
+              frameId,
+            )
+          }
           return {
             ...next,
             layerOrder: appendLayerOrder(
@@ -1286,9 +1312,24 @@ export function ProjectProvider({
         ...current,
         slides: current.slides.map((slide) => {
           if (slide.id !== slideId) return slide
-          const next = additive
-            ? toggleIdInSelection(slide, textId)
-            : withSlideSelection(slide, [textId], textId)
+          let next: Slide
+          if (additive) {
+            const toggled = toggleIdInSelection(slide, textId)
+            const ids = getSelectedIds(toggled)
+            next = ids.includes(textId)
+              ? withSlideSelection(
+                  toggled,
+                  expandSelectionToGroups(toggled, ids),
+                  textId,
+                )
+              : toggled
+          } else {
+            next = withSlideSelection(
+              slide,
+              expandSelectionToGroups(slide, [textId]),
+              textId,
+            )
+          }
           return {
             ...next,
             layerOrder: appendLayerOrder(
@@ -1383,9 +1424,24 @@ export function ProjectProvider({
         ...current,
         slides: current.slides.map((slide) => {
           if (slide.id !== slideId) return slide
-          const next = additive
-            ? toggleIdInSelection(slide, clipartId)
-            : withSlideSelection(slide, [clipartId], clipartId)
+          let next: Slide
+          if (additive) {
+            const toggled = toggleIdInSelection(slide, clipartId)
+            const ids = getSelectedIds(toggled)
+            next = ids.includes(clipartId)
+              ? withSlideSelection(
+                  toggled,
+                  expandSelectionToGroups(toggled, ids),
+                  clipartId,
+                )
+              : toggled
+          } else {
+            next = withSlideSelection(
+              slide,
+              expandSelectionToGroups(slide, [clipartId]),
+              clipartId,
+            )
+          }
           return {
             ...next,
             layerOrder: appendLayerOrder(
@@ -1600,9 +1656,24 @@ export function ProjectProvider({
         ...current,
         slides: current.slides.map((slide) => {
           if (slide.id !== slideId) return slide
-          const next = additive
-            ? toggleIdInSelection(slide, lensId)
-            : withSlideSelection(slide, [lensId], lensId)
+          let next: Slide
+          if (additive) {
+            const toggled = toggleIdInSelection(slide, lensId)
+            const ids = getSelectedIds(toggled)
+            next = ids.includes(lensId)
+              ? withSlideSelection(
+                  toggled,
+                  expandSelectionToGroups(toggled, ids),
+                  lensId,
+                )
+              : toggled
+          } else {
+            next = withSlideSelection(
+              slide,
+              expandSelectionToGroups(slide, [lensId]),
+              lensId,
+            )
+          }
           return {
             ...next,
             layerOrder: appendLayerOrder(
@@ -2351,6 +2422,40 @@ export function ProjectProvider({
     })
   }, [project])
 
+  const groupSelection = useCallback(() => {
+    const slide = project.slides.find(
+      (entry) => entry.id === project.activeSlideId,
+    )
+    if (!slide) return
+    const ids = getSelectedIds(slide)
+    if (!canGroupSelection(slide, ids)) return
+    setCanvasFocused(true)
+    setProject((current) => ({
+      ...current,
+      slides: current.slides.map((entry) => {
+        if (entry.id !== current.activeSlideId) return entry
+        return applyGroupSelection(entry, getSelectedIds(entry), entry.selectedId)
+      }),
+    }))
+  }, [project])
+
+  const ungroupSelection = useCallback(() => {
+    const slide = project.slides.find(
+      (entry) => entry.id === project.activeSlideId,
+    )
+    if (!slide) return
+    const ids = getSelectedIds(slide)
+    if (!canUngroupSelection(slide, ids)) return
+    setCanvasFocused(true)
+    setProject((current) => ({
+      ...current,
+      slides: current.slides.map((entry) => {
+        if (entry.id !== current.activeSlideId) return entry
+        return applyUngroupSelection(entry, getSelectedIds(entry))
+      }),
+    }))
+  }, [project])
+
   const value = useMemo<ProjectContextValue>(
     () => ({
       ready,
@@ -2430,6 +2535,8 @@ export function ProjectProvider({
       canUndo,
       canRedo,
       deleteSelection,
+      groupSelection,
+      ungroupSelection,
     }),
     [
       ready,
@@ -2509,6 +2616,8 @@ export function ProjectProvider({
       canUndo,
       canRedo,
       deleteSelection,
+      groupSelection,
+      ungroupSelection,
       historyTick,
     ],
   )
