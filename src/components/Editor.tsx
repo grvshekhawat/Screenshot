@@ -252,7 +252,7 @@ export function Editor() {
 
   if (!ready) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-zinc-400">
+      <div className="flex h-full items-center justify-center bg-[#07070a] text-sm text-zinc-400">
         Loading project…
       </div>
     )
@@ -260,19 +260,19 @@ export function Editor() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-zinc-800 bg-zinc-950 px-4">
+      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-white/[0.06] bg-[#07070a] px-4">
         <div className="flex items-center gap-2">
-          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-600 text-xs font-bold">
+          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#e8ff47] text-xs font-bold text-[#0a0a0c]">
             SS
           </span>
-          <span className="text-sm font-semibold tracking-tight">
+          <span className="text-sm font-semibold tracking-tight text-white" style={{ fontFamily: '"Outfit", ui-sans-serif, system-ui, sans-serif' }}>
             Screenshot Studio
           </span>
         </div>
         <input
           value={project.name}
           onChange={(event) => setName(event.target.value)}
-          className="min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-2 py-1 text-sm text-zinc-200 outline-none hover:border-zinc-800 focus:border-zinc-700"
+          className="min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-2 py-1 text-sm text-zinc-200 outline-none hover:border-white/15 focus:border-white/20"
         />
         <div className="hidden items-center gap-2 sm:flex">
           <span className="text-[11px] text-zinc-500">{saveLabel}</span>
@@ -285,7 +285,7 @@ export function Editor() {
             </span>
           ) : null}
           {!canExport ? (
-            <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">
+            <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] text-zinc-400">
               Free · watermarked PNG
             </span>
           ) : (
@@ -301,7 +301,7 @@ export function Editor() {
             aria-label="Undo"
             disabled={!canUndo}
             onClick={() => undo()}
-            className="rounded-md border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-xs text-zinc-200 hover:border-zinc-700 hover:bg-zinc-800 disabled:opacity-35"
+            className="rounded-md border border-white/10 bg-[#0a0a0e] px-2 py-1.5 text-xs text-zinc-200 hover:border-white/20 hover:bg-white/[0.06] disabled:opacity-35"
           >
             Undo
           </button>
@@ -311,7 +311,7 @@ export function Editor() {
             aria-label="Redo"
             disabled={!canRedo}
             onClick={() => redo()}
-            className="rounded-md border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-xs text-zinc-200 hover:border-zinc-700 hover:bg-zinc-800 disabled:opacity-35"
+            className="rounded-md border border-white/10 bg-[#0a0a0e] px-2 py-1.5 text-xs text-zinc-200 hover:border-white/20 hover:bg-white/[0.06] disabled:opacity-35"
           >
             Redo
           </button>
@@ -325,7 +325,7 @@ export function Editor() {
           type="button"
           disabled={saveState === "saving"}
           onClick={() => void saveDraft()}
-          className="rounded-md border border-zinc-800 bg-zinc-900 px-2.5 py-1.5 text-xs text-zinc-200 hover:border-zinc-700 hover:bg-zinc-800 disabled:opacity-50"
+          className="rounded-md border border-white/10 bg-[#0a0a0e] px-2.5 py-1.5 text-xs text-zinc-200 hover:border-white/20 hover:bg-white/[0.06] disabled:opacity-50"
         >
           Save draft
         </button>
@@ -334,7 +334,7 @@ export function Editor() {
           onChange={(event) =>
             setTarget(event.target.value as typeof project.targetId)
           }
-          className="max-w-[240px] rounded-md border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-xs text-zinc-200"
+          className="max-w-[240px] rounded-md border border-white/10 bg-[#0a0a0e] px-2 py-1.5 text-xs text-zinc-200"
         >
           {storeTargetsForOrientation(projectOrientation(project)).map(
             (target) => (
@@ -345,7 +345,7 @@ export function Editor() {
           )}
         </select>
         <div
-          className="flex rounded-md border border-zinc-800 p-0.5"
+          className="flex rounded-md border border-white/10 p-0.5"
           role="group"
           aria-label="Size edit mode"
         >
@@ -355,7 +355,7 @@ export function Editor() {
             onClick={() => setSizeEditMode("current")}
             className={`rounded px-2 py-1 text-xs ${
               (project.sizeEditMode ?? "current") === "current"
-                ? "bg-zinc-700 text-white"
+                ? "bg-white/15 text-white"
                 : "text-zinc-400 hover:text-zinc-200"
             }`}
           >
@@ -372,7 +372,7 @@ export function Editor() {
             onClick={() => setSizeEditMode("all")}
             className={`rounded px-2 py-1 text-xs disabled:opacity-40 ${
               project.sizeEditMode === "all"
-                ? "bg-zinc-700 text-white"
+                ? "bg-white/15 text-white"
                 : "text-zinc-400 hover:text-zinc-200"
             }`}
           >

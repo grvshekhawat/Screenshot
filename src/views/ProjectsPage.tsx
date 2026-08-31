@@ -20,6 +20,7 @@ import {
   type ArtboardOrientation,
 } from "../orientation"
 import type { ProjectRecord, TemplateRecord } from "../types/cloud"
+import { MARKETING_DISPLAY } from "../components/MarketingHeader"
 import { ProjectThumbnail } from "../components/ProjectThumbnail"
 import { TemplateThumbnail } from "../components/TemplateThumbnail"
 
@@ -71,7 +72,6 @@ export function ProjectsPage() {
     )
   }, [userId])
 
-  // After Stripe Checkout return (?subscribed=1), sync from Stripe then poll profile.
   useEffect(() => {
     if (!userId || usingLocalBackend) return
     const params = new URLSearchParams(window.location.search)
@@ -135,13 +135,21 @@ export function ProjectsPage() {
 
   if (ready && !userId) {
     return (
-      <div className="flex min-h-full items-center justify-center text-sm text-zinc-400">
+      <div className="flex min-h-full items-center justify-center bg-[#07070a] text-sm text-zinc-400">
         Redirecting…
       </div>
     )
   }
 
+  const atCap = !isAdmin && projects.length >= MAX_CLOUD_PROJECTS
+
   const onCreate = async () => {
+    if (atCap) {
+      setError(
+        `Project limit reached (${MAX_CLOUD_PROJECTS}). Delete a project to create another.`,
+      )
+      return
+    }
     setBusy(true)
     setError(null)
     try {
@@ -155,6 +163,12 @@ export function ProjectsPage() {
   }
 
   const onClone = async (template: TemplateRecord) => {
+    if (atCap) {
+      setError(
+        `Project limit reached (${MAX_CLOUD_PROJECTS}). Delete a project to start from a template.`,
+      )
+      return
+    }
     setBusy(true)
     setError(null)
     try {
@@ -170,6 +184,7 @@ export function ProjectsPage() {
   const onDelete = async (id: string) => {
     if (!confirm("Delete this project?")) return
     setBusy(true)
+    setError(null)
     try {
       await deleteProject(id)
       await reload()
@@ -181,68 +196,108 @@ export function ProjectsPage() {
   }
 
   return (
-    <div className="min-h-full bg-[#0c0c10] text-zinc-100">
-      <header className="flex h-14 items-center justify-between border-b border-zinc-800 px-4">
-        <Link href="/" className="text-sm font-semibold">
-          Screenshot Studio
-        </Link>
-        <div className="flex items-center gap-3 text-xs text-zinc-400">
-          <span>{email}</span>
-          <span
-            className={
-              canExport ? "text-emerald-400" : "text-zinc-500"
-            }
+    <div className="min-h-full bg-[#07070a] text-zinc-100">
+      <header className="relative z-20 border-b border-white/[0.06] bg-[#07070a]/85 backdrop-blur-md">
+        <div className="mx-auto flex h-16 max-w-[1600px] items-center justify-between px-4 sm:px-6 lg:px-8">
+          <Link
+            href="/"
+            className="text-[15px] font-semibold tracking-[-0.02em] text-white"
+            style={{ fontFamily: MARKETING_DISPLAY }}
           >
-            {canExport ? "Pro" : "Free"}
-          </span>
-          <Link href="/pricing" className="hover:text-white">
-            Pricing
+            Screenshot Studio
           </Link>
-          {profile?.role === "admin" ? (
-            <Link href="/admin" className="hover:text-white">
-              Admin
+          <div className="flex items-center gap-1 text-[12px] text-zinc-500 sm:gap-2 sm:text-[13px]">
+            <span className="hidden max-w-[160px] truncate sm:inline">
+              {email}
+            </span>
+            <span
+              className={
+                canExport
+                  ? "rounded px-1.5 py-0.5 text-[#e8ff47]/90"
+                  : "rounded px-1.5 py-0.5 text-zinc-500"
+              }
+            >
+              {canExport ? "Pro" : "Free"}
+            </span>
+            <Link
+              href="/pricing"
+              className="rounded-md px-2 py-1.5 transition hover:text-white"
+            >
+              Pricing
             </Link>
-          ) : null}
-          {usingLocalBackend ? (
+            {profile?.role === "admin" ? (
+              <Link
+                href="/admin"
+                className="rounded-md px-2 py-1.5 transition hover:text-white"
+              >
+                Admin
+              </Link>
+            ) : null}
+            {usingLocalBackend ? (
+              <button
+                type="button"
+                className="rounded-md px-2 py-1.5 transition hover:text-white"
+                onClick={() =>
+                  void setDemoSubscription(!canExport).then(() => undefined)
+                }
+              >
+                {canExport ? "Clear demo Pro" : "Demo Pro"}
+              </button>
+            ) : null}
             <button
               type="button"
-              className="hover:text-white"
-              onClick={() => void setDemoSubscription(!canExport).then(() => undefined)}
+              onClick={() => void signOut()}
+              className="rounded-md px-2 py-1.5 transition hover:text-white"
             >
-              {canExport ? "Clear demo Pro" : "Activate demo Pro"}
+              Sign out
             </button>
-          ) : null}
-          <button type="button" onClick={() => void signOut()} className="hover:text-white">
-            Sign out
-          </button>
+          </div>
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-[1600px] px-4 py-8 sm:px-6 lg:px-8">
-        <div className="flex flex-wrap items-end justify-between gap-4">
+      <main className="relative mx-auto w-full max-w-[1600px] px-4 py-10 sm:px-6 lg:px-8">
+        <div
+          className="pointer-events-none absolute -left-20 top-0 h-64 w-64 rounded-full bg-[radial-gradient(circle,rgba(56,189,248,0.08),transparent_70%)]"
+          aria-hidden
+        />
+        <div
+          className="pointer-events-none absolute right-0 top-8 h-72 w-72 rounded-full bg-[radial-gradient(circle,rgba(232,255,71,0.05),transparent_70%)]"
+          aria-hidden
+        />
+
+        <div className="relative flex flex-wrap items-end justify-between gap-5">
           <div>
-            <h1 className="text-2xl font-semibold">Your projects</h1>
-            <p className="mt-1 text-sm text-zinc-400">
+            <h1
+              className="text-3xl font-semibold tracking-[-0.03em] text-white sm:text-4xl"
+              style={{ fontFamily: MARKETING_DISPLAY }}
+            >
+              Your projects
+            </h1>
+            <p className="mt-2 text-[14px] text-zinc-500">
               {isAdmin
-                ? `${projects.length} projects (no limit)`
-                : `${projects.length}/${MAX_CLOUD_PROJECTS} projects`}{" "}
-              · {visibleProjects.length} {orientation} · Free watermarked PNG ·
-              Pro for clean ZIP
+                ? `${projects.length} projects`
+                : `${projects.length} of ${MAX_CLOUD_PROJECTS} projects`}
+              <span className="mx-2 text-zinc-700">·</span>
+              {visibleProjects.length} {orientation}
+              <span className="mx-2 text-zinc-700">·</span>
+              {atCap
+                ? "Limit reached — delete one to add another"
+                : "Free watermarked PNG · Pro for clean ZIP"}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <div
-              className="flex rounded-lg border border-zinc-800 p-0.5"
+              className="flex rounded-md border border-white/10 p-0.5"
               role="group"
               aria-label="Orientation"
             >
               <button
                 type="button"
                 onClick={() => setOrientation("portrait")}
-                className={`rounded-md px-3 py-1.5 text-xs font-medium ${
+                className={`rounded px-3 py-1.5 text-xs font-medium transition ${
                   orientation === "portrait"
-                    ? "bg-zinc-700 text-white"
-                    : "text-zinc-400 hover:text-zinc-200"
+                    ? "bg-white/10 text-white"
+                    : "text-zinc-500 hover:text-zinc-300"
                 }`}
               >
                 Portrait
@@ -250,10 +305,10 @@ export function ProjectsPage() {
               <button
                 type="button"
                 onClick={() => setOrientation("landscape")}
-                className={`rounded-md px-3 py-1.5 text-xs font-medium ${
+                className={`rounded px-3 py-1.5 text-xs font-medium transition ${
                   orientation === "landscape"
-                    ? "bg-zinc-700 text-white"
-                    : "text-zinc-400 hover:text-zinc-200"
+                    ? "bg-white/10 text-white"
+                    : "text-zinc-500 hover:text-zinc-300"
                 }`}
               >
                 Landscape
@@ -261,65 +316,137 @@ export function ProjectsPage() {
             </div>
             <button
               type="button"
-              disabled={busy || (!isAdmin && projects.length >= MAX_CLOUD_PROJECTS)}
+              disabled={busy || atCap}
+              title={
+                atCap
+                  ? `Limit of ${MAX_CLOUD_PROJECTS} projects reached. Delete one to create another.`
+                  : undefined
+              }
               onClick={() => void onCreate()}
-              className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-500 disabled:opacity-40"
+              className="rounded-md bg-[#e8ff47] px-4 py-2 text-sm font-semibold text-[#0a0a0c] transition hover:bg-[#f0ff7a] disabled:opacity-40"
             >
               New {orientation} project
             </button>
           </div>
         </div>
-        {error ? <p className="mt-4 text-sm text-red-400">{error}</p> : null}
 
-        <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2">
+        {error ? (
+          <p className="relative mt-4 text-sm text-red-400">{error}</p>
+        ) : null}
+
+        {atCap ? (
+          <div
+            role="status"
+            className="relative mt-5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-[14px] leading-relaxed text-amber-100"
+          >
+            <p className="font-medium text-amber-50">
+              Project limit reached ({MAX_CLOUD_PROJECTS}/{MAX_CLOUD_PROJECTS})
+            </p>
+            <p className="mt-1 text-amber-100/85">
+              Delete an existing project to free a slot, then you can create a
+              new one or start from a template.
+            </p>
+          </div>
+        ) : null}
+
+        <div className="relative mt-10 grid grid-cols-1 gap-8 sm:grid-cols-2">
           {visibleProjects.map((project) => (
-            <div
-              key={project.id}
-              className="rounded-xl border border-zinc-800 bg-zinc-950 p-3 sm:p-4"
-            >
+            <div key={project.id} className="group">
               <button
                 type="button"
                 className="w-full text-left"
                 onClick={() => router.push(`/app/${project.id}`)}
               >
-                <ProjectThumbnail
-                  project={project}
-                  className="mb-3 w-full"
-                />
-                <div className="text-sm font-medium text-white">{project.name}</div>
-                <div className="mt-1 text-[11px] text-zinc-500">
-                  Updated {new Date(project.updated_at).toLocaleString()}
+                <div className="overflow-hidden rounded-lg border border-white/[0.07] bg-zinc-950/60 transition duration-300 group-hover:border-white/15 group-hover:shadow-[0_24px_60px_-40px_rgba(232,255,71,0.1)]">
+                  <ProjectThumbnail
+                    project={project}
+                    className="mb-0 w-full rounded-none border-0"
+                  />
                 </div>
               </button>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void onDelete(project.id)}
-                className="mt-3 text-[11px] text-red-400 hover:text-red-300"
-              >
-                Delete
-              </button>
+              <div className="mt-3 flex items-start justify-between gap-3 px-0.5">
+                <button
+                  type="button"
+                  className="min-w-0 text-left"
+                  onClick={() => router.push(`/app/${project.id}`)}
+                >
+                  <div
+                    className="truncate text-[15px] font-semibold tracking-tight text-white"
+                    style={{ fontFamily: MARKETING_DISPLAY }}
+                  >
+                    {project.name}
+                  </div>
+                  <div className="mt-1 text-[12px] text-zinc-500">
+                    Updated {new Date(project.updated_at).toLocaleString()}
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void onDelete(project.id)}
+                  className="shrink-0 pt-0.5 text-[11px] text-zinc-600 transition hover:text-red-400"
+                >
+                  Delete
+                </button>
+              </div>
             </div>
           ))}
           {visibleProjects.length === 0 ? (
-            <p className="text-sm text-zinc-500 sm:col-span-2">
-              No {orientation} projects yet. Create one or pick a template
-              below.
-            </p>
+            <div className="rounded-lg border border-dashed border-white/10 bg-white/[0.015] px-6 py-14 text-center sm:col-span-2">
+              <p
+                className="text-lg font-semibold tracking-tight text-zinc-200"
+                style={{ fontFamily: MARKETING_DISPLAY }}
+              >
+                No {orientation} projects yet
+              </p>
+              <p className="mx-auto mt-2 max-w-md text-[14px] text-zinc-500">
+                {atCap
+                  ? `You’ve used all ${MAX_CLOUD_PROJECTS} project slots in other orientations. Delete a project above to create a ${orientation} one.`
+                  : "Start blank or pick a template below—your screenshots stay here until you export."}
+              </p>
+              {!atCap ? (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void onCreate()}
+                  className="mt-6 rounded-md bg-[#e8ff47] px-5 py-2.5 text-sm font-semibold text-[#0a0a0c] transition hover:bg-[#f0ff7a] disabled:opacity-40"
+                >
+                  Create {orientation} project
+                </button>
+              ) : null}
+            </div>
           ) : null}
         </div>
 
-        <section className="mt-12">
-          <h2 className="text-lg font-semibold">
-            Start from a {orientation} template
-          </h2>
-          <div className="mt-4 grid grid-cols-1 gap-5 sm:grid-cols-2">
+        <section className="relative mt-16 border-t border-white/[0.06] pt-14">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h2
+                className="text-2xl font-semibold tracking-[-0.03em] text-white sm:text-3xl"
+                style={{ fontFamily: MARKETING_DISPLAY }}
+              >
+                Start from a template
+              </h2>
+              <p className="mt-2 text-[14px] text-zinc-500">
+                {atCap
+                  ? `Templates are paused until you delete a project (${MAX_CLOUD_PROJECTS} max).`
+                  : `${orientation} layouts—click to clone into a new project.`}
+              </p>
+            </div>
+            <Link
+              href="/templates"
+              className="text-[13px] text-zinc-400 underline decoration-white/15 underline-offset-4 transition hover:text-zinc-200 hover:decoration-white/40"
+            >
+              Browse all templates
+            </Link>
+          </div>
+          <div className="mt-8 grid grid-cols-1 gap-8 sm:grid-cols-2">
             {visibleTemplates.map((template) => (
               <TemplateThumbnail
                 key={template.id}
                 template={template}
-                className="w-full border border-zinc-800"
-                disabled={busy || (!isAdmin && projects.length >= MAX_CLOUD_PROJECTS)}
+                className="w-full border border-white/[0.07] transition hover:border-white/15"
+                disabled={busy || atCap}
                 onClick={() => void onClone(template)}
               />
             ))}

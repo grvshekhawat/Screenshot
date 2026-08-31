@@ -127,6 +127,12 @@ function usePropertyClipboardEntry() {
   )
 }
 
+const ACTION_BTN =
+  "inline-flex h-8 w-full items-center justify-center rounded-md border border-white/10 bg-white/[0.03] px-2 text-[11px] font-medium text-zinc-300 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-white disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:border-white/10 disabled:hover:bg-white/[0.03] disabled:hover:text-zinc-300"
+
+const ACTION_BTN_DANGER =
+  "inline-flex h-8 w-full items-center justify-center rounded-md border border-red-500/25 bg-red-500/[0.08] px-2 text-[11px] font-medium text-red-300 transition hover:border-red-500/40 hover:bg-red-500/15 hover:text-red-200"
+
 function PastePropertiesAction({
   targetKind,
   onPaste,
@@ -142,7 +148,7 @@ function PastePropertiesAction({
     <button
       type="button"
       title={propertyClipboardSummary(entry)}
-      className="text-zinc-400 hover:text-white"
+      className={ACTION_BTN}
       onClick={() => onPaste(patch)}
     >
       Paste props
@@ -323,8 +329,8 @@ export function Inspector({
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1">
-      <div className="flex shrink-0 border-r border-zinc-800 bg-zinc-950">
-        <nav className="flex w-[88px] shrink-0 flex-col border-r border-zinc-800 py-2">
+      <div className="flex shrink-0 border-r border-white/[0.06] bg-[#07070a]">
+        <nav className="flex w-[88px] shrink-0 flex-col border-r border-white/[0.06] py-2">
           {MENUS.map((item) => {
             const active = menu === item.id
             return (
@@ -334,8 +340,8 @@ export function Inspector({
                 onClick={() => toggleMenu(item.id)}
                 className={`mx-1.5 rounded-lg px-2 py-3 text-center text-[11px] font-medium leading-tight transition ${
                   active
-                    ? "bg-violet-600 text-white"
-                    : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
+                    ? "bg-[#e8ff47] text-[#0a0a0c]"
+                    : "text-zinc-400 hover:bg-white/[0.05] hover:text-zinc-200"
                 }`}
               >
                 {item.label}
@@ -345,13 +351,13 @@ export function Inspector({
         </nav>
 
         <div
-          className={`overflow-hidden border-r border-zinc-800 transition-[width] duration-200 ease-out ${
+          className={`overflow-hidden border-r border-white/[0.06] transition-[width] duration-200 ease-out ${
             menu ? "w-[280px]" : "w-0 border-r-0"
           }`}
         >
           {menu ? (
             <div className="flex h-full w-[280px] flex-col overflow-y-auto">
-              <div className="flex items-center justify-between border-b border-zinc-800 px-3 py-2.5">
+              <div className="flex items-center justify-between border-b border-white/[0.06] px-3 py-2.5">
                 <h2 className="text-xs font-semibold text-zinc-200">
                   {MENUS.find((item) => item.id === menu)?.label}
                 </h2>
@@ -456,8 +462,8 @@ export function Inspector({
 
       {children}
 
-      <aside className="flex w-[300px] shrink-0 flex-col overflow-y-auto border-l border-zinc-800 bg-zinc-950">
-        <div className="border-b border-zinc-800 px-4 py-3">
+      <aside className="flex w-[300px] shrink-0 flex-col overflow-y-auto border-l border-white/[0.06] bg-[#07070a]">
+        <div className="border-b border-white/[0.06] px-4 py-3">
           <h2 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
             Properties
           </h2>
@@ -645,7 +651,7 @@ function ContentTools({
             type="button"
             onClick={() => onTabChange(id)}
             className={`flex-1 rounded-md px-2 py-1.5 text-xs ${
-              tab === id ? "bg-zinc-700 text-white" : "text-zinc-400"
+              tab === id ? "bg-white/15 text-white" : "text-zinc-400"
             }`}
           >
             {label}
@@ -659,7 +665,7 @@ function ContentTools({
             type="button"
             disabled={slide.frames.length >= MAX_FRAMES}
             onClick={() => addFrame(slide.id)}
-            className="w-full rounded-lg border border-dashed border-zinc-700 px-3 py-2 text-sm text-zinc-300 hover:border-violet-500 hover:text-white disabled:opacity-40"
+            className="w-full rounded-lg border border-dashed border-zinc-700 px-3 py-2 text-sm text-zinc-300 hover:border-[#e8ff47]/55 hover:text-white disabled:opacity-40"
           >
             Add phone
           </button>
@@ -674,7 +680,7 @@ function ContentTools({
                 }}
                 className={`w-full rounded-lg px-3 py-2 text-left text-sm ${
                   isRowSelected(item.id)
-                    ? "bg-violet-600 text-white"
+                    ? "bg-[#e8ff47] text-[#0a0a0c]"
                     : "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"
                 }`}
               >
@@ -722,7 +728,7 @@ function ContentTools({
             type="button"
             disabled={slide.texts.length >= MAX_TEXTS}
             onClick={() => addText(slide.id)}
-            className="w-full rounded-lg border border-dashed border-zinc-700 px-3 py-2 text-sm text-zinc-300 hover:border-violet-500 hover:text-white disabled:opacity-40"
+            className="w-full rounded-lg border border-dashed border-zinc-700 px-3 py-2 text-sm text-zinc-300 hover:border-[#e8ff47]/55 hover:text-white disabled:opacity-40"
           >
             Add text
           </button>
@@ -734,7 +740,7 @@ function ContentTools({
                 onClick={() => selectText(slide.id, item.id)}
                 className={`w-full truncate rounded-lg px-3 py-2 text-left text-sm ${
                   isRowSelected(item.id)
-                    ? "bg-violet-600 text-white"
+                    ? "bg-[#e8ff47] text-[#0a0a0c]"
                     : "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"
                 }`}
               >
@@ -776,7 +782,7 @@ function ContentTools({
                         onClick={() =>
                           addLibraryClipart(slide.id, item.id, item.url)
                         }
-                        className="rounded-lg border border-zinc-800 bg-zinc-900 p-1.5 hover:border-violet-500 disabled:opacity-40"
+                        className="rounded-lg border border-white/10 bg-[#0a0a0e] p-1.5 hover:border-[#e8ff47]/55 disabled:opacity-40"
                       >
                         <img
                           src={item.url}
@@ -799,7 +805,7 @@ function ContentTools({
             type="button"
             disabled={slide.cliparts.length >= MAX_CLIPARTS}
             onClick={() => onClipartUploadClick(slide.id)}
-            className="w-full rounded-lg border border-dashed border-zinc-700 px-3 py-2 text-sm text-zinc-300 hover:border-violet-500 hover:text-white disabled:opacity-40"
+            className="w-full rounded-lg border border-dashed border-zinc-700 px-3 py-2 text-sm text-zinc-300 hover:border-[#e8ff47]/55 hover:text-white disabled:opacity-40"
           >
             Upload clipart
           </button>
@@ -811,7 +817,7 @@ function ContentTools({
                 onClick={() => selectClipart(slide.id, item.id)}
                 className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm ${
                   isRowSelected(item.id)
-                    ? "bg-violet-600 text-white"
+                    ? "bg-[#e8ff47] text-[#0a0a0c]"
                     : "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"
                 }`}
               >
@@ -842,7 +848,7 @@ function ContentTools({
             type="button"
             disabled={(slide.lenses ?? []).length >= MAX_LENSES}
             onClick={() => addLens(slide.id)}
-            className="w-full rounded-lg border border-dashed border-zinc-700 px-3 py-2 text-sm text-zinc-300 hover:border-violet-500 hover:text-white disabled:opacity-40"
+            className="w-full rounded-lg border border-dashed border-zinc-700 px-3 py-2 text-sm text-zinc-300 hover:border-[#e8ff47]/55 hover:text-white disabled:opacity-40"
           >
             Add lens
           </button>
@@ -857,7 +863,7 @@ function ContentTools({
                 }}
                 className={`w-full rounded-lg px-3 py-2 text-left text-sm ${
                   isRowSelected(item.id)
-                    ? "bg-violet-600 text-white"
+                    ? "bg-[#e8ff47] text-[#0a0a0c]"
                     : "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"
                 }`}
               >
@@ -905,7 +911,7 @@ function ExportPanel({
       <div>
         <p className="mb-1.5 text-[11px] text-zinc-500">Edit mode</p>
         <div
-          className="flex rounded-lg border border-zinc-800 p-0.5"
+          className="flex rounded-lg border border-white/10 p-0.5"
           role="group"
           aria-label="Size edit mode"
         >
@@ -914,7 +920,7 @@ function ExportPanel({
             onClick={() => setSizeEditMode("current")}
             className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium ${
               sizeEditMode === "current"
-                ? "bg-zinc-700 text-white"
+                ? "bg-white/15 text-white"
                 : "text-zinc-400 hover:text-zinc-200"
             }`}
           >
@@ -931,7 +937,7 @@ function ExportPanel({
             onClick={() => setSizeEditMode("all")}
             className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium disabled:opacity-40 ${
               sizeEditMode === "all"
-                ? "bg-zinc-700 text-white"
+                ? "bg-white/15 text-white"
                 : "text-zinc-400 hover:text-zinc-200"
             }`}
           >
@@ -951,7 +957,7 @@ function ExportPanel({
           onChange={(event) =>
             setTarget(event.target.value as StoreTargetId)
           }
-          className="mt-1 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-2 text-sm text-white outline-none"
+          className="mt-1 w-full rounded-lg border border-white/10 bg-[#0a0a0e] px-2.5 py-2 text-sm text-white outline-none"
         >
           {storeTargetsForOrientation(
             STORE_TARGETS[projectTargetId]?.orientation ?? "portrait",
@@ -976,7 +982,7 @@ function ExportPanel({
           type="button"
           disabled={Boolean(busy)}
           onClick={onExportPng}
-          className="w-full rounded-lg bg-violet-600 px-3 py-2.5 text-sm font-semibold text-white hover:bg-violet-500 disabled:opacity-50"
+          className="w-full rounded-lg bg-[#e8ff47] px-3 py-2.5 text-sm font-semibold text-[#0a0a0c] hover:bg-[#f0ff7a] disabled:opacity-50"
         >
           {busy ??
             (canExportClean
@@ -1090,7 +1096,7 @@ function PhoneProperties({
               }
               className={`flex-1 rounded-md px-2 py-1.5 text-xs capitalize ${
                 frame.screenMode === mode
-                  ? "bg-zinc-700 text-white"
+                  ? "bg-white/15 text-white"
                   : "text-zinc-400"
               }`}
             >
@@ -1208,7 +1214,7 @@ function PhoneProperties({
                 }
                 className={`rounded-lg px-3 py-2 text-left text-sm ${
                   frame.deviceId === id
-                    ? "bg-violet-600 text-white"
+                    ? "bg-[#e8ff47] text-[#0a0a0c]"
                     : "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"
                 }`}
               >
@@ -1307,13 +1313,9 @@ function PhoneProperties({
       </PropertyAccordion>
 
       <ActionRow>
-        <PastePropertiesAction
-          targetKind="frame"
-          onPaste={(patch) => updateFrame(slide.id, frame.id, patch)}
-        />
         <button
           type="button"
-          className="text-zinc-400 hover:text-white"
+          className={ACTION_BTN}
           onClick={() => duplicateFrame(slide.id, frame.id)}
           disabled={slide.frames.length >= MAX_FRAMES}
         >
@@ -1328,7 +1330,23 @@ function PhoneProperties({
         />
         <button
           type="button"
-          className="text-zinc-400 hover:text-white"
+          className={ACTION_BTN}
+          onClick={() => moveFrame(slide.id, frame.id, "forward")}
+          disabled={!layerMoveLimits(slide, frame.id).canMoveUp}
+        >
+          Move up
+        </button>
+        <button
+          type="button"
+          className={ACTION_BTN}
+          onClick={() => moveFrame(slide.id, frame.id, "back")}
+          disabled={!layerMoveLimits(slide, frame.id).canMoveDown}
+        >
+          Move down
+        </button>
+        <button
+          type="button"
+          className={ACTION_BTN}
           onClick={() =>
             updateFrame(slide.id, frame.id, {
               x: 50,
@@ -1343,25 +1361,13 @@ function PhoneProperties({
         >
           Reset position
         </button>
+        <PastePropertiesAction
+          targetKind="frame"
+          onPaste={(patch) => updateFrame(slide.id, frame.id, patch)}
+        />
         <button
           type="button"
-          className="text-zinc-400 hover:text-white disabled:opacity-40"
-          onClick={() => moveFrame(slide.id, frame.id, "forward")}
-          disabled={!layerMoveLimits(slide, frame.id).canMoveUp}
-        >
-          Move up
-        </button>
-        <button
-          type="button"
-          className="text-zinc-400 hover:text-white disabled:opacity-40"
-          onClick={() => moveFrame(slide.id, frame.id, "back")}
-          disabled={!layerMoveLimits(slide, frame.id).canMoveDown}
-        >
-          Move down
-        </button>
-        <button
-          type="button"
-          className="text-red-400 hover:text-red-300"
+          className={`${ACTION_BTN_DANGER} col-span-2`}
           onClick={() => removeFrame(slide.id, frame.id)}
         >
           Delete
@@ -1408,7 +1414,7 @@ function TextProperties({
                 content: event.target.value,
               })
             }
-            className="mt-1 w-full resize-none rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-2 text-sm text-white outline-none focus:border-violet-500"
+            className="mt-1 w-full resize-none rounded-lg border border-white/10 bg-[#0a0a0e] px-2.5 py-2 text-sm text-white outline-none focus:border-[#e8ff47]/50"
           />
         </label>
         <label className="block text-[11px] text-zinc-500">
@@ -1418,7 +1424,7 @@ function TextProperties({
             onChange={(event) =>
               updateText(slide.id, activeText.id, { font: event.target.value })
             }
-            className="mt-1 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-2 text-sm text-white outline-none"
+            className="mt-1 w-full rounded-lg border border-white/10 bg-[#0a0a0e] px-2.5 py-2 text-sm text-white outline-none"
           >
             {FONTS.map((font) => (
               <option key={font} value={font} style={{ fontFamily: font }}>
@@ -1467,7 +1473,7 @@ function TextProperties({
                   size: Math.max(1, Math.round(next)),
                 })
               }}
-              className="w-16 rounded-md border border-zinc-800 bg-zinc-900 px-1.5 py-1 text-right font-mono text-xs text-zinc-200"
+              className="w-16 rounded-md border border-white/10 bg-[#0a0a0e] px-1.5 py-1 text-right font-mono text-xs text-zinc-200"
               aria-label="Text size in pixels"
             />
             <span className="text-[10px] text-zinc-600">px</span>
@@ -1485,7 +1491,7 @@ function TextProperties({
                 }
                 className={`flex-1 rounded-md px-1 py-1.5 text-[11px] ${
                   activeText.weight === weight
-                    ? "bg-zinc-700 text-white"
+                    ? "bg-white/15 text-white"
                     : "text-zinc-400"
                 }`}
               >
@@ -1511,7 +1517,7 @@ function TextProperties({
                 onClick={() => updateText(slide.id, activeText.id, { align })}
                 className={`flex-1 rounded-md px-2 py-1.5 text-xs capitalize ${
                   activeText.align === align
-                    ? "bg-zinc-700 text-white"
+                    ? "bg-white/15 text-white"
                     : "text-zinc-400"
                 }`}
               >
@@ -1622,13 +1628,9 @@ function TextProperties({
       </PropertyAccordion>
 
       <ActionRow>
-        <PastePropertiesAction
-          targetKind="text"
-          onPaste={(patch) => updateText(slide.id, activeText.id, patch)}
-        />
         <button
           type="button"
-          className="text-zinc-400 hover:text-white"
+          className={ACTION_BTN}
           onClick={() => duplicateText(slide.id, activeText.id)}
           disabled={slide.texts.length >= MAX_TEXTS}
         >
@@ -1643,7 +1645,23 @@ function TextProperties({
         />
         <button
           type="button"
-          className="text-zinc-400 hover:text-white"
+          className={ACTION_BTN}
+          onClick={() => moveText(slide.id, activeText.id, "forward")}
+          disabled={!layerMoveLimits(slide, activeText.id).canMoveUp}
+        >
+          Move up
+        </button>
+        <button
+          type="button"
+          className={ACTION_BTN}
+          onClick={() => moveText(slide.id, activeText.id, "back")}
+          disabled={!layerMoveLimits(slide, activeText.id).canMoveDown}
+        >
+          Move down
+        </button>
+        <button
+          type="button"
+          className={ACTION_BTN}
           onClick={() =>
             updateText(slide.id, activeText.id, {
               x: 50,
@@ -1658,25 +1676,13 @@ function TextProperties({
         >
           Reset position
         </button>
+        <PastePropertiesAction
+          targetKind="text"
+          onPaste={(patch) => updateText(slide.id, activeText.id, patch)}
+        />
         <button
           type="button"
-          className="text-zinc-400 hover:text-white disabled:opacity-40"
-          onClick={() => moveText(slide.id, activeText.id, "forward")}
-          disabled={!layerMoveLimits(slide, activeText.id).canMoveUp}
-        >
-          Move up
-        </button>
-        <button
-          type="button"
-          className="text-zinc-400 hover:text-white disabled:opacity-40"
-          onClick={() => moveText(slide.id, activeText.id, "back")}
-          disabled={!layerMoveLimits(slide, activeText.id).canMoveDown}
-        >
-          Move down
-        </button>
-        <button
-          type="button"
-          className="text-red-400 hover:text-red-300"
+          className={`${ACTION_BTN_DANGER} col-span-2`}
           onClick={() => removeText(slide.id, activeText.id)}
         >
           Delete
@@ -1762,7 +1768,7 @@ function ClipartProperties({
         <label className="block text-[11px] text-zinc-500">
           Attach to phone
           <select
-            className="mt-1 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-200"
+            className="mt-1 w-full rounded-lg border border-white/10 bg-[#0a0a0e] px-3 py-2 text-sm text-zinc-200"
             value={attachFrameId ?? ""}
             onChange={(event) =>
               applyAttach(event.target.value ? event.target.value : null)
@@ -1909,7 +1915,7 @@ function ClipartProperties({
                 }
                 className={`flex-1 rounded-md px-2 py-1.5 text-[11px] ${
                   (activeClipart.recolor ?? "off") === mode
-                    ? "bg-violet-600 text-white"
+                    ? "bg-[#e8ff47] text-[#0a0a0c]"
                     : "text-zinc-400 hover:bg-zinc-800 hover:text-white"
                 }`}
               >
@@ -1984,15 +1990,9 @@ function ClipartProperties({
       </PropertyAccordion>
 
       <ActionRow>
-        <PastePropertiesAction
-          targetKind="clipart"
-          onPaste={(patch) =>
-            updateClipart(slide.id, activeClipart.id, patch)
-          }
-        />
         <button
           type="button"
-          className="text-zinc-400 hover:text-white"
+          className={ACTION_BTN}
           onClick={() => duplicateClipart(slide.id, activeClipart.id)}
           disabled={slide.cliparts.length >= MAX_CLIPARTS}
         >
@@ -2007,7 +2007,7 @@ function ClipartProperties({
         />
         <button
           type="button"
-          className="text-zinc-400 hover:text-white disabled:opacity-40"
+          className={ACTION_BTN}
           onClick={() => moveClipart(slide.id, activeClipart.id, "forward")}
           disabled={!layerMoveLimits(slide, activeClipart.id).canMoveUp}
         >
@@ -2015,15 +2015,21 @@ function ClipartProperties({
         </button>
         <button
           type="button"
-          className="text-zinc-400 hover:text-white disabled:opacity-40"
+          className={ACTION_BTN}
           onClick={() => moveClipart(slide.id, activeClipart.id, "back")}
           disabled={!layerMoveLimits(slide, activeClipart.id).canMoveDown}
         >
           Move down
         </button>
+        <PastePropertiesAction
+          targetKind="clipart"
+          onPaste={(patch) =>
+            updateClipart(slide.id, activeClipart.id, patch)
+          }
+        />
         <button
           type="button"
-          className="text-red-400 hover:text-red-300"
+          className={`${ACTION_BTN_DANGER} col-span-2`}
           onClick={() => removeClipart(slide.id, activeClipart.id)}
         >
           Delete
@@ -2090,7 +2096,7 @@ function LensProperties({
             disabled={locking}
             onClick={toggleLock}
             className={`relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:opacity-50 ${
-              isLocked ? "bg-violet-600" : "bg-zinc-700"
+              isLocked ? "bg-[#e8ff47]" : "bg-zinc-700"
             }`}
           >
             <span
@@ -2247,13 +2253,9 @@ function LensProperties({
       </PropertyAccordion>
 
       <ActionRow>
-        <PastePropertiesAction
-          targetKind="lens"
-          onPaste={(patch) => updateLens(slide.id, activeLens.id, patch)}
-        />
         <button
           type="button"
-          className="text-zinc-400 hover:text-white"
+          className={ACTION_BTN}
           onClick={() => duplicateLens(slide.id, activeLens.id)}
           disabled={(slide.lenses ?? []).length >= MAX_LENSES}
         >
@@ -2268,7 +2270,7 @@ function LensProperties({
         />
         <button
           type="button"
-          className="text-zinc-400 hover:text-white disabled:opacity-40"
+          className={ACTION_BTN}
           onClick={() => moveLens(slide.id, activeLens.id, "forward")}
           disabled={!layerMoveLimits(slide, activeLens.id).canMoveUp}
         >
@@ -2276,15 +2278,19 @@ function LensProperties({
         </button>
         <button
           type="button"
-          className="text-zinc-400 hover:text-white disabled:opacity-40"
+          className={ACTION_BTN}
           onClick={() => moveLens(slide.id, activeLens.id, "back")}
           disabled={!layerMoveLimits(slide, activeLens.id).canMoveDown}
         >
           Move down
         </button>
+        <PastePropertiesAction
+          targetKind="lens"
+          onPaste={(patch) => updateLens(slide.id, activeLens.id, patch)}
+        />
         <button
           type="button"
-          className="text-red-400 hover:text-red-300"
+          className={`${ACTION_BTN_DANGER} col-span-2`}
           onClick={() => removeLens(slide.id, activeLens.id)}
         >
           Delete
@@ -2318,7 +2324,7 @@ function TemplateSection({
             onClick={() => onSelect(template.id)}
             className={`overflow-hidden rounded-lg text-left ring-offset-2 ring-offset-zinc-950 ${
               activeId === template.id
-                ? "ring-2 ring-violet-500"
+                ? "ring-2 ring-[#e8ff47]"
                 : "ring-1 ring-zinc-800 hover:ring-zinc-600"
             }`}
           >
@@ -2367,7 +2373,7 @@ function BackgroundColorPanel({
             }
             className={`flex-1 rounded-md px-2 py-1.5 text-xs capitalize ${
               slide.background.type === type
-                ? "bg-zinc-700 text-white"
+                ? "bg-white/15 text-white"
                 : "text-zinc-400"
             }`}
           >
@@ -2474,7 +2480,7 @@ function BackgroundImagePanel({
         }
         className={`mb-3 w-full rounded-lg px-3 py-2 text-sm ${
           slide.background.type === "image"
-            ? "bg-violet-600 text-white"
+            ? "bg-[#e8ff47] text-[#0a0a0c]"
             : "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"
         }`}
       >
@@ -2483,7 +2489,7 @@ function BackgroundImagePanel({
       <button
         type="button"
         onClick={() => onBackgroundUploadClick(slide.id)}
-        className="w-full rounded-lg border border-dashed border-zinc-700 px-3 py-3 text-sm text-zinc-300 hover:border-violet-500 hover:text-white"
+        className="w-full rounded-lg border border-dashed border-zinc-700 px-3 py-3 text-sm text-zinc-300 hover:border-[#e8ff47]/55 hover:text-white"
       >
         {slide.background.imageId
           ? "Replace background image"
@@ -2518,7 +2524,7 @@ function BackgroundImagePanel({
             }
             className={`flex-1 rounded-md px-2 py-1.5 text-xs capitalize ${
               slide.background.imageFit === fit
-                ? "bg-zinc-700 text-white"
+                ? "bg-white/15 text-white"
                 : "text-zinc-400"
             }`}
           >
@@ -2593,7 +2599,7 @@ function PropertySection({
   const propertyCopy = useContext(PropertyCopyContext)
   const open = accordion ? accordion.openId === id : false
   return (
-    <div className="border-b border-zinc-800/90">
+    <div className="border-b border-white/[0.06]/90">
       <div className="flex items-center gap-1 py-2.5">
         <button
           type="button"
@@ -2635,7 +2641,7 @@ function PropertySection({
 
 function ActionRow({ children }: { children: ReactNode }) {
   return (
-    <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 border-t border-zinc-800/90 pt-3 text-[11px]">
+    <div className="mt-3 grid grid-cols-2 gap-1.5 border-t border-white/[0.06] pt-3">
       {children}
     </div>
   )
@@ -2664,10 +2670,27 @@ function CopyToSlideControl({
   if (options.length === 0) return null
 
   return (
-    <label className="inline-flex items-center gap-1 text-zinc-400">
+    <label className={`relative ${ACTION_BTN} cursor-pointer`}>
+      <span className="pointer-events-none flex items-center gap-1">
+        Copy to…
+        <svg
+          viewBox="0 0 12 12"
+          className="h-2.5 w-2.5 text-zinc-500"
+          aria-hidden
+        >
+          <path
+            d="M2.5 4.25 6 7.75l3.5-3.5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </span>
       <span className="sr-only">Copy to slide</span>
       <select
-        className="max-w-[7.5rem] cursor-pointer rounded border-0 bg-transparent py-0 text-[11px] text-zinc-400 outline-none hover:text-white"
+        className="absolute inset-0 cursor-pointer opacity-0"
         defaultValue=""
         onChange={(event) => {
           const targetId = event.target.value
@@ -2766,7 +2789,7 @@ function ColorField({
   return (
     <label className="flex-1 text-[11px] text-zinc-500">
       {label}
-      <span className="mt-1 flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900 px-2 py-1.5">
+      <span className="mt-1 flex items-center gap-1.5 rounded-lg border border-white/10 bg-[#0a0a0e] px-2 py-1.5">
         <input
           type="color"
           value={normalizeHexColor(value) ?? "#000000"}
@@ -2941,7 +2964,7 @@ function MultiSelectionProperties({
                   if (!Number.isFinite(next)) return
                   nudgeGroup(next - x, 0)
                 }}
-                className="mt-1 w-full rounded-md border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-xs text-zinc-200"
+                className="mt-1 w-full rounded-md border border-white/10 bg-[#0a0a0e] px-2 py-1.5 text-xs text-zinc-200"
               />
             </label>
             <label className="text-[11px] text-zinc-500">
@@ -2954,7 +2977,7 @@ function MultiSelectionProperties({
                   if (!Number.isFinite(next)) return
                   nudgeGroup(0, next - y)
                 }}
-                className="mt-1 w-full rounded-md border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-xs text-zinc-200"
+                className="mt-1 w-full rounded-md border border-white/10 bg-[#0a0a0e] px-2 py-1.5 text-xs text-zinc-200"
               />
             </label>
           </div>
@@ -2970,7 +2993,7 @@ function MultiSelectionProperties({
                   onClick={() => patchSelectionCommon({ deviceId: id })}
                   className={`rounded-md px-2 py-1.5 text-left text-xs ${
                     framePrimary.deviceId === id
-                      ? "bg-violet-600 text-white"
+                      ? "bg-[#e8ff47] text-[#0a0a0c]"
                       : "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"
                   }`}
                 >
@@ -2990,7 +3013,7 @@ function MultiSelectionProperties({
                 onChange={(event) =>
                   patchSelectionCommon({ font: event.target.value })
                 }
-                className="mt-1 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-2 text-sm text-white outline-none"
+                className="mt-1 w-full rounded-lg border border-white/10 bg-[#0a0a0e] px-2.5 py-2 text-sm text-white outline-none"
               >
                 {FONTS.map((font) => (
                   <option key={font} value={font} style={{ fontFamily: font }}>
@@ -3011,7 +3034,7 @@ function MultiSelectionProperties({
                     if (!Number.isFinite(next)) return
                     patchSelectionCommon({ size: Math.max(1, Math.round(next)) })
                   }}
-                  className="w-full rounded-md border border-zinc-800 bg-zinc-900 px-2 py-1.5 font-mono text-xs text-zinc-200"
+                  className="w-full rounded-md border border-white/10 bg-[#0a0a0e] px-2 py-1.5 font-mono text-xs text-zinc-200"
                 />
                 <span className="shrink-0 text-[10px] text-zinc-600">px</span>
               </div>
@@ -3039,7 +3062,7 @@ function MultiSelectionProperties({
                     weight: Number(event.target.value),
                   })
                 }
-                className="mt-1 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-2 text-sm text-white outline-none"
+                className="mt-1 w-full rounded-lg border border-white/10 bg-[#0a0a0e] px-2.5 py-2 text-sm text-white outline-none"
               >
                 {[400, 500, 600, 700, 800].map((weight) => (
                   <option key={weight} value={weight}>
@@ -3058,7 +3081,7 @@ function MultiSelectionProperties({
                     onClick={() => patchSelectionCommon({ align })}
                     className={`flex-1 rounded-md px-2 py-1.5 text-[11px] capitalize ${
                       textPrimary.align === align
-                        ? "bg-violet-600 text-white"
+                        ? "bg-[#e8ff47] text-[#0a0a0c]"
                         : "text-zinc-400 hover:bg-zinc-800 hover:text-white"
                     }`}
                   >
@@ -3266,7 +3289,7 @@ function MultiSelectionProperties({
                     onClick={() => patchSelectionCommon({ recolor: mode })}
                     className={`flex-1 rounded-md px-2 py-1.5 text-[11px] ${
                       (clipartPrimary.recolor ?? "off") === mode
-                        ? "bg-violet-600 text-white"
+                        ? "bg-[#e8ff47] text-[#0a0a0c]"
                         : "text-zinc-400 hover:bg-zinc-800 hover:text-white"
                     }`}
                   >
@@ -3361,7 +3384,7 @@ function MultiSelectionProperties({
         />
       </PropertyAccordion>
 
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1 pt-3">
+      <ActionRow>
         <PastePropertiesAction
           targetKind={kind}
           onPaste={(patch) => patchSelectionCommon(patch)}
@@ -3369,11 +3392,11 @@ function MultiSelectionProperties({
         <button
           type="button"
           onClick={() => deleteSelection()}
-          className="rounded-md border border-red-900/60 bg-red-950/40 px-2 py-1.5 text-xs text-red-300 hover:bg-red-950/70"
+          className={`${ACTION_BTN_DANGER} col-span-2`}
         >
           Delete {count} layers
         </button>
-      </div>
+      </ActionRow>
     </div>
   )
 
@@ -3446,7 +3469,7 @@ function PositionAlignControls({
               onClick={() => onChange({ x: cell.nx, y: cell.ny })}
               className={`flex h-8 items-center justify-center rounded-md ${
                 active
-                  ? "bg-violet-600 text-white"
+                  ? "bg-[#e8ff47] text-[#0a0a0c]"
                   : "bg-zinc-900 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
               }`}
             >
@@ -3519,7 +3542,7 @@ function FlipControls({
           onClick={() => onChange({ flipH: !h })}
           className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium ${
             h
-              ? "bg-violet-600 text-white"
+              ? "bg-[#e8ff47] text-[#0a0a0c]"
               : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
           }`}
         >
@@ -3531,7 +3554,7 @@ function FlipControls({
           onClick={() => onChange({ flipV: !v })}
           className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium ${
             v
-              ? "bg-violet-600 text-white"
+              ? "bg-[#e8ff47] text-[#0a0a0c]"
               : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
           }`}
         >
@@ -3591,7 +3614,7 @@ function ShadowSection({
               onClick={() => onChange(deviceShadowPreset(id, softSize))}
               className={`flex-1 rounded-md px-2 py-1.5 text-[11px] ${
                 active
-                  ? "bg-violet-600 text-white"
+                  ? "bg-[#e8ff47] text-[#0a0a0c]"
                   : "text-zinc-400 hover:bg-zinc-800 hover:text-white"
               }`}
             >
@@ -3725,7 +3748,7 @@ function RangeValueField({
                 ;(event.target as HTMLInputElement).blur()
               }
             }}
-            className="w-14 rounded border border-zinc-800 bg-zinc-900 px-1.5 py-0.5 text-right font-mono text-[11px] text-zinc-200 outline-none focus:border-violet-500"
+            className="w-14 rounded border border-white/10 bg-[#0a0a0e] px-1.5 py-0.5 text-right font-mono text-[11px] text-zinc-200 outline-none focus:border-[#e8ff47]/50"
           />
           {suffix ? <span className="text-zinc-500">{suffix}</span> : null}
         </span>

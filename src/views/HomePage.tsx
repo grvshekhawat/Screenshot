@@ -14,11 +14,12 @@ import {
 } from "../orientation"
 import type { TemplateRecord } from "../types/cloud"
 import { CatalogThumbnail } from "../components/CatalogThumbnail"
+import {
+  MARKETING_DISPLAY,
+  MarketingHeader,
+} from "../components/MarketingHeader"
 import { TemplateThumbnail } from "../components/TemplateThumbnail"
 import { SiteFooter } from "../components/SiteFooter"
-
-const DISPLAY =
-  '"Outfit", ui-sans-serif, system-ui, sans-serif' as const
 
 function templatePreviewSrc(template: TemplateRecord): string | null {
   if (template.preview_url && !template.preview_url.startsWith("data:")) {
@@ -109,43 +110,7 @@ export function HomePage() {
 
   return (
     <div className="flex min-h-full flex-col bg-[#07070a] text-zinc-100">
-      <header className="relative z-20 border-b border-white/[0.06] bg-[#07070a]/80 backdrop-blur-md">
-        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
-          <Link
-            href="/"
-            className="text-[15px] font-semibold tracking-[-0.02em] text-white"
-            style={{ fontFamily: DISPLAY }}
-          >
-            Screenshot Studio
-          </Link>
-          <nav className="flex items-center gap-1 text-[13px] sm:gap-2">
-            <Link
-              href="/templates"
-              className="hidden rounded-md px-3 py-2 text-zinc-400 transition hover:text-white sm:inline"
-            >
-              Templates
-            </Link>
-            <Link
-              href="/pricing"
-              className="hidden rounded-md px-3 py-2 text-zinc-400 transition hover:text-white sm:inline"
-            >
-              Pricing
-            </Link>
-            <Link
-              href="/blog"
-              className="hidden rounded-md px-3 py-2 text-zinc-400 transition hover:text-white md:inline"
-            >
-              Blog
-            </Link>
-            <Link
-              href={startHref}
-              className="ml-1 rounded-md bg-[#e8ff47] px-3.5 py-2 text-[13px] font-semibold text-[#0a0a0c] transition hover:bg-[#f0ff7a]"
-            >
-              {userId ? "Open app" : "Start free"}
-            </Link>
-          </nav>
-        </div>
-      </header>
+      <MarketingHeader />
 
       {/* Hero — one composition: brand, headline, support, CTAs, product plane */}
       <section className="relative overflow-hidden border-b border-white/[0.06]">
@@ -172,13 +137,13 @@ export function HomePage() {
         <div className="relative mx-auto max-w-6xl px-4 pb-10 pt-14 sm:px-6 sm:pb-14 sm:pt-20">
           <p
             className="ss-fade-up text-center text-[13px] font-medium tracking-[0.18em] text-[#e8ff47]/90 uppercase"
-            style={{ fontFamily: DISPLAY }}
+            style={{ fontFamily: MARKETING_DISPLAY }}
           >
             Screenshot Studio
           </p>
           <h1
             className="ss-fade-up ss-fade-up-delay-1 mx-auto mt-4 max-w-3xl text-center text-[2.35rem] leading-[1.05] font-semibold tracking-[-0.04em] text-white sm:text-5xl md:text-[3.35rem]"
-            style={{ fontFamily: DISPLAY }}
+            style={{ fontFamily: MARKETING_DISPLAY }}
           >
             App Store screenshots that look shipped—not drafted
           </h1>
@@ -249,7 +214,7 @@ export function HomePage() {
             <div key={item.label} className="px-6 py-8 text-center sm:py-10">
               <p
                 className="text-2xl font-semibold tracking-tight text-white sm:text-[1.75rem]"
-                style={{ fontFamily: DISPLAY }}
+                style={{ fontFamily: MARKETING_DISPLAY }}
               >
                 {item.value}
               </p>
@@ -264,7 +229,7 @@ export function HomePage() {
         <div className="max-w-2xl">
           <h2
             className="text-3xl font-semibold tracking-[-0.03em] text-white sm:text-4xl"
-            style={{ fontFamily: DISPLAY }}
+            style={{ fontFamily: MARKETING_DISPLAY }}
           >
             From raw screen to store listing in minutes
           </h2>
@@ -278,13 +243,13 @@ export function HomePage() {
             <li key={step.n}>
               <span
                 className="text-[13px] font-medium tracking-[0.14em] text-[#e8ff47]/80 uppercase"
-                style={{ fontFamily: DISPLAY }}
+                style={{ fontFamily: MARKETING_DISPLAY }}
               >
                 {step.n}
               </span>
               <h3
                 className="mt-3 text-lg font-semibold tracking-tight text-white"
-                style={{ fontFamily: DISPLAY }}
+                style={{ fontFamily: MARKETING_DISPLAY }}
               >
                 {step.title}
               </h3>
@@ -303,7 +268,7 @@ export function HomePage() {
             <div className="max-w-xl">
               <h2
                 className="text-3xl font-semibold tracking-[-0.03em] text-white sm:text-4xl"
-                style={{ fontFamily: DISPLAY }}
+                style={{ fontFamily: MARKETING_DISPLAY }}
               >
                 Templates built for real listings
               </h2>
@@ -374,7 +339,7 @@ export function HomePage() {
         <div className="relative mx-auto max-w-3xl px-4 py-20 text-center sm:px-6 sm:py-28">
           <h2
             className="text-3xl font-semibold tracking-[-0.03em] text-white sm:text-4xl"
-                style={{ fontFamily: DISPLAY }}
+                style={{ fontFamily: MARKETING_DISPLAY }}
           >
             Ship your next listing today
           </h2>

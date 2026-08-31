@@ -119,7 +119,7 @@ export function ComponentMenu({
   return (
     <div
       data-component-menu
-      className="absolute z-[300] flex items-center gap-px rounded-md bg-zinc-950/95 p-0.5 shadow-[0_8px_20px_rgba(0,0,0,0.5)] ring-1 ring-white/12 backdrop-blur-sm"
+      className="absolute z-[300] flex items-center gap-px rounded-md bg-[#07070a]/95 p-0.5 shadow-[0_8px_20px_rgba(0,0,0,0.5)] ring-1 ring-white/12 backdrop-blur-sm"
       style={{ left: anchor.left + offsetLeft, top: anchor.top }}
       onPointerDown={(event) => event.stopPropagation()}
     >
@@ -140,7 +140,7 @@ export function ComponentMenu({
           <CopyToIcon />
         </IconButton>
         {copyOpen ? (
-          <div className="absolute left-1/2 top-full z-40 mt-1 min-w-[7.5rem] -translate-x-1/2 rounded-md bg-zinc-950 p-1 shadow-[0_8px_24px_rgba(0,0,0,0.55)] ring-1 ring-white/12">
+          <div className="absolute left-1/2 top-full z-40 mt-1 min-w-[7.5rem] -translate-x-1/2 rounded-md bg-[#07070a] p-1 shadow-[0_8px_24px_rgba(0,0,0,0.55)] ring-1 ring-white/12">
             {otherSlides.map(({ slide, index }) => {
               const enabled = canCopyComponentToSlide(kind, slide)
               return (
@@ -368,7 +368,7 @@ function IconButton({
       onClick={onClick}
       className={`flex h-6 w-6 items-center justify-center rounded disabled:cursor-not-allowed disabled:opacity-30 ${
         active
-          ? "bg-violet-600 text-white"
+          ? "bg-[#e8ff47] text-[#0a0a0c]"
           : danger
             ? "text-red-400 hover:bg-red-500/15 hover:text-red-300"
             : "text-zinc-300 hover:bg-zinc-800 hover:text-white"

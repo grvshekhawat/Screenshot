@@ -19,7 +19,7 @@ export function EditorOnboarding({
   if (allDone) return null
 
   return (
-    <div className="pointer-events-auto absolute bottom-4 left-4 z-50 w-[min(100%-2rem,300px)] rounded-xl border border-zinc-700/80 bg-zinc-950/95 p-3 shadow-xl shadow-black/40 backdrop-blur-sm">
+    <div className="pointer-events-auto absolute bottom-4 left-4 z-50 w-[min(100%-2rem,300px)] rounded-lg border border-white/10 bg-[#07070a]/95 p-3 shadow-xl shadow-black/40 backdrop-blur-sm">
       <div className="mb-2 flex items-start justify-between gap-2">
         <div>
           <p className="text-xs font-semibold text-zinc-100">
@@ -37,7 +37,7 @@ export function EditorOnboarding({
             event.stopPropagation()
             onDismiss()
           }}
-          className="shrink-0 rounded px-1.5 py-0.5 text-[11px] text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
+          className="shrink-0 rounded px-1.5 py-0.5 text-[11px] text-zinc-500 hover:bg-white/10 hover:text-zinc-200"
         >
           Skip
         </button>
@@ -54,10 +54,10 @@ export function EditorOnboarding({
                 onClick={() => onStepClick(step.id)}
                 className={`flex w-full items-start gap-2.5 rounded-lg px-2 py-2 text-left transition ${
                   isNext
-                    ? "bg-violet-600/20 ring-1 ring-violet-500/50"
+                    ? "bg-[#e8ff47]/10 ring-1 ring-[#e8ff47]/40"
                     : done
-                      ? "opacity-70 hover:bg-zinc-900"
-                      : "hover:bg-zinc-900"
+                      ? "opacity-70 hover:bg-white/[0.04]"
+                      : "hover:bg-white/[0.04]"
                 }`}
               >
                 <span
@@ -65,8 +65,8 @@ export function EditorOnboarding({
                     done
                       ? "bg-emerald-500/20 text-emerald-400"
                       : isNext
-                        ? "bg-violet-600 text-white"
-                        : "bg-zinc-800 text-zinc-400"
+                        ? "bg-[#e8ff47] text-[#0a0a0c]"
+                        : "bg-white/10 text-zinc-400"
                   }`}
                 >
                   {done ? "✓" : index + 1}

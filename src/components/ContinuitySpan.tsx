@@ -249,7 +249,7 @@ export function ContinuityClipartSpan({
                   touchAction: interactive ? "none" : undefined,
                   pointerEvents: interactive ? "auto" : "none",
                   outline: selected
-                    ? `${Math.max(2, artboardWidth * 0.003)}px solid #8b5cf6`
+                    ? `${Math.max(2, artboardWidth * 0.003)}px solid #e8ff47`
                     : undefined,
                   outlineOffset: Math.max(4, artboardWidth * 0.004),
                 }}

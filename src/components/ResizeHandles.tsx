@@ -71,7 +71,7 @@ export function ResizeHandles({
             zIndex: 20,
             pointerEvents: "auto",
             background: "#ffffff",
-            border: `${border}px solid #8b5cf6`,
+            border: `${border}px solid #e8ff47`,
             borderRadius: radius,
             boxSizing: "border-box",
           }}

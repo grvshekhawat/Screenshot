@@ -63,13 +63,13 @@ export function TemplatePreviewImage({
       <img
         src={src}
         alt={`Preview of ${title}`}
-        className="w-full"
+        className="relative w-full"
       />
     )
   }
 
   return (
-    <div className="flex aspect-video items-center justify-center text-sm text-zinc-600">
+    <div className="flex aspect-[16/9] items-center justify-center bg-[#0a0a0e] text-sm text-zinc-600">
       Loading preview…
     </div>
   )

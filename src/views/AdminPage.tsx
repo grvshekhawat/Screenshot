@@ -91,7 +91,7 @@ export function AdminPage() {
   }
   if (ready && !isAdmin) {
     return (
-      <div className="flex min-h-full items-center justify-center bg-[#0c0c10] text-sm text-zinc-400">
+      <div className="flex min-h-full items-center justify-center bg-[#07070a] text-sm text-zinc-400">
         Admin only.{usingLocalBackend ? " Sign in as you@admin.local" : null}
       </div>
     )
@@ -316,9 +316,9 @@ export function AdminPage() {
   }
 
   return (
-    <div className="min-h-full bg-[#0c0c10] text-zinc-100">
-      <header className="flex h-14 items-center justify-between border-b border-zinc-800 px-4">
-        <Link href="/app" className="text-sm font-semibold">
+    <div className="min-h-full bg-[#07070a] text-zinc-100">
+      <header className="flex h-14 items-center justify-between border-b border-white/[0.06] bg-[#07070a]/90 px-4 backdrop-blur-md">
+        <Link href="/app" className="text-sm font-semibold tracking-tight text-white" style={{ fontFamily: '"Outfit", ui-sans-serif, system-ui, sans-serif' }}>
           Admin
         </Link>
         <Link href="/app" className="text-xs text-zinc-400 hover:text-white">
@@ -331,7 +331,7 @@ export function AdminPage() {
           <div
             role="tablist"
             aria-label="Admin sections"
-            className="mt-4 flex gap-1 border-b border-zinc-800"
+            className="mt-4 flex gap-1 border-b border-white/[0.06]"
           >
             {(
               [
@@ -350,7 +350,7 @@ export function AdminPage() {
                   onClick={() => switchTab(item.id)}
                   className={`-mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
                     active
-                      ? "border-violet-500 text-white"
+                      ? "border-[#e8ff47] text-white"
                       : "border-transparent text-zinc-500 hover:text-zinc-300"
                   }`}
                 >
@@ -378,7 +378,7 @@ export function AdminPage() {
 
             <form
               onSubmit={(e) => void onImportFromStore(e)}
-              className="space-y-3 rounded-xl border border-zinc-800 bg-zinc-950 p-4"
+              className="space-y-3 rounded-lg border border-white/[0.08] bg-white/[0.02] p-4"
             >
               <h2 className="text-sm font-semibold text-zinc-200">
                 Import from store
@@ -404,18 +404,18 @@ export function AdminPage() {
                   required
                   disabled={usingLocalBackend || storeBusy}
                   placeholder="https://apps.apple.com/… or https://play.google.com/store/apps/details?id=…"
-                  className="mt-1 block w-full rounded border border-zinc-800 bg-zinc-900 px-2 py-2 text-sm text-white disabled:opacity-50"
+                  className="mt-1 block w-full rounded border border-white/10 bg-[#0a0a0e] px-2 py-2 text-sm text-white disabled:opacity-50"
                 />
               </label>
               <button
                 type="submit"
                 disabled={usingLocalBackend || storeBusy || !storeQuery.trim()}
-                className="rounded-lg bg-violet-600 px-3 py-2 text-xs font-semibold text-white hover:bg-violet-500 disabled:opacity-50"
+                className="rounded-md bg-[#e8ff47] px-3 py-2 text-xs font-semibold text-[#0a0a0c] hover:bg-[#f0ff7a] disabled:opacity-50"
               >
                 {storeBusy ? "Importing & analyzing…" : "Import listing"}
               </button>
               {storeImport ? (
-                <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 py-3 text-sm">
+                <div className="rounded-lg border border-white/10 bg-[#0a0a0e]/60 px-3 py-3 text-sm">
                   <p className="font-medium text-zinc-100">{storeImport.title}</p>
                   <p className="mt-1 text-xs text-zinc-500">
                     {storeImport.store === "apple" ? "App Store" : "Play Store"}{" "}
@@ -443,14 +443,14 @@ export function AdminPage() {
 
             <form
               onSubmit={(e) => void onPublishFromProject(e)}
-              className="space-y-3 rounded-xl border border-zinc-800 bg-zinc-950 p-4"
+              className="space-y-3 rounded-lg border border-white/[0.08] bg-white/[0.02] p-4"
             >
               <label className="block text-xs text-zinc-400">
                 Project to publish
                 <select
                   name="projectId"
                   required
-                  className="mt-1 block w-full rounded border border-zinc-800 bg-zinc-900 px-2 py-2 text-sm text-white"
+                  className="mt-1 block w-full rounded border border-white/10 bg-[#0a0a0e] px-2 py-2 text-sm text-white"
                   defaultValue=""
                 >
                   <option value="" disabled>
@@ -471,7 +471,7 @@ export function AdminPage() {
                   name="title"
                   required
                   placeholder="Clean gradient hero"
-                  className="mt-1 block w-full rounded border border-zinc-800 bg-zinc-900 px-2 py-2 text-sm text-white"
+                  className="mt-1 block w-full rounded border border-white/10 bg-[#0a0a0e] px-2 py-2 text-sm text-white"
                 />
               </label>
               <label className="block text-xs text-zinc-400">
@@ -479,14 +479,14 @@ export function AdminPage() {
                 <input
                   name="description"
                   placeholder="Short blurb for the gallery"
-                  className="mt-1 block w-full rounded border border-zinc-800 bg-zinc-900 px-2 py-2 text-sm text-white"
+                  className="mt-1 block w-full rounded border border-white/10 bg-[#0a0a0e] px-2 py-2 text-sm text-white"
                 />
               </label>
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="submit"
                   disabled={busy || projects.length === 0}
-                  className="rounded-lg bg-violet-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40"
+                  className="rounded-md bg-[#e8ff47] px-3 py-2 text-xs font-semibold text-[#0a0a0c] disabled:opacity-40"
                 >
                   {busy ? "Publishing…" : "Publish as template"}
                 </button>
@@ -505,7 +505,7 @@ export function AdminPage() {
               {templates.map((template) => (
                 <li
                   key={template.id}
-                  className="flex items-center gap-3 rounded-lg border border-zinc-800 px-3 py-2 text-sm"
+                  className="flex items-center gap-3 rounded-lg border border-white/[0.08] px-3 py-2 text-sm"
                 >
                   <TemplateThumbnail
                     template={template}
@@ -559,7 +559,7 @@ export function AdminPage() {
 
             <form
               onSubmit={(e) => void onGenerateClipart(e)}
-              className="space-y-3 rounded-xl border border-zinc-800 bg-zinc-950 p-4"
+              className="space-y-3 rounded-lg border border-white/[0.08] bg-white/[0.02] p-4"
             >
               <h2 className="text-sm font-semibold text-zinc-200">
                 Generate sticker (AI)
@@ -580,7 +580,7 @@ export function AdminPage() {
                   maxLength={500}
                   placeholder="girl walking"
                   disabled={usingLocalBackend || genBusy}
-                  className="mt-1 block w-full rounded border border-zinc-800 bg-zinc-900 px-2 py-2 text-sm text-white disabled:opacity-50"
+                  className="mt-1 block w-full rounded border border-white/10 bg-[#0a0a0e] px-2 py-2 text-sm text-white disabled:opacity-50"
                 />
               </label>
               <div className="flex flex-wrap gap-3">
@@ -591,7 +591,7 @@ export function AdminPage() {
                     onChange={(e) => setGenName(e.target.value)}
                     placeholder="Girl walking"
                     disabled={genBusy}
-                    className="mt-1 block rounded border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-sm text-white"
+                    className="mt-1 block rounded border border-white/10 bg-[#0a0a0e] px-2 py-1.5 text-sm text-white"
                   />
                 </label>
                 <label className="text-xs text-zinc-400">
@@ -600,7 +600,7 @@ export function AdminPage() {
                     value={genCategory}
                     onChange={(e) => setGenCategory(e.target.value)}
                     disabled={genBusy}
-                    className="mt-1 block rounded border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-sm text-white"
+                    className="mt-1 block rounded border border-white/10 bg-[#0a0a0e] px-2 py-1.5 text-sm text-white"
                   />
                 </label>
               </div>
@@ -608,7 +608,7 @@ export function AdminPage() {
                 <button
                   type="submit"
                   disabled={usingLocalBackend || genBusy || !genPrompt.trim()}
-                  className="rounded-lg bg-violet-600 px-3 py-2 text-xs font-semibold text-white hover:bg-violet-500 disabled:opacity-50"
+                  className="rounded-md bg-[#e8ff47] px-3 py-2 text-xs font-semibold text-[#0a0a0c] hover:bg-[#f0ff7a] disabled:opacity-50"
                 >
                   {genBusy ? "Generating…" : "Generate"}
                 </button>
@@ -638,7 +638,7 @@ export function AdminPage() {
               </div>
               {genPreviewBase64 ? (
                 <div
-                  className="mt-2 inline-flex rounded-lg border border-zinc-800 p-3"
+                  className="mt-2 inline-flex rounded-lg border border-white/[0.08] p-3"
                   style={{
                     backgroundImage:
                       "linear-gradient(45deg,#3f3f46 25%,transparent 25%),linear-gradient(-45deg,#3f3f46 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#3f3f46 75%),linear-gradient(-45deg,transparent 75%,#3f3f46 75%)",
@@ -659,13 +659,13 @@ export function AdminPage() {
 
             <form
               onSubmit={(e) => void onClipartUpload(e)}
-              className="flex flex-wrap items-end gap-2 rounded-xl border border-zinc-800 bg-zinc-950 p-4"
+              className="flex flex-wrap items-end gap-2 rounded-lg border border-white/[0.08] bg-white/[0.02] p-4"
             >
               <label className="text-xs text-zinc-400">
                 Name
                 <input
                   name="name"
-                  className="mt-1 block rounded border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-sm text-white"
+                  className="mt-1 block rounded border border-white/10 bg-[#0a0a0e] px-2 py-1.5 text-sm text-white"
                 />
               </label>
               <label className="text-xs text-zinc-400">
@@ -673,7 +673,7 @@ export function AdminPage() {
                 <input
                   name="category"
                   defaultValue="general"
-                  className="mt-1 block rounded border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-sm text-white"
+                  className="mt-1 block rounded border border-white/10 bg-[#0a0a0e] px-2 py-1.5 text-sm text-white"
                 />
               </label>
               <label className="text-xs text-zinc-400">
@@ -697,7 +697,7 @@ export function AdminPage() {
               {cliparts.map((clipart) => (
                 <div
                   key={clipart.id}
-                  className="rounded-lg border border-zinc-800 p-2 text-center"
+                  className="rounded-lg border border-white/[0.08] p-2 text-center"
                 >
                   {clipart.url ? (
                     <img

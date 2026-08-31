@@ -22,7 +22,7 @@ const mdxComponents = {
       return (
         <Link
           href={href}
-          className="text-violet-300 underline-offset-2 hover:underline"
+          className="text-[#e8ff47]/85 underline-offset-2 hover:underline"
         >
           {props.children}
         </Link>
@@ -31,29 +31,37 @@ const mdxComponents = {
     return (
       <a
         {...props}
-        className="text-violet-300 underline-offset-2 hover:underline"
+        className="text-[#e8ff47]/85 underline-offset-2 hover:underline"
         rel="noreferrer"
       />
     )
   },
   h2: (props: HTMLAttributes<HTMLHeadingElement>) => (
-    <h2 className="mt-10 text-xl font-semibold text-zinc-100" {...props} />
+    <h2
+      className="mt-10 text-xl font-semibold tracking-tight text-zinc-100"
+      style={{ fontFamily: '"Outfit", ui-sans-serif, system-ui, sans-serif' }}
+      {...props}
+    />
   ),
   h3: (props: HTMLAttributes<HTMLHeadingElement>) => (
-    <h3 className="mt-8 text-lg font-semibold text-zinc-100" {...props} />
+    <h3
+      className="mt-8 text-lg font-semibold tracking-tight text-zinc-100"
+      style={{ fontFamily: '"Outfit", ui-sans-serif, system-ui, sans-serif' }}
+      {...props}
+    />
   ),
   p: (props: HTMLAttributes<HTMLParagraphElement>) => (
-    <p className="mt-4 text-sm leading-relaxed text-zinc-400" {...props} />
+    <p className="mt-4 text-[15px] leading-relaxed text-zinc-400" {...props} />
   ),
   ul: (props: HTMLAttributes<HTMLUListElement>) => (
     <ul
-      className="mt-4 list-disc space-y-2 pl-5 text-sm text-zinc-400"
+      className="mt-4 list-disc space-y-2 pl-5 text-[15px] text-zinc-400"
       {...props}
     />
   ),
   ol: (props: OlHTMLAttributes<HTMLOListElement>) => (
     <ol
-      className="mt-4 list-decimal space-y-2 pl-5 text-sm text-zinc-400"
+      className="mt-4 list-decimal space-y-2 pl-5 text-[15px] text-zinc-400"
       {...props}
     />
   ),
@@ -67,12 +75,12 @@ const mdxComponents = {
   ),
   th: (props: HTMLAttributes<HTMLTableCellElement>) => (
     <th
-      className="border-b border-zinc-700 px-3 py-2 font-semibold text-zinc-200"
+      className="border-b border-white/15 px-3 py-2 font-semibold text-zinc-200"
       {...props}
     />
   ),
   td: (props: HTMLAttributes<HTMLTableCellElement>) => (
-    <td className="border-b border-zinc-800 px-3 py-2" {...props} />
+    <td className="border-b border-white/[0.06] px-3 py-2" {...props} />
   ),
   strong: (props: HTMLAttributes<HTMLElement>) => (
     <strong className="font-semibold text-zinc-200" {...props} />
@@ -117,27 +125,34 @@ export default async function BlogPostPage({ params }: Props) {
   }
 
   return (
-    <div className="flex min-h-full flex-col bg-[#0c0c10] text-zinc-100">
+    <div className="flex min-h-full flex-col bg-[#07070a] text-zinc-100">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
       <MarketingHeader active="blog" />
-      <article className="mx-auto w-full max-w-2xl flex-1 px-4 py-12">
-        <p className="text-xs text-zinc-500">
-          <Link href="/blog" className="hover:text-zinc-300">
+      <article className="relative mx-auto w-full max-w-2xl flex-1 px-4 py-12 sm:px-6 sm:py-14">
+        <p className="text-[12px] text-zinc-500">
+          <Link href="/blog" className="transition hover:text-zinc-300">
             Blog
           </Link>
-          <span className="mx-2">·</span>
+          <span className="mx-2 text-zinc-700">·</span>
           <time dateTime={post.date}>{post.date}</time>
-          <span className="mx-2">·</span>
+          <span className="mx-2 text-zinc-700">·</span>
           {post.readingMinutes} min read
         </p>
-        <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
+        <h1
+          className="mt-4 text-3xl font-semibold tracking-[-0.035em] text-white sm:text-4xl sm:leading-[1.15]"
+          style={{
+            fontFamily: '"Outfit", ui-sans-serif, system-ui, sans-serif',
+          }}
+        >
           {post.title}
         </h1>
-        <p className="mt-4 text-base text-zinc-400">{post.description}</p>
-        <div className="mt-8 border-t border-zinc-800 pt-2">
+        <p className="mt-4 text-[15px] leading-relaxed text-zinc-400">
+          {post.description}
+        </p>
+        <div className="mt-8 border-t border-white/[0.06] pt-2">
           <MDXRemote source={post.content} components={mdxComponents} />
         </div>
       </article>

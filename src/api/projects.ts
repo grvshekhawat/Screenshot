@@ -1,5 +1,5 @@
 import { get, set, del } from "idb-keyval"
-import { isSupabaseConfigured } from "../config"
+import { isSupabaseConfigured, MAX_CLOUD_PROJECTS } from "../config"
 import { assetIdsFromProject } from "../assets"
 import { createSampleProject, normalizeProject } from "../constants"
 import { blobUrlToDataUrl } from "../export-canvas"
@@ -317,7 +317,15 @@ export async function createProject(
     })
     .select("*")
     .single()
-  if (error) throw error
+  if (error) {
+    const msg = error.message || ""
+    if (/project limit/i.test(msg)) {
+      throw new Error(
+        `Project limit reached (${MAX_CLOUD_PROJECTS}). Delete a project to create another.`,
+      )
+    }
+    throw error
+  }
   const record = mapProject(data)
   const thumbnail_path = await buildProjectThumbnailPath(record.id, project)
   if (!thumbnail_path) return record

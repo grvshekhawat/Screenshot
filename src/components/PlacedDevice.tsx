@@ -75,7 +75,7 @@ export function PlacedDevice({
         pointerEvents: interactive ? "auto" : "none",
         outline:
           !forExport && selected
-            ? `${Math.max(3, width * 0.004)}px solid #8b5cf6`
+            ? `${Math.max(3, width * 0.004)}px solid #e8ff47`
             : undefined,
         outlineOffset: Math.max(4, width * 0.006),
       }}

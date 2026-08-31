@@ -1,4 +1,7 @@
-import Link from "next/link"
+import {
+  MARKETING_DISPLAY,
+  MarketingHeader,
+} from "../components/MarketingHeader"
 import { SiteFooter, SUPPORT_EMAIL } from "../components/SiteFooter"
 
 const EFFECTIVE = "August 29, 2026"
@@ -77,9 +80,7 @@ const copy: Record<
       },
       {
         heading: "Contact",
-        body: [
-          `Questions about these Terms: ${SUPPORT_EMAIL}`,
-        ],
+        body: [`Questions about these Terms: ${SUPPORT_EMAIL}`],
       },
     ],
   },
@@ -164,31 +165,28 @@ const copy: Record<
 export function LegalPage({ doc }: { doc: Doc }) {
   const page = copy[doc]
   return (
-    <div className="flex min-h-full flex-col bg-[#0c0c10] text-zinc-100">
-      <header className="flex h-14 items-center justify-between border-b border-zinc-800 px-4">
-        <Link href="/" className="text-sm font-semibold">
-          Screenshot Studio
-        </Link>
-        <div className="flex gap-3 text-sm">
-          <Link href="/pricing" className="text-zinc-400 hover:text-white">
-            Pricing
-          </Link>
-          <Link href="/" className="text-zinc-400 hover:text-white">
-            Home
-          </Link>
-        </div>
-      </header>
-
-      <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-10">
-        <p className="text-xs text-zinc-500">Effective {EFFECTIVE}</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight">{page.title}</h1>
-        <div className="mt-8 space-y-8">
+    <div className="flex min-h-full flex-col bg-[#07070a] text-zinc-100">
+      <MarketingHeader />
+      <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-12 sm:px-6 sm:py-14">
+        <p className="text-[12px] tracking-wide text-zinc-500">
+          Effective {EFFECTIVE}
+        </p>
+        <h1
+          className="mt-3 text-3xl font-semibold tracking-[-0.03em] text-white sm:text-4xl"
+          style={{ fontFamily: MARKETING_DISPLAY }}
+        >
+          {page.title}
+        </h1>
+        <div className="mt-10 space-y-9">
           {page.sections.map((section) => (
             <section key={section.heading}>
-              <h2 className="text-lg font-semibold text-zinc-100">
+              <h2
+                className="text-lg font-semibold tracking-tight text-zinc-100"
+                style={{ fontFamily: MARKETING_DISPLAY }}
+              >
                 {section.heading}
               </h2>
-              <div className="mt-2 space-y-3 text-sm leading-relaxed text-zinc-400">
+              <div className="mt-2.5 space-y-3 text-[14px] leading-relaxed text-zinc-400">
                 {section.body.map((paragraph) => (
                   <p key={paragraph.slice(0, 48)}>{paragraph}</p>
                 ))}
@@ -196,13 +194,12 @@ export function LegalPage({ doc }: { doc: Doc }) {
             </section>
           ))}
         </div>
-        <p className="mt-10 text-xs text-zinc-600">
+        <p className="mt-12 border-t border-white/[0.06] pt-6 text-xs text-zinc-600">
           These documents are provided for transparency and are not a substitute
           for legal advice. If you need counsel for your jurisdiction, consult a
           lawyer.
         </p>
       </main>
-
       <SiteFooter />
     </div>
   )

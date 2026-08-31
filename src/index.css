@@ -7,7 +7,7 @@ body {
 }
 
 body {
-  background: #09090b;
+  background: #07070a;
   color: #fafafa;
   font-family: Inter, system-ui, sans-serif;
 }
@@ -45,11 +45,11 @@ input[type="range"].range-thin:focus {
 }
 
 input[type="range"].range-thin:focus-visible::-webkit-slider-thumb {
-  box-shadow: 0 0 0 2px #09090b, 0 0 0 3.5px rgb(167 139 250 / 0.55);
+  box-shadow: 0 0 0 2px #07070a, 0 0 0 3.5px rgb(232 255 71 / 0.45);
 }
 
 input[type="range"].range-thin:focus-visible::-moz-range-thumb {
-  box-shadow: 0 0 0 2px #09090b, 0 0 0 3.5px rgb(167 139 250 / 0.55);
+  box-shadow: 0 0 0 2px #07070a, 0 0 0 3.5px rgb(232 255 71 / 0.45);
 }
 
 input[type="range"].range-thin::-webkit-slider-runnable-track {
@@ -57,8 +57,8 @@ input[type="range"].range-thin::-webkit-slider-runnable-track {
   border-radius: 9999px;
   background: linear-gradient(
     to right,
-    #8b5cf6 0%,
-    #8b5cf6 var(--range-fill),
+    #e8ff47 0%,
+    #e8ff47 var(--range-fill),
     #3f3f46 var(--range-fill),
     #3f3f46 100%
   );
@@ -72,7 +72,7 @@ input[type="range"].range-thin::-webkit-slider-thumb {
   margin-top: -4.5px;
   border: none;
   border-radius: 9999px;
-  background: #a78bfa;
+  background: #e8ff47;
   box-shadow: 0 0 0 1px rgb(24 24 27);
 }
 
@@ -87,7 +87,7 @@ input[type="range"].range-thin::-moz-range-progress {
   height: 2px;
   border: none;
   border-radius: 9999px;
-  background: #8b5cf6;
+  background: #e8ff47;
 }
 
 input[type="range"].range-thin::-moz-range-thumb {
@@ -95,6 +95,6 @@ input[type="range"].range-thin::-moz-range-thumb {
   height: 11px;
   border: none;
   border-radius: 9999px;
-  background: #a78bfa;
+  background: #e8ff47;
   box-shadow: 0 0 0 1px rgb(24 24 27);
 }

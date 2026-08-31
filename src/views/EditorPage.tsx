@@ -25,7 +25,7 @@ function EditorChrome() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex h-9 shrink-0 items-center gap-3 border-b border-zinc-900 bg-zinc-950 px-3 text-[11px] text-zinc-500">
+      <div className="flex h-9 shrink-0 items-center gap-3 border-b border-white/[0.06] bg-[#07070a] px-3 text-[11px] text-zinc-500">
         <button
           type="button"
           disabled={leaving || saveState === "saving"}
@@ -58,7 +58,7 @@ export function EditorPage() {
 
   if (!ready || !userId || !projectId) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-zinc-400">
+      <div className="flex h-full items-center justify-center bg-[#07070a] text-sm text-zinc-400">
         Loading…
       </div>
     )

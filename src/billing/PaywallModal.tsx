@@ -16,9 +16,16 @@ export function PaywallModal({
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-      <div className="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-950 p-6 shadow-2xl">
-        <h2 className="text-lg font-semibold text-white">Unlock clean exports</h2>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-md rounded-lg border border-white/[0.1] bg-[#0a0a0e] p-6 shadow-[0_32px_80px_-24px_rgba(0,0,0,0.9)]">
+        <h2
+          className="text-lg font-semibold tracking-tight text-white"
+          style={{
+            fontFamily: '"Outfit", ui-sans-serif, system-ui, sans-serif',
+          }}
+        >
+          Unlock clean exports
+        </h2>
         <p className="mt-2 text-sm leading-relaxed text-zinc-400">
           Free includes watermarked PNG previews. Pro is{" "}
           <span className="font-medium text-zinc-200">$1.99/month</span> for
@@ -31,7 +38,7 @@ export function PaywallModal({
             type="button"
             disabled={busy}
             onClick={() => onChoose("stripe")}
-            className="rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-violet-500 disabled:opacity-50"
+            className="rounded-md bg-[#e8ff47] px-4 py-2.5 text-sm font-semibold text-[#0a0a0c] transition hover:bg-[#f0ff7a] disabled:opacity-50"
           >
             {busy ? "Starting…" : "Subscribe with Stripe — $1.99/mo"}
           </button>
@@ -39,7 +46,7 @@ export function PaywallModal({
             type="button"
             disabled={busy}
             onClick={onClose}
-            className="rounded-lg px-4 py-2 text-sm text-zinc-400 hover:text-white"
+            className="rounded-md px-4 py-2 text-sm text-zinc-500 transition hover:text-white"
           >
             Not now
           </button>

@@ -739,7 +739,7 @@ export function DesignCanvas({
   }
 
   return (
-    <section className="relative flex h-full min-h-0 min-w-0 flex-col bg-[#0c0c10]">
+    <section className="relative flex h-full min-h-0 min-w-0 flex-col bg-[#07070a]">
       <div
         ref={viewportRef}
         className={`flex min-h-0 flex-1 overflow-auto px-6 ${
@@ -798,7 +798,7 @@ export function DesignCanvas({
                   <div
                     key={slide.id}
                     className={`group relative flex shrink-0 flex-col items-center gap-2 ${
-                      isDropTarget ? "rounded-lg ring-2 ring-violet-500/70" : ""
+                      isDropTarget ? "rounded-lg ring-2 ring-[#e8ff47]/70" : ""
                     }`}
                     onContextMenu={(event) => event.preventDefault()}
                     onDragOver={(event) => {
@@ -836,7 +836,7 @@ export function DesignCanvas({
                           type="button"
                           title="Copy slide"
                           aria-label="Copy slide"
-                          className="flex h-6 w-6 items-center justify-center rounded-md bg-zinc-900 text-zinc-300 ring-1 ring-white/10 hover:bg-zinc-800 hover:text-white"
+                          className="flex h-6 w-6 items-center justify-center rounded-md bg-zinc-900 text-zinc-300 ring-1 ring-white/10 hover:bg-white/[0.08] hover:text-white"
                           onClick={(event) => {
                             event.stopPropagation()
                             duplicateSlide(slide.id)
@@ -893,7 +893,7 @@ export function DesignCanvas({
                         data-preview-frame
                         className={`relative overflow-clip rounded-sm shadow-[0_0_0_1px_rgba(255,255,255,0.06),0_20px_50px_rgba(0,0,0,0.45)] ${
                           selected
-                            ? "ring-2 ring-violet-500 ring-offset-2 ring-offset-[#0c0c10]"
+                            ? "ring-2 ring-[#e8ff47] ring-offset-2 ring-offset-[#07070a]"
                             : "ring-1 ring-zinc-800"
                         }`}
                         style={{
@@ -1059,7 +1059,7 @@ export function DesignCanvas({
                           ⋮⋮ {String(index + 1).padStart(2, "0")}
                         </span>
                       </div>
-                      <div className="pointer-events-none absolute inset-0 flex items-center justify-center gap-1 bg-[#0c0c10]/opacity-0 transition-opacity duration-75 group-hover:pointer-events-auto group-hover:opacity-100">
+                      <div className="pointer-events-none absolute inset-0 flex items-center justify-center gap-1 bg-[#07070a]/opacity-0 transition-opacity duration-75 group-hover:pointer-events-auto group-hover:opacity-100">
                         <button
                           type="button"
                           title="Move left"
@@ -1301,7 +1301,7 @@ export function DesignCanvas({
             <div className="flex items-center gap-2">
               <div
                 data-canvas-tools
-                className="flex items-center gap-0.5 rounded-md border border-zinc-800 bg-zinc-900 p-0.5"
+                className="flex items-center gap-0.5 rounded-md border border-white/10 bg-[#0a0a0e] p-0.5"
               >
                 <button
                   type="button"
@@ -1311,8 +1311,8 @@ export function DesignCanvas({
                   onClick={() => setCanvasTool("select")}
                   className={`flex h-7 w-7 items-center justify-center rounded ${
                     canvasTool === "select"
-                      ? "bg-zinc-700 text-white"
-                      : "text-zinc-400 hover:bg-zinc-800 hover:text-white"
+                      ? "bg-white/15 text-white"
+                      : "text-zinc-400 hover:bg-white/[0.08] hover:text-white"
                   }`}
                 >
                   <svg
@@ -1333,8 +1333,8 @@ export function DesignCanvas({
                   onClick={() => setCanvasTool("hand")}
                   className={`flex h-7 w-7 items-center justify-center rounded ${
                     canvasTool === "hand" || spacePan
-                      ? "bg-zinc-700 text-white"
-                      : "text-zinc-400 hover:bg-zinc-800 hover:text-white"
+                      ? "bg-white/15 text-white"
+                      : "text-zinc-400 hover:bg-white/[0.08] hover:text-white"
                   }`}
                 >
                   <svg
@@ -1358,7 +1358,7 @@ export function DesignCanvas({
               </div>
               <div
                 data-canvas-zoom
-                className="flex items-center gap-0.5 rounded-md border border-zinc-800 bg-zinc-900 p-0.5"
+                className="flex items-center gap-0.5 rounded-md border border-white/10 bg-[#0a0a0e] p-0.5"
               >
                 <button
                   type="button"
@@ -1366,7 +1366,7 @@ export function DesignCanvas({
                   aria-label="Zoom out"
                   disabled={displayZoomPercent <= minZoomPercent}
                   onClick={() => bumpZoom(-1)}
-                  className="flex h-7 w-7 items-center justify-center rounded text-zinc-300 hover:bg-zinc-800 hover:text-white disabled:opacity-30"
+                  className="flex h-7 w-7 items-center justify-center rounded text-zinc-300 hover:bg-white/[0.08] hover:text-white disabled:opacity-30"
                 >
                   −
                 </button>
@@ -1386,7 +1386,7 @@ export function DesignCanvas({
                       fitToView()
                     }
                   }}
-                  className="min-w-[3.25rem] rounded px-1.5 py-1 text-center font-mono text-[11px] text-zinc-300 hover:bg-zinc-800 hover:text-white"
+                  className="min-w-[3.25rem] rounded px-1.5 py-1 text-center font-mono text-[11px] text-zinc-300 hover:bg-white/[0.08] hover:text-white"
                 >
                   {displayZoomPercent}%
                 </button>
@@ -1396,7 +1396,7 @@ export function DesignCanvas({
                   aria-label="Zoom in"
                   disabled={displayZoomPercent >= maxZoomPercent}
                   onClick={() => bumpZoom(1)}
-                  className="flex h-7 w-7 items-center justify-center rounded text-zinc-300 hover:bg-zinc-800 hover:text-white disabled:opacity-30"
+                  className="flex h-7 w-7 items-center justify-center rounded text-zinc-300 hover:bg-white/[0.08] hover:text-white disabled:opacity-30"
                 >
                   +
                 </button>
@@ -1405,9 +1405,9 @@ export function DesignCanvas({
                   type="button"
                   title="Fit page height"
                   onClick={() => fitToView()}
-                  className={`rounded px-2 py-1 text-[11px] hover:bg-zinc-800 hover:text-white ${
+                  className={`rounded px-2 py-1 text-[11px] hover:bg-white/[0.08] hover:text-white ${
                     zoomMode === "fit"
-                      ? "bg-zinc-700 text-white"
+                      ? "bg-white/15 text-white"
                       : "text-zinc-400"
                   }`}
                 >

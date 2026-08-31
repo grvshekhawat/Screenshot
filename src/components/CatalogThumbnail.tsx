@@ -36,7 +36,7 @@ export function CatalogThumbnail({
           decoding="async"
         />
       ) : (
-        <div className="h-full w-full bg-gradient-to-br from-violet-600/35 via-zinc-900 to-zinc-950" />
+        <div className="h-full w-full bg-gradient-to-br from-sky-900/40 via-zinc-900 to-[#07070a]" />
       )}
     </div>
   )

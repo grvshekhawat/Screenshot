@@ -61,8 +61,8 @@ export function ScreenshotDropZone({
       }}
       className={`w-full rounded-lg border border-dashed px-3 py-3 text-sm transition-colors ${
         over
-          ? "border-violet-400 bg-violet-500/15 text-white"
-          : "border-zinc-700 text-zinc-300 hover:border-violet-500 hover:text-white"
+          ? "border-[#e8ff47]/70 bg-[#e8ff47]/10 text-white"
+          : "border-zinc-700 text-zinc-300 hover:border-[#e8ff47]/55 hover:text-white"
       } ${className}`}
     >
       <span className="block font-medium">{label}</span>

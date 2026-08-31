@@ -570,7 +570,7 @@ function PlacedText({
         isolation: "isolate",
         outline:
           !forExport && (selected || editing)
-            ? `${Math.max(2, width * 0.003)}px solid #8b5cf6`
+            ? `${Math.max(2, width * 0.003)}px solid #e8ff47`
             : undefined,
         outlineOffset: Math.max(4, width * 0.004),
         pointerEvents: interactive ? "auto" : "none",

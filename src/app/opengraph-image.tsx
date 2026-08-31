@@ -16,13 +16,20 @@ export default function OgImage() {
           justifyContent: "center",
           padding: 72,
           background:
-            "linear-gradient(145deg, #0c0c10 0%, #1a1028 55%, #0c0c10 100%)",
+            "linear-gradient(145deg, #07070a 0%, #0c1820 45%, #121408 100%)",
           color: "#fafafa",
-          fontFamily: "Inter, system-ui, sans-serif",
+          fontFamily: "system-ui, sans-serif",
         }}
       >
-        <div style={{ fontSize: 28, color: "#a78bfa", letterSpacing: 2 }}>
-          SCREENSHOT.DESIGN
+        <div
+          style={{
+            fontSize: 22,
+            color: "#e8ff47",
+            letterSpacing: 3,
+            fontWeight: 600,
+          }}
+        >
+          SCREENSHOT STUDIO
         </div>
         <div
           style={{
@@ -30,12 +37,18 @@ export default function OgImage() {
             fontSize: 64,
             fontWeight: 700,
             lineHeight: 1.1,
+            letterSpacing: -1.5,
           }}
         >
           App Store &amp; Play screenshots
         </div>
         <div
-          style={{ marginTop: 20, fontSize: 28, color: "#a1a1aa", maxWidth: 800 }}
+          style={{
+            marginTop: 20,
+            fontSize: 28,
+            color: "#a1a1aa",
+            maxWidth: 800,
+          }}
         >
           Templates, device frames, multi-size ZIP exports
         </div>

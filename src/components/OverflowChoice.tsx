@@ -32,7 +32,7 @@ export function OverflowChoice({
           onClick={onCut}
           className={`flex-1 rounded-md px-2 py-1.5 text-xs ${
             mode === "cut"
-              ? "bg-zinc-700 text-white"
+              ? "bg-white/15 text-white"
               : "text-zinc-400 hover:text-white"
           }`}
         >
@@ -43,7 +43,7 @@ export function OverflowChoice({
           onClick={onContinue}
           className={`flex-1 rounded-md px-2 py-1.5 text-xs ${
             mode === "continue"
-              ? "bg-violet-600 text-white"
+              ? "bg-[#e8ff47] text-[#0a0a0c]"
               : "text-zinc-400 hover:text-white"
           }`}
         >
