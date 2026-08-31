@@ -67,6 +67,8 @@ export type Frame = {
   deviceId: DeviceId
   /** Device chassis / bezel color (hex). Defaults to the model’s finish. */
   color: string
+  /** Chassis depth as a % of the model’s own thickness (30–250, 100 = stock). */
+  thickness: number
   screenshotId: string | null
   screenshotIdB: string | null
   screenMode: FrameScreenMode

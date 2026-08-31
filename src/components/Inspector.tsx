@@ -27,7 +27,10 @@ import {
   maxFittingDeviceScale,
 } from "../constants"
 import {
+  MAX_CHASSIS_THICKNESS,
+  MIN_CHASSIS_THICKNESS,
   deviceColorPresetsFor,
+  normalizeChassisThickness,
   normalizeFrameColor,
 } from "../device-chrome"
 import { storeTargetsForOrientation } from "../orientation"
@@ -1263,6 +1266,18 @@ function PhoneProperties({
             updateFrame(slide.id, frame.id, {
               scale: (value / 100) * fitScale,
             })
+          }
+        />
+        <RangeValueField
+          label="Thickness"
+          suffix="%"
+          min={MIN_CHASSIS_THICKNESS}
+          max={MAX_CHASSIS_THICKNESS}
+          step={5}
+          value={normalizeChassisThickness(frame.thickness)}
+          copyKey="thickness"
+          onChange={(value) =>
+            updateFrame(slide.id, frame.id, { thickness: value })
           }
         />
         <RangeValueField
@@ -3195,6 +3210,17 @@ function MultiSelectionProperties({
                   scale: (value / 100) * fitScale,
                 })
               }
+            />
+          ) : null}
+          {framePrimary ? (
+            <RangeValueField
+              label="Thickness"
+              suffix="%"
+              min={MIN_CHASSIS_THICKNESS}
+              max={MAX_CHASSIS_THICKNESS}
+              step={5}
+              value={normalizeChassisThickness(framePrimary.thickness)}
+              onChange={(value) => patchSelectionCommon({ thickness: value })}
             />
           ) : null}
           {clipartPrimary ? (

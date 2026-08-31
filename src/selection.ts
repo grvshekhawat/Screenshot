@@ -25,6 +25,7 @@ export type SelectionPatch = {
   shadowColor?: string
   /** Frame */
   scale?: number
+  thickness?: number
   rotationX?: number
   rotationY?: number
   deviceId?: Frame["deviceId"]
@@ -73,6 +74,7 @@ const UNIVERSAL_KEYS = [
 const FRAME_KEYS = [
   ...UNIVERSAL_KEYS,
   "scale",
+  "thickness",
   "deviceId",
   "color",
 ] as const
@@ -134,6 +136,7 @@ export const SECTION_KEYS: Record<
     "flipH",
     "flipV",
     "scale",
+    "thickness",
     "width",
     "height",
     "size",

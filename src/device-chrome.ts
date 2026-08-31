@@ -50,6 +50,38 @@ export function deviceColorPresetsFor(deviceId: DeviceId): DeviceColorPreset[] {
   return DEVICE_COLOR_PRESETS[deviceChromeKind(deviceId)]
 }
 
+/** Chassis depth as a fraction of device width — tablets are far thinner than phones. */
+const CHASSIS_DEPTH_RATIO: Record<DeviceChromeKind, number> = {
+  island: 0.075,
+  punch: 0.075,
+  tablet: 0.028,
+}
+
+/** frame.thickness is a percentage of the model's own depth (100 = stock). */
+export const DEFAULT_CHASSIS_THICKNESS = 100
+export const MIN_CHASSIS_THICKNESS = 30
+export const MAX_CHASSIS_THICKNESS = 250
+
+export function normalizeChassisThickness(raw: unknown): number {
+  if (typeof raw !== "number" || !Number.isFinite(raw)) {
+    return DEFAULT_CHASSIS_THICKNESS
+  }
+  return Math.min(
+    MAX_CHASSIS_THICKNESS,
+    Math.max(MIN_CHASSIS_THICKNESS, Math.round(raw)),
+  )
+}
+
+/** Fake chassis depth in px for the tilt illusion. */
+export function chassisDepth(
+  width: number,
+  kind: DeviceChromeKind,
+  thickness?: number,
+): number {
+  const pct = normalizeChassisThickness(thickness)
+  return Math.max(2, width * CHASSIS_DEPTH_RATIO[kind] * (pct / 100))
+}
+
 export function normalizeFrameColor(
   raw: unknown,
   fallback = "#1c1c1e",
@@ -99,11 +131,21 @@ function luminance([r, g, b]: Rgb): number {
   return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
 }
 
+/** Mix frame finish toward black (t=0 same, t=1 black). */
+export function shadeFrameColor(hex: string, t: number): string {
+  const base = hexToRgb(hex)
+  return rgbToHex(mix(base, [0, 0, 0], Math.min(1, Math.max(0, t))))
+}
+
+/** Mix frame finish toward white. */
+export function tintFrameColor(hex: string, t: number): string {
+  const base = hexToRgb(hex)
+  return rgbToHex(mix(base, [255, 255, 255], Math.min(1, Math.max(0, t))))
+}
+
 export type DeviceChromeStyles = {
   bodyBackground: string
   bodyBoxShadow: string
-  buttonLight: string
-  buttonDark: string
 }
 
 /** Metallic chassis gradients / shadows derived from a base finish color.
@@ -159,15 +201,8 @@ export function deviceChromeStyles(
           `
       : `inset 0 0 0 ${Math.max(1, width * 0.003)}px ${highlight}, inset 0 0 0 ${lip}px rgba(0,0,0,0.4)`
 
-  const buttonLight = rgbToHex(
-    light ? mix(base, [255, 255, 255], 0.2) : mix(base, [255, 255, 255], 0.55),
-  )
-  const buttonDark = rgbToHex(mix(base, [0, 0, 0], light ? 0.35 : 0.55))
-
   return {
     bodyBackground,
     bodyBoxShadow,
-    buttonLight,
-    buttonDark,
   }
 }

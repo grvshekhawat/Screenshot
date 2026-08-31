@@ -98,6 +98,9 @@ export function PlacedDevice({
         shadowOffsetY={frame.shadowOffsetY ?? 8}
         shadowOpacity={frame.shadowOpacity ?? 55}
         shadowColor={frame.shadowColor ?? "#000000"}
+        rotationX={frame.rotationX}
+        rotationY={frame.rotationY}
+        thickness={frame.thickness}
         onUploadClick={(slot) => onUploadClick?.(frame.id, slot)}
       />
       {!forExport && selected && interactive && onResizeStart ? (

@@ -11,7 +11,10 @@ import type {
   TemplateId,
   TextLayer,
 } from "./types"
-import { normalizeFrameColor } from "./device-chrome"
+import {
+  normalizeChassisThickness,
+  normalizeFrameColor,
+} from "./device-chrome"
 import { normalizeGroups } from "./groups"
 import { normalizeFlipFlag, normalizeTilt } from "./layer-flip"
 
@@ -614,6 +617,7 @@ export function createFrame(
     ...rest,
     deviceId: resolvedDeviceId,
     color: normalizeFrameColor(rest.color, defaultColor),
+    thickness: normalizeChassisThickness(rest.thickness),
     screenshotId,
     screenshotIdB,
     screenMode,
