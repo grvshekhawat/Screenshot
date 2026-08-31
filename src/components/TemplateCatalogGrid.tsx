@@ -153,7 +153,7 @@ export function TemplateCatalogGrid({ initial }: Props) {
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={template.preview_url}
-                      alt=""
+                      alt={`${template.title} — ${template.orientation} App Store screenshot template preview`}
                       className="h-full w-full object-cover object-left transition duration-500 ease-out group-hover:scale-[1.03]"
                     />
                   ) : (

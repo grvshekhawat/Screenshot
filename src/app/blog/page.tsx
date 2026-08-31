@@ -12,7 +12,12 @@ export const metadata: Metadata = {
   title: "Blog",
   description:
     "Guides on App Store screenshot sizes, Google Play graphics, and exporting store creatives with Screenshot Studio.",
-  alternates: { canonical: "/blog" },
+  alternates: {
+    canonical: "/blog",
+    types: {
+      "application/rss+xml": `${siteOrigin()}/blog/rss.xml`,
+    },
+  },
   openGraph: {
     title: "Blog · Screenshot Studio",
     description:
@@ -33,22 +38,32 @@ export default function BlogIndexPage() {
           aria-hidden
         />
         <div className="relative mx-auto w-full max-w-2xl px-4 py-14 sm:px-6 sm:py-16">
-          <p
-            className="text-[13px] font-medium tracking-[0.18em] text-[#e8ff47]/90 uppercase"
-            style={{ fontFamily: MARKETING_DISPLAY }}
-          >
-            Blog
-          </p>
-          <h1
-            className="mt-3 text-4xl font-semibold tracking-[-0.04em] text-white sm:text-5xl"
-            style={{ fontFamily: MARKETING_DISPLAY }}
-          >
-            Notes on store screenshots
-          </h1>
-          <p className="mt-4 max-w-lg text-[15px] leading-relaxed text-zinc-400">
-            Practical guides on App Store sizes, Play graphics, and export
-            workflows.
-          </p>
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <p
+                className="text-[13px] font-medium tracking-[0.18em] text-[#e8ff47]/90 uppercase"
+                style={{ fontFamily: MARKETING_DISPLAY }}
+              >
+                Blog
+              </p>
+              <h1
+                className="mt-3 text-4xl font-semibold tracking-[-0.04em] text-white sm:text-5xl"
+                style={{ fontFamily: MARKETING_DISPLAY }}
+              >
+                Notes on store screenshots
+              </h1>
+              <p className="mt-4 max-w-lg text-[15px] leading-relaxed text-zinc-400">
+                Practical guides on App Store sizes, Play graphics, and export
+                workflows.
+              </p>
+            </div>
+            <a
+              href="/blog/rss.xml"
+              className="text-[13px] text-zinc-500 underline decoration-white/15 underline-offset-4 transition hover:text-zinc-300 hover:decoration-white/40"
+            >
+              RSS feed
+            </a>
+          </div>
           <ul className="mt-12 space-y-0 divide-y divide-white/[0.06] border-y border-white/[0.06]">
             {posts.map((post) => (
               <li key={post.slug}>

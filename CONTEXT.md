@@ -28,12 +28,13 @@ Cloud SaaS App Store / Play screenshot editor (**Next.js App Router** + React). 
   - **List thumbnails are cache-first:** Home / Projects / Admin load only the stored strip image (`thumbnail_path` / `preview_path` → signed URL). They do **not** remount artboards per visit. Strip is regenerated on project create/save and template publish (and once if the cache is missing). Built-in seed previews cache as **Blobs** in IndexedDB (display via `blob:` URLs — Safari fails multi‑MB `data:` URLs). Admin-published templates use Storage HTTPS. **Project** thumbs DOM-capture each slide at native artboard size (same `Artboard` as the editor, gap-aware continuity stride), then scale into the strip. Fonts: `cssFontFamily()` quotes multi-word families; capture inlines `@font-face` as data URLs (Google Fonts `<link crossOrigin>`). Seeds still use canvas `paintOnly` to avoid the capture lock.
 - Project list cards use `thumbnail_path` / `thumbnail_url` (same strip as templates), refreshed on save and when leaving the editor (`flushSave` on ← Projects / unmount). List URLs append `updated_at` as a cache-buster so the new strip shows after exit.
   - Local demo seeds 4 portrait + 4 landscape gallery templates (`sample-screens.ts` / `sample-templates.ts`, catalog seed v10). Landscape phones reuse portrait chrome rotated −90°; screenshots stay upright (counter-rotated).
-- Blog: MDX under `content/blog/` → `/blog`, `/blog/[slug]`
+- Blog: MDX under `content/blog/` → `/blog`, `/blog/[slug]`, RSS at `/blog/rss.xml`. Cadence + Search Console ops: **`SEO.md`**.
 - Crawl: `src/app/sitemap.ts`, `src/app/robots.ts` (disallow `/app`, `/admin`, `/login`)
+- SEO schema: `SoftwareApplication` + `FAQPage` on `/`; `BlogPosting` + `BreadcrumbList` on blog posts; `CreativeWork` + `BreadcrumbList` on template detail. Keep template **slugs stable** after publish.
 - Schema/RLS: `supabase/migrations/001_init.sql` (+ `002_public_catalog.sql`, `003_admin_catalog.sql`)
 - Env template: `.env.example` (`NEXT_PUBLIC_*` — must be static `process.env.NEXT_PUBLIC_…` reads in `src/config.ts` so Next inlines them for the client; dynamic env lookups break auth and force demo mode)
 
-- Go-live checklist: `GO_LIVE.md`
+- Go-live checklist: `GO_LIVE.md` · Ongoing SEO: `SEO.md`
 
 ## Routes
 

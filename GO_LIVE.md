@@ -149,10 +149,27 @@ supabase functions deploy analyze-store-layout
 
 ## G. SEO / Search Console
 
+See **`SEO.md`** for the ongoing content cadence and monthly review loop.
+
+### One-time setup
+
 - [ ] Google Search Console → add property for `https://screenshot.design`
 - [ ] Verify ownership (DNS TXT or HTML meta / file)
 - [ ] Submit sitemap: `https://screenshot.design/sitemap.xml`
 - [ ] Spot-check indexed URLs for `/`, `/pricing`, `/templates`, `/blog`, and a few template/blog slugs
+- [ ] Confirm `/blog/rss.xml` loads
+
+### Monthly (ops)
+
+- [ ] Coverage / indexing: fix errors; keep `/app`, `/admin`, `/login` noindexed
+- [ ] Queries + CTR: rewrite 2–3 weak titles/descriptions (MDX frontmatter or template metadata only)
+- [ ] Note 2–3 target queries (e.g. App Store screenshot sizes) and whether impressions are rising
+- [ ] After new posts/templates: URL Inspection if not indexed within a few days
+
+### Content cadence (no redesign)
+
+- [ ] 1 blog MDX every 1–2 weeks under `content/blog/` (`title`, `description`, `date`, stable `slug`)
+- [ ] Publish templates with descriptive titles; **never change slug** after publish
 
 
 

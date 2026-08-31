@@ -70,3 +70,13 @@ export function getBlogPost(slug: string): BlogPost | null {
   }
   return null
 }
+
+/** Other posts for internal linking (newest first, excluding current). */
+export function getRelatedBlogPosts(
+  slug: string,
+  limit = 3,
+): BlogPostMeta[] {
+  return listBlogPosts()
+    .filter((post) => post.slug !== slug)
+    .slice(0, limit)
+}

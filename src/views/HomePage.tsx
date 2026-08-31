@@ -20,6 +20,7 @@ import {
 } from "../components/MarketingHeader"
 import { TemplateThumbnail } from "../components/TemplateThumbnail"
 import { SiteFooter } from "../components/SiteFooter"
+import { HOME_FAQS } from "../lib/home-faq"
 
 function templatePreviewSrc(template: TemplateRecord): string | null {
   if (template.preview_url && !template.preview_url.startsWith("data:")) {
@@ -327,6 +328,57 @@ export function HomePage() {
               </p>
             ) : null}
           </div>
+        </div>
+      </section>
+
+      {/* Guides — internal link to blog */}
+      <section className="border-t border-white/[0.06]">
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-4 py-14 sm:flex-row sm:items-end sm:justify-between sm:px-6 sm:py-16">
+          <div className="max-w-xl">
+            <h2
+              className="text-3xl font-semibold tracking-[-0.03em] text-white sm:text-4xl"
+              style={{ fontFamily: MARKETING_DISPLAY }}
+            >
+              Store screenshot guides
+            </h2>
+            <p className="mt-3 text-[15px] leading-relaxed text-zinc-400">
+              Size charts, iPhone class differences, and export tips—written for
+              App Store and Play listings.
+            </p>
+          </div>
+          <Link
+            href="/blog"
+            className="shrink-0 rounded-md border border-white/15 bg-white/[0.03] px-5 py-2.5 text-sm font-medium text-zinc-200 transition hover:border-white/25 hover:bg-white/[0.06]"
+          >
+            Read the blog
+          </Link>
+        </div>
+      </section>
+
+      {/* FAQ */}
+      <section className="border-t border-white/[0.06] bg-[#0a0a0e]">
+        <div className="mx-auto w-full max-w-3xl px-4 py-16 sm:px-6 sm:py-20">
+          <h2
+            className="text-center text-3xl font-semibold tracking-[-0.03em] text-white sm:text-4xl"
+            style={{ fontFamily: MARKETING_DISPLAY }}
+          >
+            Frequently asked questions
+          </h2>
+          <dl className="mt-10 divide-y divide-white/[0.06] border-y border-white/[0.06]">
+            {HOME_FAQS.map((item) => (
+              <div key={item.question} className="py-5">
+                <dt
+                  className="text-[15px] font-semibold tracking-tight text-zinc-100"
+                  style={{ fontFamily: MARKETING_DISPLAY }}
+                >
+                  {item.question}
+                </dt>
+                <dd className="mt-2 text-[14px] leading-relaxed text-zinc-400">
+                  {item.answer}
+                </dd>
+              </div>
+            ))}
+          </dl>
         </div>
       </section>
 

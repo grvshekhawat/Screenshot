@@ -10,12 +10,20 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     "/pricing",
     "/templates",
     "/blog",
+    "/blog/rss.xml",
     "/terms",
     "/privacy",
   ].map((path) => ({
     url: `${origin}${path || "/"}`,
     changeFrequency: path === "" || path === "/blog" ? "weekly" : "monthly",
-    priority: path === "" ? 1 : path === "/templates" || path === "/pricing" ? 0.8 : 0.5,
+    priority:
+      path === ""
+        ? 1
+        : path === "/templates" || path === "/pricing"
+          ? 0.8
+          : path === "/blog/rss.xml"
+            ? 0.3
+            : 0.5,
   }))
 
   const posts = listBlogPosts().map((post) => ({

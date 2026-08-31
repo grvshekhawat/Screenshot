@@ -12,6 +12,7 @@ import {
   getSeoTemplateBySlug,
   listSeoTemplates,
 } from "@/lib/templates-seo"
+import { breadcrumbJsonLd } from "@/lib/seo-schema"
 import { siteOrigin } from "@/config"
 
 export const revalidate = 3600
@@ -51,20 +52,30 @@ export default async function TemplateDetailPage({ params }: Props) {
   const template = await getSeoTemplateBySlug(slug)
   if (!template) notFound()
 
+  const origin = siteOrigin()
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "CreativeWork",
     name: template.title,
     description: template.description,
-    url: `${siteOrigin()}/templates/${template.slug}`,
+    url: `${origin}/templates/${template.slug}`,
     image: template.preview_url || undefined,
   }
+  const breadcrumbs = breadcrumbJsonLd([
+    { name: "Home", path: "/" },
+    { name: "Templates", path: "/templates" },
+    { name: template.title, path: `/templates/${template.slug}` },
+  ])
 
   return (
     <div className="flex min-h-full flex-col bg-[#07070a] text-zinc-100">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbs) }}
       />
       <MarketingHeader active="templates" />
       <main className="relative flex-1 overflow-hidden">

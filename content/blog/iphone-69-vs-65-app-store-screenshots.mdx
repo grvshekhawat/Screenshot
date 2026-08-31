@@ -1,0 +1,41 @@
+---
+title: iPhone 6.9" vs 6.5" App Store screenshots
+description: When you need both iPhone screenshot sizes for App Store Connect, how they differ, and how to export both from one Screenshot Studio project.
+date: 2026-08-30
+slug: iphone-69-vs-65-app-store-screenshots
+---
+
+App Store Connect still asks for screenshots across iPhone display classes. Two of the most common are the **6.9"** and **6.5"** families. You do not need two separate designs—you need one layout that exports cleanly at every required size.
+
+## Why both sizes show up
+
+Apple groups devices by display class. If your app supports modern iPhones, Connect often expects creatives for the largest classes first. Uploading only one size can leave gaps or force last-minute resizes that crop text and UI.
+
+Practical rule: design for your **primary** phone artboard, then export the matching set for every size your listing requires.
+
+## What changes between classes
+
+- **Pixel dimensions** differ; aspect ratios are close but not identical.
+- **Safe areas** (corners, Dynamic Island / status bar) shift slightly—keep headlines and CTAs inside the safe region on every size.
+- **Device chrome** should match the target class so the screenshot looks native in App Store browse.
+
+Do **not** stretch a 6.5" PNG into a 6.9" slot. Export each size properly.
+
+## One project, every size
+
+In [Screenshot Studio](/login):
+
+1. Create a **Portrait** (or Landscape) project—orientation is locked per project.
+2. Start from a [template](/templates) or a blank set.
+3. Place your app screens once.
+4. Switch store sizes in the editor to spot-check text and frames.
+5. On Pro, export a **ZIP for all sizes** so 6.9", 6.5", and the rest of that orientation download together.
+
+## Checklist before upload
+
+- Text readable at the smallest export you ship.
+- No critical UI under the notch / Island.
+- Same language as the listing localization.
+- Portrait and landscape are separate projects if you need both.
+
+Need the full size list? See [App Store screenshot sizes](/blog/app-store-screenshot-sizes). Ready to export? [Browse templates](/templates) or [start free](/login).

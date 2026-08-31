@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import { HomePage } from "@/views/HomePage"
 import { siteOrigin } from "@/config"
+import { HOME_FAQS } from "@/lib/home-faq"
 
 const origin = siteOrigin()
 
@@ -17,7 +18,7 @@ export const metadata: Metadata = {
   },
 }
 
-const jsonLd = {
+const softwareJsonLd = {
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
   name: "Screenshot Studio",
@@ -34,12 +35,29 @@ const jsonLd = {
   },
 }
 
+const faqJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: HOME_FAQS.map((item) => ({
+    "@type": "Question",
+    name: item.question,
+    acceptedAnswer: {
+      "@type": "Answer",
+      text: item.answer,
+    },
+  })),
+}
+
 export default function HomeRoute() {
   return (
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareJsonLd) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
       />
       <HomePage />
     </>

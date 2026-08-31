@@ -10,7 +10,8 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { MarketingHeader } from "@/components/MarketingHeader"
 import { SiteFooter } from "@/components/SiteFooter"
-import { getBlogPost, listBlogPosts } from "@/lib/blog"
+import { getBlogPost, getRelatedBlogPosts, listBlogPosts } from "@/lib/blog"
+import { breadcrumbJsonLd, publisherJsonLd } from "@/lib/seo-schema"
 import { siteOrigin } from "@/config"
 
 type Props = { params: Promise<{ slug: string }> }
@@ -95,6 +96,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params
   const post = getBlogPost(slug)
   if (!post) return { title: "Post not found" }
+  const origin = siteOrigin()
+  const image = post.image || `${origin}/og.png`
   return {
     title: post.title,
     description: post.description,
@@ -103,9 +106,15 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       type: "article",
       title: post.title,
       description: post.description,
-      url: `${siteOrigin()}/blog/${slug}`,
+      url: `${origin}/blog/${slug}`,
       publishedTime: post.date,
-      images: post.image ? [{ url: post.image }] : [{ url: "/og.png" }],
+      images: [{ url: image }],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: post.title,
+      description: post.description,
+      images: [image],
     },
   }
 }
@@ -115,20 +124,47 @@ export default async function BlogPostPage({ params }: Props) {
   const post = getBlogPost(slug)
   if (!post) notFound()
 
-  const jsonLd = {
+  const origin = siteOrigin()
+  const imageUrl = post.image
+    ? post.image.startsWith("http")
+      ? post.image
+      : `${origin}${post.image}`
+    : `${origin}/og.png`
+  const related = getRelatedBlogPosts(post.slug, 3)
+
+  const blogPosting = {
     "@context": "https://schema.org",
     "@type": "BlogPosting",
     headline: post.title,
     description: post.description,
     datePublished: post.date,
-    url: `${siteOrigin()}/blog/${post.slug}`,
+    dateModified: post.date,
+    url: `${origin}/blog/${post.slug}`,
+    mainEntityOfPage: `${origin}/blog/${post.slug}`,
+    image: [imageUrl],
+    author: {
+      "@type": "Organization",
+      name: "Screenshot Studio",
+      url: origin,
+    },
+    publisher: publisherJsonLd(),
   }
+
+  const breadcrumbs = breadcrumbJsonLd([
+    { name: "Home", path: "/" },
+    { name: "Blog", path: "/blog" },
+    { name: post.title, path: `/blog/${post.slug}` },
+  ])
 
   return (
     <div className="flex min-h-full flex-col bg-[#07070a] text-zinc-100">
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(blogPosting) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbs) }}
       />
       <MarketingHeader active="blog" />
       <article className="relative mx-auto w-full max-w-2xl flex-1 px-4 py-12 sm:px-6 sm:py-14">
@@ -155,6 +191,34 @@ export default async function BlogPostPage({ params }: Props) {
         <div className="mt-8 border-t border-white/[0.06] pt-2">
           <MDXRemote source={post.content} components={mdxComponents} />
         </div>
+
+        {related.length > 0 ? (
+          <aside className="mt-14 border-t border-white/[0.06] pt-10">
+            <h2
+              className="text-lg font-semibold tracking-tight text-white"
+              style={{
+                fontFamily: '"Outfit", ui-sans-serif, system-ui, sans-serif',
+              }}
+            >
+              Related guides
+            </h2>
+            <ul className="mt-4 space-y-4">
+              {related.map((item) => (
+                <li key={item.slug}>
+                  <Link
+                    href={`/blog/${item.slug}`}
+                    className="text-[15px] font-medium text-zinc-200 transition hover:text-[#e8ff47]"
+                  >
+                    {item.title}
+                  </Link>
+                  <p className="mt-1 text-[13px] text-zinc-500">
+                    {item.description}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </aside>
+        ) : null}
       </article>
       <SiteFooter />
     </div>
