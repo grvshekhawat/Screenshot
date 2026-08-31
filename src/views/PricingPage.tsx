@@ -209,6 +209,9 @@ export function PricingPage() {
                   >
                     Subscribe with Stripe
                   </button>
+                  <p className="text-center text-xs text-zinc-500">
+                    Have a promo code? Enter it on the Stripe checkout page.
+                  </p>
                 </div>
               )}
             </div>

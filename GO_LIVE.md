@@ -45,6 +45,21 @@ Ship order: **Supabase → billing → front-end → verify → announce**.
 - [ ] Stripe webhook endpoint → `https://<project>.supabase.co/functions/v1/stripe-webhook` (events for Checkout + subscription lifecycle)
 - [ ] Billing Portal enabled in Stripe (for cancel / manage)
 
+### Free-month promo (Stripe coupon)
+
+Checkout accepts promotion codes (`allow_promotion_codes` on `stripe-checkout`). To give **20 users one free month**:
+
+1. Stripe → **Products → Coupons** → **Create coupon**
+   - Percent off: **100%**
+   - Duration: **Once** (first invoice only) — or **Repeating** for **1 month** if you prefer
+2. **Promotion codes** → create a code (e.g. `LAUNCH20`) linked to that coupon
+   - **Limit total redemptions** → **20**
+   - Optional: set an expiry date
+3. Redeploy checkout after code changes: `supabase functions deploy stripe-checkout`
+4. Share the code; users subscribe from **Pricing** → enter code on the Stripe Checkout page
+
+After the free period, Stripe bills the normal price unless they cancel in the billing portal. Webhook treats `trialing` and `active` as Pro.
+
 ### Admin AI clipart (`generate-clipart`)
 
 ```bash

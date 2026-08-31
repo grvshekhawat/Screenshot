@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
 import { useAuth } from "../auth/AuthProvider"
 import { Editor } from "../components/Editor"
@@ -9,18 +8,38 @@ import { ProjectProvider, useProject } from "../project-store"
 
 function EditorChrome() {
   const router = useRouter()
-  const { flushSave, saveState } = useProject()
+  const { flushSave, saveState, hasUnsavedChanges } = useProject()
   const [leaving, setLeaving] = useState(false)
 
-  const goToProjects = async () => {
-    if (leaving) return
-    setLeaving(true)
-    try {
-      await flushSave()
-    } catch (err) {
-      console.error(err)
+  const confirmBeforeLeave = async (): Promise<"stay" | "saved" | "discarded"> => {
+    if (!hasUnsavedChanges()) return "saved"
+    const save = window.confirm(
+      "You have unsaved changes.\n\nOK — Save and leave\nCancel — More options",
+    )
+    if (save) {
+      setLeaving(true)
+      try {
+        await flushSave()
+        return "saved"
+      } catch (err) {
+        console.error(err)
+        window.alert("Could not save. Use Save draft, then try leaving again.")
+        return "stay"
+      } finally {
+        setLeaving(false)
+      }
     }
-    router.push("/app")
+    const discard = window.confirm(
+      "Leave without saving? Your recent changes will be lost.",
+    )
+    return discard ? "discarded" : "stay"
+  }
+
+  const goTo = async (path: string) => {
+    if (leaving || saveState === "saving") return
+    const outcome = await confirmBeforeLeave()
+    if (outcome === "stay") return
+    router.push(path)
   }
 
   return (
@@ -29,14 +48,19 @@ function EditorChrome() {
         <button
           type="button"
           disabled={leaving || saveState === "saving"}
-          onClick={() => void goToProjects()}
+          onClick={() => void goTo("/app")}
           className="hover:text-white disabled:opacity-50"
         >
           {leaving ? "Saving…" : "← Projects"}
         </button>
-        <Link href="/pricing" className="hover:text-white">
+        <button
+          type="button"
+          disabled={leaving || saveState === "saving"}
+          onClick={() => void goTo("/pricing")}
+          className="hover:text-white disabled:opacity-50"
+        >
           Pricing
-        </Link>
+        </button>
       </div>
       <div className="min-h-0 flex-1">
         <Editor />

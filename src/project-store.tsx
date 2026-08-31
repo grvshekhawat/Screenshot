@@ -102,6 +102,9 @@ import {
 
 type SaveState = "saved" | "saving" | "unsaved"
 
+/** Background autosave while the editor has unsaved changes. */
+const AUTOSAVE_INTERVAL_MS = 5 * 60 * 1000
+
 type ProjectContextValue = {
   ready: boolean
   projectId: string | null
@@ -112,6 +115,8 @@ type ProjectContextValue = {
   libraryCliparts: { id: string; name: string; category: string; url: string }[]
   saveState: SaveState
   lastSavedAt: number | null
+  /** True when local edits have not been persisted since the last save. */
+  hasUnsavedChanges: () => boolean
   activeSlide: Slide
   activeFrame: Frame | null
   activeText: TextLayer | null
@@ -382,7 +387,8 @@ export function ProjectProvider({
   const projectRef = useRef(project)
   const assetUrlsRef = useRef(assetUrls)
   const readyRef = useRef(ready)
-  const autosaveTimerRef = useRef<number | null>(null)
+  const dirtyRef = useRef(false)
+  const autosaveIntervalRef = useRef<number | null>(null)
   const saveInFlightRef = useRef<Promise<void> | null>(null)
   /** Skip the autosave that would fire purely because hydrate set `ready`. */
   const skipAutosaveAfterHydrateRef = useRef(false)
@@ -486,6 +492,7 @@ export function ProjectProvider({
       }
 
       skipAutosaveAfterHydrateRef.current = true
+      dirtyRef.current = false
       setProjectState(normalizeProject(loaded))
       resetHistory()
       setAssetUrls(urls)
@@ -546,33 +553,63 @@ export function ProjectProvider({
       skipAutosaveAfterHydrateRef.current = false
       return
     }
+    dirtyRef.current = true
     setSaveState("unsaved")
-    if (autosaveTimerRef.current) window.clearTimeout(autosaveTimerRef.current)
-    autosaveTimerRef.current = window.setTimeout(() => {
-      autosaveTimerRef.current = null
-      const run = (async () => {
-        setSaveState("saving")
-        const snapshot = projectRef.current
-        if (projectId) await saveProjectRecord(projectId, snapshot)
-        else await saveProject(snapshot)
-        setSaveState("saved")
-        setLastSavedAt(Date.now())
-      })()
-      saveInFlightRef.current = run.then(
-        () => undefined,
-        () => undefined,
-      )
-      void run
-    }, 400)
-    return () => {
-      if (autosaveTimerRef.current) {
-        window.clearTimeout(autosaveTimerRef.current)
-        autosaveTimerRef.current = null
-      }
-    }
   }, [project, ready, projectId])
 
-  // When switching store sizes, resolve any assets not yet loaded from background hydrate.
+  const persistSnapshot = useCallback(async () => {
+    if (!readyRef.current) return
+    if (saveInFlightRef.current) await saveInFlightRef.current
+    setSaveState("saving")
+    const snapshot = projectRef.current
+    const run = (async () => {
+      if (projectId) await saveProjectRecord(projectId, snapshot)
+      else await saveProject(snapshot)
+      dirtyRef.current = false
+      setSaveState("saved")
+      setLastSavedAt(Date.now())
+    })()
+    saveInFlightRef.current = run.then(
+      () => undefined,
+      () => undefined,
+    )
+    try {
+      await run
+    } catch (err) {
+      setSaveState("unsaved")
+      throw err
+    } finally {
+      saveInFlightRef.current = null
+    }
+  }, [projectId])
+
+  const hasUnsavedChanges = useCallback(() => dirtyRef.current, [])
+
+  // Autosave on an interval when there are local edits.
+  useEffect(() => {
+    if (!ready) return
+    autosaveIntervalRef.current = window.setInterval(() => {
+      if (!dirtyRef.current) return
+      void persistSnapshot().catch((err) => console.error(err))
+    }, AUTOSAVE_INTERVAL_MS)
+    return () => {
+      if (autosaveIntervalRef.current !== null) {
+        window.clearInterval(autosaveIntervalRef.current)
+        autosaveIntervalRef.current = null
+      }
+    }
+  }, [ready, persistSnapshot])
+
+  // Browser tab close / refresh / external navigation.
+  useEffect(() => {
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!dirtyRef.current) return
+      event.preventDefault()
+      event.returnValue = ""
+    }
+    window.addEventListener("beforeunload", onBeforeUnload)
+    return () => window.removeEventListener("beforeunload", onBeforeUnload)
+  }, [])
   useEffect(() => {
     if (!ready) return
     const needed = assetIdsFromActiveLayout(projectRef.current)
@@ -597,26 +634,6 @@ export function ProjectProvider({
     }
   }, [ready, project.targetId])
 
-  const persistSnapshot = useCallback(async () => {
-    if (!readyRef.current) return
-    if (autosaveTimerRef.current) {
-      window.clearTimeout(autosaveTimerRef.current)
-      autosaveTimerRef.current = null
-    }
-    if (saveInFlightRef.current) await saveInFlightRef.current
-    setSaveState("saving")
-    const snapshot = projectRef.current
-    try {
-      if (projectId) await saveProjectRecord(projectId, snapshot)
-      else await saveProject(snapshot)
-      setSaveState("saved")
-      setLastSavedAt(Date.now())
-    } catch (err) {
-      setSaveState("unsaved")
-      throw err
-    }
-  }, [projectId])
-
   const saveDraft = useCallback(async () => {
     await persistSnapshot()
   }, [persistSnapshot])
@@ -624,18 +641,6 @@ export function ProjectProvider({
   const flushSave = useCallback(async () => {
     await persistSnapshot()
   }, [persistSnapshot])
-
-  // Leaving the editor: flush any pending draft so the projects list thumbnail matches.
-  useEffect(() => {
-    return () => {
-      if (!readyRef.current || !projectId) return
-      if (autosaveTimerRef.current) {
-        window.clearTimeout(autosaveTimerRef.current)
-        autosaveTimerRef.current = null
-      }
-      void saveProjectRecord(projectId, projectRef.current)
-    }
-  }, [projectId])
 
   const storeAsset = useCallback(async (file: File) => {
     const { normalizeImageFile } = await import("./image-upload")
@@ -2466,6 +2471,7 @@ export function ProjectProvider({
       libraryCliparts,
       saveState,
       lastSavedAt,
+      hasUnsavedChanges,
       activeSlide,
       activeFrame,
       activeText,
@@ -2547,6 +2553,7 @@ export function ProjectProvider({
       libraryCliparts,
       saveState,
       lastSavedAt,
+      hasUnsavedChanges,
       activeSlide,
       activeFrame,
       activeText,
