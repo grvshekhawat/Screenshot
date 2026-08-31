@@ -86,6 +86,7 @@ export function PlacedDevice({
       <DeviceFrame
         deviceId={frame.deviceId}
         width={deviceWidth}
+        color={frame.color}
         screenshotUrl={screenshotUrl}
         screenshotUrlB={screenshotUrlB}
         screenMode={frame.screenMode}
@@ -96,6 +97,7 @@ export function PlacedDevice({
         shadowOffsetX={frame.shadowOffsetX ?? 0}
         shadowOffsetY={frame.shadowOffsetY ?? 8}
         shadowOpacity={frame.shadowOpacity ?? 55}
+        shadowColor={frame.shadowColor ?? "#000000"}
         onUploadClick={(slot) => onUploadClick?.(frame.id, slot)}
       />
       {!forExport && selected && interactive && onResizeStart ? (

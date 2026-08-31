@@ -1,10 +1,16 @@
 import { useState, type ReactNode } from "react"
 import { deviceShadowCss } from "../constants"
+import {
+  deviceChromeStyles,
+  normalizeFrameColor,
+} from "../device-chrome"
 import type { DeviceId } from "../types"
 
 type DeviceFrameProps = {
   deviceId: DeviceId
   width: number
+  /** Chassis / bezel finish (hex). */
+  color?: string
   screenshotUrl: string | null
   screenshotUrlB?: string | null
   screenMode?: "single" | "split"
@@ -16,12 +22,14 @@ type DeviceFrameProps = {
   shadowOffsetX?: number
   shadowOffsetY?: number
   shadowOpacity?: number
+  shadowColor?: string
   onUploadClick?: (slot?: "a" | "b") => void
 }
 
 export function DeviceFrame({
   deviceId,
   width,
+  color,
   screenshotUrl,
   screenshotUrlB = null,
   screenMode = "single",
@@ -32,6 +40,7 @@ export function DeviceFrame({
   shadowOffsetX = 0,
   shadowOffsetY = 8,
   shadowOpacity = 55,
+  shadowColor = "#000000",
   onUploadClick,
 }: DeviceFrameProps) {
   const isLandscapePhone =
@@ -50,6 +59,8 @@ export function DeviceFrame({
           : deviceId === "ipad-11-land"
             ? "ipad-11"
             : deviceId
+
+  const finish = normalizeFrameColor(color, "#1c1c1e")
 
   const portraitAspect =
     chromeId === "iphone-69"
@@ -80,14 +91,14 @@ export function DeviceFrame({
     shadowOffsetX,
     shadowOffsetY,
     shadowOpacity,
+    shadowColor,
   })
+
+  const frameWidth = isLandscapePhone ? width * portraitAspect : width
 
   const frame =
     chromeId === "iphone-69" ? (
-      <IPhoneFrame
-        width={isLandscapePhone ? width * portraitAspect : width}
-        dropShadow={dropShadow}
-      >
+      <IPhoneFrame width={frameWidth} color={finish} dropShadow={dropShadow}>
         {isLandscapePhone ? (
           <UprightLandscapeScreen>{screen}</UprightLandscapeScreen>
         ) : (
@@ -95,10 +106,7 @@ export function DeviceFrame({
         )}
       </IPhoneFrame>
     ) : chromeId === "pixel" ? (
-      <PixelFrame
-        width={isLandscapePhone ? width * portraitAspect : width}
-        dropShadow={dropShadow}
-      >
+      <PixelFrame width={frameWidth} color={finish} dropShadow={dropShadow}>
         {isLandscapePhone ? (
           <UprightLandscapeScreen>{screen}</UprightLandscapeScreen>
         ) : (
@@ -106,10 +114,7 @@ export function DeviceFrame({
         )}
       </PixelFrame>
     ) : (
-      <IPadFrame
-        width={isLandscapePhone ? width * portraitAspect : width}
-        dropShadow={dropShadow}
-      >
+      <IPadFrame width={frameWidth} color={finish} dropShadow={dropShadow}>
         {isLandscapePhone ? (
           <UprightLandscapeScreen>{screen}</UprightLandscapeScreen>
         ) : (
@@ -175,20 +180,24 @@ function UprightLandscapeScreen({ children }: { children: ReactNode }) {
 
 function IPhoneFrame({
   width,
+  color,
   dropShadow,
   children,
 }: {
   width: number
+  color: string
   dropShadow?: string
   children: ReactNode
 }) {
-  const bezel = width * 0.038
+  const shell = width * 0.005
+  const bezel = width * 0.022
   const outerRadius = width * 0.168
-  const screenRadius = width * 0.128
+  const bezelRadius = width * 0.158
+  const screenRadius = width * 0.146
   const islandW = width * 0.264
   const islandH = width * 0.078
-  const rim = Math.max(1.5, width * 0.007)
-  const buttonT = Math.max(3, width * 0.018)
+  const buttonT = Math.max(2.5, width * 0.014)
+  const chrome = deviceChromeStyles(color, width, "island")
 
   return (
     <div
@@ -205,6 +214,8 @@ function IPhoneFrame({
         length={width * 0.092}
         thickness={buttonT}
         lightFrom="left"
+        light={chrome.buttonLight}
+        dark={chrome.buttonDark}
       />
       <SideButton
         side="left"
@@ -212,6 +223,8 @@ function IPhoneFrame({
         length={width * 0.048}
         thickness={buttonT}
         lightFrom="right"
+        light={chrome.buttonLight}
+        dark={chrome.buttonDark}
       />
       <SideButton
         side="left"
@@ -219,6 +232,8 @@ function IPhoneFrame({
         length={width * 0.07}
         thickness={buttonT}
         lightFrom="right"
+        light={chrome.buttonLight}
+        dark={chrome.buttonDark}
       />
       <SideButton
         side="left"
@@ -226,6 +241,8 @@ function IPhoneFrame({
         length={width * 0.07}
         thickness={buttonT}
         lightFrom="right"
+        light={chrome.buttonLight}
+        dark={chrome.buttonDark}
       />
 
       <div
@@ -233,15 +250,21 @@ function IPhoneFrame({
           position: "absolute",
           inset: 0,
           borderRadius: outerRadius,
-          background:
-            "linear-gradient(90deg, #5c5c62 0%, #1a1a1c 7%, #111113 18%, #161618 50%, #111113 82%, #1a1a1c 93%, #5c5c62 100%)",
-          boxShadow: `
-            0 0 0 ${Math.max(1, width * 0.0025)}px #050505,
-            inset 0 0 0 ${Math.max(1, width * 0.003)}px rgba(255,255,255,0.28),
-            inset 0 ${width * 0.01}px ${width * 0.018}px rgba(255,255,255,0.08),
-            inset 0 0 0 ${rim}px #2a2a2e,
-            inset 0 0 0 ${rim + Math.max(1, width * 0.004)}px #0b0b0d
-          `,
+          background: chrome.bodyBackground,
+          boxShadow: chrome.bodyBoxShadow,
+        }}
+      />
+
+      {/* Black glass bezel — stays black regardless of chassis finish */}
+      <div
+        style={{
+          position: "absolute",
+          top: shell,
+          right: shell,
+          bottom: shell,
+          left: shell,
+          borderRadius: bezelRadius,
+          background: "#000",
         }}
       />
 
@@ -297,17 +320,22 @@ function IPhoneFrame({
 
 function PixelFrame({
   width,
+  color,
   dropShadow,
   children,
 }: {
   width: number
+  color: string
   dropShadow?: string
   children: ReactNode
 }) {
-  const bezel = width * 0.03
+  const shell = width * 0.004
+  const bezel = width * 0.018
   const outerRadius = width * 0.12
-  const screenRadius = width * 0.095
+  const bezelRadius = width * 0.112
+  const screenRadius = width * 0.102
   const hole = width * 0.032
+  const chrome = deviceChromeStyles(color, width, "punch")
 
   return (
     <div
@@ -322,31 +350,47 @@ function PixelFrame({
         side="right"
         top="22%"
         length={width * 0.1}
-        thickness={Math.max(3, width * 0.016)}
+        thickness={Math.max(2.5, width * 0.012)}
         lightFrom="left"
+        light={chrome.buttonLight}
+        dark={chrome.buttonDark}
       />
       <SideButton
         side="left"
         top="20%"
         length={width * 0.065}
-        thickness={Math.max(3, width * 0.016)}
+        thickness={Math.max(2.5, width * 0.012)}
         lightFrom="right"
+        light={chrome.buttonLight}
+        dark={chrome.buttonDark}
       />
       <SideButton
         side="left"
         top="28%"
         length={width * 0.065}
-        thickness={Math.max(3, width * 0.016)}
+        thickness={Math.max(2.5, width * 0.012)}
         lightFrom="right"
+        light={chrome.buttonLight}
+        dark={chrome.buttonDark}
       />
       <div
         style={{
           position: "absolute",
           inset: 0,
           borderRadius: outerRadius,
-          background:
-            "linear-gradient(90deg, #4a4a4c 0%, #2a2a2c 10%, #1c1c1e 50%, #2a2a2c 90%, #4a4a4c 100%)",
-          boxShadow: `inset 0 0 0 ${Math.max(1, width * 0.004)}px rgba(255,255,255,0.18), inset 0 0 0 ${width * 0.012}px #111`,
+          background: chrome.bodyBackground,
+          boxShadow: chrome.bodyBoxShadow,
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          top: shell,
+          right: shell,
+          bottom: shell,
+          left: shell,
+          borderRadius: bezelRadius,
+          background: "#000",
         }}
       />
       <div
@@ -383,17 +427,22 @@ function PixelFrame({
 
 function IPadFrame({
   width,
+  color,
   dropShadow,
   children,
 }: {
   width: number
+  color: string
   dropShadow?: string
   children: ReactNode
 }) {
-  const bezel = width * 0.032
+  const shell = width * 0.004
+  const bezel = width * 0.02
   const outerRadius = width * 0.055
-  const screenRadius = width * 0.032
+  const bezelRadius = width * 0.048
+  const screenRadius = width * 0.038
   const cam = width * 0.014
+  const chrome = deviceChromeStyles(color, width, "tablet")
 
   return (
     <div
@@ -409,9 +458,19 @@ function IPadFrame({
           position: "absolute",
           inset: 0,
           borderRadius: outerRadius,
-          background:
-            "linear-gradient(90deg, #6d6d72 0%, #3a3a3c 12%, #2c2c2e 50%, #3a3a3c 88%, #6d6d72 100%)",
-          boxShadow: `inset 0 0 0 ${Math.max(1, width * 0.003)}px rgba(255,255,255,0.25), inset 0 0 0 ${width * 0.01}px #1c1c1e`,
+          background: chrome.bodyBackground,
+          boxShadow: chrome.bodyBoxShadow,
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          top: shell,
+          right: shell,
+          bottom: shell,
+          left: shell,
+          borderRadius: bezelRadius,
+          background: "#000",
         }}
       />
       <div
@@ -451,6 +510,8 @@ function SideButton({
   length,
   thickness,
   lightFrom,
+  light,
+  dark,
 }: {
   side: "left" | "right" | "top" | "bottom"
   /** Offset along the long axis (top% for left/right, left% for top/bottom). */
@@ -458,11 +519,13 @@ function SideButton({
   length: number
   thickness: number
   lightFrom: "left" | "right"
+  light: string
+  dark: string
 }) {
   const gradient =
     lightFrom === "left"
-      ? "linear-gradient(90deg, #8a8a90, #3e3e42 40%, #1c1c1e)"
-      : "linear-gradient(90deg, #1c1c1e, #3e3e42 60%, #8a8a90)"
+      ? `linear-gradient(90deg, ${light}, ${dark} 40%, ${dark})`
+      : `linear-gradient(90deg, ${dark}, ${dark} 60%, ${light})`
   const vertical = side === "top" || side === "bottom"
 
   return (
@@ -477,8 +540,8 @@ function SideButton({
               height: thickness,
               background:
                 lightFrom === "left"
-                  ? "linear-gradient(180deg, #8a8a90, #3e3e42 40%, #1c1c1e)"
-                  : "linear-gradient(180deg, #1c1c1e, #3e3e42 60%, #8a8a90)",
+                  ? `linear-gradient(180deg, ${light}, ${dark} 40%, ${dark})`
+                  : `linear-gradient(180deg, ${dark}, ${dark} 60%, ${light})`,
             }
           : {
               [side]: -thickness + 1,

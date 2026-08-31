@@ -65,6 +65,8 @@ export type FrameScreenSlot = "a" | "b"
 export type Frame = {
   id: string
   deviceId: DeviceId
+  /** Device chassis / bezel color (hex). Defaults to the model’s finish. */
+  color: string
   screenshotId: string | null
   screenshotIdB: string | null
   screenMode: FrameScreenMode
@@ -88,6 +90,8 @@ export type Frame = {
   shadowOffsetY: number
   /** Shadow opacity 0–100 */
   shadowOpacity: number
+  /** Shadow tint (hex) */
+  shadowColor: string
   overflow: "cut" | "continue"
 }
 
@@ -117,6 +121,8 @@ export type TextLayer = {
   shadowOffsetY: number
   /** Shadow opacity 0–100 */
   shadowOpacity: number
+  /** Shadow tint (hex) */
+  shadowColor: string
   overflow: "cut" | "continue"
   /** Outline width in design px (0 = none) */
   strokeWidth: number
@@ -152,6 +158,8 @@ export type ClipartLayer = {
   shadowOffsetY: number
   /** Shadow opacity 0–100 */
   shadowOpacity: number
+  /** Shadow tint (hex) */
+  shadowColor: string
   /** Gaussian blur of the clipart itself in artboard px (0 = sharp) */
   blur: number
   /** Recolor the silhouette with a solid or gradient fill */
@@ -197,6 +205,8 @@ export type LensLayer = {
   shadowOffsetY: number
   /** Shadow opacity 0–100 */
   shadowOpacity: number
+  /** Shadow tint (hex) */
+  shadowColor: string
   /** When true, magnified content stays at lockedX/Y while the lens moves. */
   imageLocked: boolean
   /** Slide anchor X (%) captured when image is locked. */

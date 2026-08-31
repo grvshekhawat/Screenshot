@@ -26,6 +26,10 @@ import {
   deviceShadowPreset,
   maxFittingDeviceScale,
 } from "../constants"
+import {
+  deviceColorPresetsFor,
+  normalizeFrameColor,
+} from "../device-chrome"
 import { storeTargetsForOrientation } from "../orientation"
 import {
   artboardToAttached,
@@ -1231,6 +1235,11 @@ function PhoneProperties({
             ))}
           </div>
         </div>
+        <FrameColorControls
+          deviceId={frame.deviceId}
+          color={frame.color}
+          onChange={(color) => updateFrame(slide.id, frame.id, { color })}
+        />
       </PropertySection>
 
       <PropertySection id="position" title="Position" copySection="position">
@@ -2754,6 +2763,52 @@ function normalizeHexColor(raw: string): string | null {
   return null
 }
 
+function FrameColorControls({
+  deviceId,
+  color,
+  onChange,
+}: {
+  deviceId: DeviceId
+  color: string
+  onChange: (color: string) => void
+}) {
+  const presets = deviceColorPresetsFor(deviceId)
+  const current = normalizeFrameColor(color)
+
+  return (
+    <div>
+      <p className="mb-1.5 text-[11px] text-zinc-500">Frame color</p>
+      <div className="mb-2 flex flex-wrap gap-1.5">
+        {presets.map((preset) => {
+          const active = current === normalizeFrameColor(preset.color)
+          return (
+            <button
+              key={preset.id}
+              type="button"
+              title={preset.name}
+              aria-label={preset.name}
+              aria-pressed={active}
+              onClick={() => onChange(preset.color)}
+              className={`h-7 w-7 rounded-full border-2 ${
+                active
+                  ? "border-[#e8ff47]"
+                  : "border-white/15 hover:border-white/40"
+              }`}
+              style={{ background: preset.color }}
+            />
+          )
+        })}
+      </div>
+      <ColorField
+        label="Custom"
+        value={current}
+        copyKey="color"
+        onChange={onChange}
+      />
+    </div>
+  )
+}
+
 function ColorField({
   label,
   value,
@@ -2932,6 +2987,10 @@ function MultiSelectionProperties({
       primary && "shadowOffsetY" in primary ? primary.shadowOffsetY : 0,
     shadowOpacity:
       primary && "shadowOpacity" in primary ? primary.shadowOpacity : 55,
+    shadowColor:
+      primary && "shadowColor" in primary
+        ? (primary.shadowColor as string)
+        : "#000000",
   }
 
   const nudgeGroup = (dx: number, dy: number) => {
@@ -3018,6 +3077,11 @@ function MultiSelectionProperties({
                 </button>
               ))}
             </div>
+            <FrameColorControls
+              deviceId={framePrimary.deviceId}
+              color={framePrimary.color}
+              onChange={(color) => patchSelectionCommon({ color })}
+            />
           </PropertySection>
         ) : null}
 
@@ -3607,6 +3671,7 @@ type ShadowFields = {
   shadowOffsetX?: number
   shadowOffsetY?: number
   shadowOpacity?: number
+  shadowColor?: string
 }
 
 /** Dedicated accordion section — shared by device, text, clipart, lens. */
@@ -3626,6 +3691,7 @@ function ShadowSection({
   const ox = value.shadowOffsetX ?? 0
   const oy = value.shadowOffsetY ?? 0
   const opacity = value.shadowOpacity ?? 55
+  const color = normalizeFrameColor(value.shadowColor, "#000000")
   const hasShadow = blur > 0 || ox !== 0 || oy !== 0
 
   return (
@@ -3716,6 +3782,12 @@ function ShadowSection({
             value={opacity}
             copyKey="shadowOpacity"
             onChange={(next) => onChange({ shadowOpacity: next })}
+          />
+          <ColorField
+            label="Color"
+            value={color}
+            copyKey="shadowColor"
+            onChange={(next) => onChange({ shadowColor: next })}
           />
         </>
       ) : null}

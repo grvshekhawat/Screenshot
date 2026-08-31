@@ -11,6 +11,7 @@ import type {
   TemplateId,
   TextLayer,
 } from "./types"
+import { normalizeFrameColor } from "./device-chrome"
 import { normalizeGroups } from "./groups"
 import { normalizeFlipFlag, normalizeTilt } from "./layer-flip"
 
@@ -38,9 +39,9 @@ export const DEVICES: Record<DeviceId, DeviceSpec> = {
     id: "iphone-69",
     name: "iPhone 16/17 Pro Max",
     aspect: 0.476,
-    bezel: 0.038,
+    bezel: 0.022,
     outerRadius: 0.168,
-    screenRadius: 0.128,
+    screenRadius: 0.146,
     chrome: "island",
     color: "#1c1c1e",
   },
@@ -48,9 +49,9 @@ export const DEVICES: Record<DeviceId, DeviceSpec> = {
     id: "pixel",
     name: "Pixel",
     aspect: 0.47,
-    bezel: 0.022,
-    outerRadius: 0.11,
-    screenRadius: 0.09,
+    bezel: 0.018,
+    outerRadius: 0.12,
+    screenRadius: 0.102,
     chrome: "punch",
     color: "#2a2a2c",
   },
@@ -58,9 +59,9 @@ export const DEVICES: Record<DeviceId, DeviceSpec> = {
     id: "ipad-13",
     name: 'iPad 13"',
     aspect: 0.75,
-    bezel: 0.028,
-    outerRadius: 0.045,
-    screenRadius: 0.028,
+    bezel: 0.02,
+    outerRadius: 0.055,
+    screenRadius: 0.038,
     chrome: "tablet",
     color: "#3a3a3c",
   },
@@ -68,9 +69,9 @@ export const DEVICES: Record<DeviceId, DeviceSpec> = {
     id: "ipad-11",
     name: 'iPad 11"',
     aspect: 0.657,
-    bezel: 0.03,
-    outerRadius: 0.05,
-    screenRadius: 0.032,
+    bezel: 0.02,
+    outerRadius: 0.055,
+    screenRadius: 0.038,
     chrome: "tablet",
     color: "#3a3a3c",
   },
@@ -78,9 +79,9 @@ export const DEVICES: Record<DeviceId, DeviceSpec> = {
     id: "iphone-69-land",
     name: "iPhone 16/17 Pro Max",
     aspect: 1 / 0.476,
-    bezel: 0.038,
+    bezel: 0.022,
     outerRadius: 0.168,
-    screenRadius: 0.128,
+    screenRadius: 0.146,
     chrome: "island",
     color: "#1c1c1e",
   },
@@ -88,9 +89,9 @@ export const DEVICES: Record<DeviceId, DeviceSpec> = {
     id: "pixel-land",
     name: "Pixel",
     aspect: 1 / 0.47,
-    bezel: 0.022,
-    outerRadius: 0.11,
-    screenRadius: 0.09,
+    bezel: 0.018,
+    outerRadius: 0.12,
+    screenRadius: 0.102,
     chrome: "punch",
     color: "#2a2a2c",
   },
@@ -98,9 +99,9 @@ export const DEVICES: Record<DeviceId, DeviceSpec> = {
     id: "ipad-13-land",
     name: 'iPad 13"',
     aspect: 1 / 0.75,
-    bezel: 0.028,
-    outerRadius: 0.045,
-    screenRadius: 0.028,
+    bezel: 0.02,
+    outerRadius: 0.055,
+    screenRadius: 0.038,
     chrome: "tablet",
     color: "#3a3a3c",
   },
@@ -108,9 +109,9 @@ export const DEVICES: Record<DeviceId, DeviceSpec> = {
     id: "ipad-11-land",
     name: 'iPad 11"',
     aspect: 1 / 0.657,
-    bezel: 0.03,
-    outerRadius: 0.05,
-    screenRadius: 0.032,
+    bezel: 0.02,
+    outerRadius: 0.055,
+    screenRadius: 0.038,
     chrome: "tablet",
     color: "#3a3a3c",
   },
@@ -600,6 +601,8 @@ export function createFrame(
       : shadow > 0 || shadowOffsetX !== 0 || shadowOffsetY !== 0
         ? 55
         : 0
+  const resolvedDeviceId = resolveDeviceId(deviceId)
+  const defaultColor = deviceSpec(resolvedDeviceId).color
   return {
     x: 50,
     y: 62,
@@ -609,7 +612,8 @@ export function createFrame(
     rotationY: 0,
     overflow: "cut",
     ...rest,
-    deviceId: resolveDeviceId(deviceId),
+    deviceId: resolvedDeviceId,
+    color: normalizeFrameColor(rest.color, defaultColor),
     screenshotId,
     screenshotIdB,
     screenMode,
@@ -620,6 +624,7 @@ export function createFrame(
     shadowOffsetX,
     shadowOffsetY,
     shadowOpacity,
+    shadowColor: normalizeFrameColor(rest.shadowColor, "#000000"),
     flipH: normalizeFlipFlag(rest.flipH),
     flipV: normalizeFlipFlag(rest.flipV),
     id: id ?? crypto.randomUUID(),
@@ -861,6 +866,7 @@ export function createLens(overrides: Partial<LensLayer> & { shape?: string } = 
     shadowOffsetX,
     shadowOffsetY,
     shadowOpacity,
+    shadowColor: normalizeFrameColor(rest.shadowColor, "#000000"),
     borderColor: rest.borderColor ?? "#ffffff",
     imageLocked,
     lockedX,
@@ -938,6 +944,7 @@ export function createClipart(overrides: Partial<ClipartLayer> = {}): ClipartLay
     shadowOffsetX,
     shadowOffsetY,
     shadowOpacity,
+    shadowColor: normalizeFrameColor(overrides.shadowColor, "#000000"),
     blur,
     recolor: overrides.recolor ?? "off",
     attachedFrameId: overrides.attachedFrameId ?? null,
@@ -1012,6 +1019,7 @@ export function createText(overrides: Partial<TextLayer> = {}): TextLayer {
     shadowOffsetX,
     shadowOffsetY,
     shadowOpacity,
+    shadowColor: normalizeFrameColor(overrides.shadowColor, "#000000"),
     strokeWidth,
     flipH: normalizeFlipFlag(overrides.flipH),
     flipV: normalizeFlipFlag(overrides.flipV),
@@ -1056,21 +1064,29 @@ export function textShadowPreset(
 
 export const deviceShadowPreset = textShadowPreset
 
+function shadowRgba(color: string | undefined, opacityPct: number): string {
+  const hex = normalizeFrameColor(color, "#000000")
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  const opacity = Math.min(1, Math.max(0, opacityPct / 100))
+  return `rgba(${r},${g},${b},${opacity})`
+}
+
 /** CSS `drop-shadow(...)` fragment for clipart filter chains. */
 export function clipartDropShadowCss(
   clipart: Pick<
     ClipartLayer,
     "shadow" | "shadowOffsetX" | "shadowOffsetY" | "shadowOpacity"
-  >,
+  > & { shadowColor?: string },
 ): string | undefined {
   const blur = clipart.shadow ?? 0
   const ox = clipart.shadowOffsetX ?? 0
   const oy = clipart.shadowOffsetY ?? 0
   const opacityPct = clipart.shadowOpacity ?? 0
   if (blur <= 0 && ox === 0 && oy === 0) return undefined
-  const opacity = Math.min(1, Math.max(0, opacityPct / 100))
-  if (opacity <= 0) return undefined
-  return `drop-shadow(${ox}px ${oy}px ${Math.min(80, blur)}px rgba(0,0,0,${opacity}))`
+  if (opacityPct <= 0) return undefined
+  return `drop-shadow(${ox}px ${oy}px ${Math.min(80, blur)}px ${shadowRgba(clipart.shadowColor, opacityPct)})`
 }
 
 /** CSS box-shadow for lenses (outer wrapper — must not use overflow:hidden). */
@@ -1078,39 +1094,37 @@ export function lensShadowCss(
   lens: Pick<
     LensLayer,
     "shadow" | "shadowOffsetX" | "shadowOffsetY" | "shadowOpacity"
-  >,
+  > & { shadowColor?: string },
 ): string | undefined {
   const blur = lens.shadow ?? 0
   const ox = lens.shadowOffsetX ?? 0
   const oy = lens.shadowOffsetY ?? 0
   const opacityPct = lens.shadowOpacity ?? 0
   if (blur <= 0 && ox === 0 && oy === 0) return undefined
-  const opacity = Math.min(1, Math.max(0, opacityPct / 100))
-  if (opacity <= 0) return undefined
-  return `${ox}px ${oy}px ${Math.min(80, blur)}px rgba(0,0,0,${opacity})`
+  if (opacityPct <= 0) return undefined
+  return `${ox}px ${oy}px ${Math.min(80, blur)}px ${shadowRgba(lens.shadowColor, opacityPct)}`
 }
 
 export function deviceShadowCss(
   frame: Pick<
     Frame,
     "shadow" | "shadowOffsetX" | "shadowOffsetY" | "shadowOpacity"
-  >,
+  > & { shadowColor?: string },
 ): string | undefined {
   const blur = frame.shadow ?? 0
   const ox = frame.shadowOffsetX ?? 0
   const oy = frame.shadowOffsetY ?? 0
   const opacityPct = frame.shadowOpacity ?? 0
   if (blur <= 0 && ox === 0 && oy === 0) return undefined
-  const opacity = Math.min(1, Math.max(0, opacityPct / 100))
-  if (opacity <= 0) return undefined
-  return `drop-shadow(${ox}px ${oy}px ${Math.min(80, blur)}px rgba(0,0,0,${opacity}))`
+  if (opacityPct <= 0) return undefined
+  return `drop-shadow(${ox}px ${oy}px ${Math.min(80, blur)}px ${shadowRgba(frame.shadowColor, opacityPct)})`
 }
 
 export function textShadowCss(
   text: Pick<
     TextLayer,
     "shadow" | "shadowOffsetX" | "shadowOffsetY" | "shadowOpacity"
-  >,
+  > & { shadowColor?: string },
   fontScale: number,
 ): string | undefined {
   const blur = text.shadow ?? 0
@@ -1118,9 +1132,8 @@ export function textShadowCss(
   const oy = text.shadowOffsetY ?? 0
   const opacityPct = text.shadowOpacity ?? 0
   if (blur <= 0 && ox === 0 && oy === 0) return undefined
-  const opacity = Math.min(1, Math.max(0, opacityPct / 100))
-  if (opacity <= 0) return undefined
-  return `${ox * fontScale}px ${oy * fontScale}px ${blur * fontScale}px rgba(0,0,0,${opacity})`
+  if (opacityPct <= 0) return undefined
+  return `${ox * fontScale}px ${oy * fontScale}px ${blur * fontScale}px ${shadowRgba(text.shadowColor, opacityPct)}`
 }
 
 export function defaultTexts(

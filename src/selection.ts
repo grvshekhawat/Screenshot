@@ -22,6 +22,7 @@ export type SelectionPatch = {
   shadowOffsetX?: number
   shadowOffsetY?: number
   shadowOpacity?: number
+  shadowColor?: string
   /** Frame */
   scale?: number
   rotationX?: number
@@ -64,6 +65,7 @@ const UNIVERSAL_KEYS = [
   "shadowOffsetX",
   "shadowOffsetY",
   "shadowOpacity",
+  "shadowColor",
   "rotationX",
   "rotationY",
 ] as const
@@ -72,6 +74,7 @@ const FRAME_KEYS = [
   ...UNIVERSAL_KEYS,
   "scale",
   "deviceId",
+  "color",
 ] as const
 
 const TEXT_KEYS = [
@@ -152,7 +155,7 @@ export const SECTION_KEYS: Record<
     "align",
     "weight",
   ],
-  shadow: ["shadow", "shadowOffsetX", "shadowOffsetY", "shadowOpacity"],
+  shadow: ["shadow", "shadowOffsetX", "shadowOffsetY", "shadowOpacity", "shadowColor"],
 }
 
 export const SECTION_LABELS: Record<PropertySectionId, string> = {
