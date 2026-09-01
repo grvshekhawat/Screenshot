@@ -2,6 +2,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useRef,
   useState,
   useSyncExternalStore,
   type ReactNode,
@@ -78,6 +79,15 @@ import {
 } from "../groups"
 import { OverflowChoice } from "./OverflowChoice"
 import { ScreenshotDropZone } from "./ScreenshotDropZone"
+import { useAuth } from "../auth/AuthProvider"
+import {
+  listDemoScreens,
+  listPublishedBackgrounds,
+} from "../api/projects"
+import type {
+  LibraryBackgroundRecord,
+  LibraryDemoScreenRecord,
+} from "../types/cloud"
 
 type PatchableLayer = Frame | TextLayer | ClipartLayer | LensLayer
 
@@ -1094,6 +1104,27 @@ function PhoneProperties({
     artboardHeight,
   )
   const scalePercent = Math.round((frame.scale / fitScale) * 100)
+  const { applyDemoScreenshot } = useProject()
+  const { isAdmin } = useAuth()
+  const [demos, setDemos] = useState<LibraryDemoScreenRecord[]>([])
+
+  useEffect(() => {
+    if (!isAdmin) {
+      setDemos([])
+      return
+    }
+    let cancelled = false
+    void listDemoScreens()
+      .then((rows) => {
+        if (!cancelled) setDemos(rows.filter((row) => row.url))
+      })
+      .catch(() => {
+        if (!cancelled) setDemos([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [isAdmin])
 
   return (
     <PropertyCopyProvider kind="frame" layer={frame}>
@@ -1141,6 +1172,15 @@ function PhoneProperties({
               >
                 Remove screenshot
               </button>
+            ) : null}
+            {isAdmin && demos.length > 0 ? (
+              <DemoScreenPicker
+                demos={demos}
+                onPick={(demo) => {
+                  if (!demo.url) return
+                  applyDemoScreenshot(slide.id, frame.id, demo.id, demo.url, "a")
+                }}
+              />
             ) : null}
           </>
         ) : (
@@ -2490,6 +2530,127 @@ function BackgroundColorPanel({
   )
 }
 
+function DemoScreenPicker({
+  demos,
+  onPick,
+}: {
+  demos: LibraryDemoScreenRecord[]
+  onPick: (demo: LibraryDemoScreenRecord) => void
+}) {
+  return (
+    <div className="mt-3">
+      <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+        Admin demos
+      </p>
+      <div className="grid max-h-40 grid-cols-3 gap-1.5 overflow-y-auto">
+        {demos.map((demo) => (
+          <button
+            key={demo.id}
+            type="button"
+            title={demo.name}
+            onClick={() => onPick(demo)}
+            className="overflow-hidden rounded-md ring-1 ring-white/10 hover:ring-[#e8ff47]/60"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={demo.url}
+              alt={demo.name}
+              className="aspect-[9/19] w-full object-cover"
+            />
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function BackgroundFocusPicker({
+  src,
+  fit,
+  positionX,
+  positionY,
+  artboardAspect,
+  onChange,
+}: {
+  src: string
+  fit: "cover" | "contain"
+  positionX: number
+  positionY: number
+  artboardAspect: number
+  onChange: (next: { imagePositionX: number; imagePositionY: number }) => void
+}) {
+  const dragRef = useRef<{
+    pointerId: number
+    startX: number
+    startY: number
+    originX: number
+    originY: number
+    width: number
+    height: number
+  } | null>(null)
+
+  const clamp = (value: number) => Math.min(100, Math.max(0, value))
+
+  return (
+    <div className="mt-3">
+      <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+        Focus · drag to choose section
+      </p>
+      <div
+        className="relative w-full cursor-grab overflow-hidden rounded-lg ring-1 ring-white/10 active:cursor-grabbing"
+        style={{ aspectRatio: `${artboardAspect}` }}
+        onPointerDown={(event) => {
+          event.currentTarget.setPointerCapture(event.pointerId)
+          const rect = event.currentTarget.getBoundingClientRect()
+          dragRef.current = {
+            pointerId: event.pointerId,
+            startX: event.clientX,
+            startY: event.clientY,
+            originX: positionX,
+            originY: positionY,
+            width: Math.max(1, rect.width),
+            height: Math.max(1, rect.height),
+          }
+        }}
+        onPointerMove={(event) => {
+          const drag = dragRef.current
+          if (!drag || drag.pointerId !== event.pointerId) return
+          const dx = (event.clientX - drag.startX) / drag.width
+          const dy = (event.clientY - drag.startY) / drag.height
+          // Dragging the image right reveals the left side → lower position %.
+          onChange({
+            imagePositionX: clamp(drag.originX - dx * 100),
+            imagePositionY: clamp(drag.originY - dy * 100),
+          })
+        }}
+        onPointerUp={(event) => {
+          if (dragRef.current?.pointerId === event.pointerId) {
+            dragRef.current = null
+          }
+        }}
+        onPointerCancel={() => {
+          dragRef.current = null
+        }}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={src}
+          alt=""
+          draggable={false}
+          className="pointer-events-none h-full w-full select-none"
+          style={{
+            objectFit: fit,
+            objectPosition: `${positionX}% ${positionY}%`,
+          }}
+        />
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/50 to-transparent px-2 py-1.5 text-[10px] text-zinc-200">
+          {Math.round(positionX)}% · {Math.round(positionY)}%
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function BackgroundImagePanel({
   slide,
   assetUrls,
@@ -2501,6 +2662,44 @@ function BackgroundImagePanel({
   onBackgroundUploadClick: (slideId?: string) => void
   updateSlide: ReturnType<typeof useProject>["updateSlide"]
 }) {
+  const { applyLibraryBackground, project } = useProject()
+  const [library, setLibrary] = useState<LibraryBackgroundRecord[]>([])
+  const target = STORE_TARGETS[project.targetId]
+  const artboardAspect = target.width / target.height
+  const positionX = slide.background.imagePositionX ?? 50
+  const positionY = slide.background.imagePositionY ?? 50
+  const bgUrl = slide.background.imageId
+    ? assetUrls[slide.background.imageId]
+    : null
+
+  useEffect(() => {
+    let cancelled = false
+    void listPublishedBackgrounds()
+      .then((rows) => {
+        if (!cancelled) setLibrary(rows.filter((row) => row.url))
+      })
+      .catch(() => {
+        if (!cancelled) setLibrary([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const setFocus = (next: {
+    imagePositionX: number
+    imagePositionY: number
+  }) => {
+    updateSlide(slide.id, {
+      background: {
+        ...slide.background,
+        type: "image",
+        imageFit: "cover",
+        ...next,
+      },
+    })
+  }
+
   return (
     <>
       <button
@@ -2527,6 +2726,38 @@ function BackgroundImagePanel({
           ? "Replace background image"
           : "Upload background image"}
       </button>
+      {library.length > 0 ? (
+        <div className="mt-3">
+          <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+            Library
+          </p>
+          <div className="grid max-h-36 grid-cols-3 gap-1.5 overflow-y-auto">
+            {library.map((bg) => (
+              <button
+                key={bg.id}
+                type="button"
+                title={bg.name}
+                onClick={() => {
+                  if (!bg.url) return
+                  applyLibraryBackground(slide.id, bg.id, bg.url)
+                }}
+                className={`overflow-hidden rounded-md ring-1 ${
+                  slide.background.imageId === `background:${bg.id}`
+                    ? "ring-[#e8ff47]"
+                    : "ring-white/10 hover:ring-white/25"
+                }`}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={bg.url}
+                  alt={bg.name}
+                  className="h-14 w-full object-cover"
+                />
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
       {slide.background.imageId ? (
         <button
           type="button"
@@ -2564,6 +2795,56 @@ function BackgroundImagePanel({
           </button>
         ))}
       </div>
+      {bgUrl ? (
+        <BackgroundFocusPicker
+          src={bgUrl}
+          fit={slide.background.imageFit}
+          positionX={positionX}
+          positionY={positionY}
+          artboardAspect={artboardAspect}
+          onChange={setFocus}
+        />
+      ) : null}
+      {bgUrl ? (
+        <>
+          <label className="mt-3 block text-[11px] text-zinc-500">
+            Horizontal {Math.round(positionX)}%
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={1}
+              value={positionX}
+              onChange={(event) =>
+                setFocus({
+                  imagePositionX: Number(event.target.value),
+                  imagePositionY: positionY,
+                })
+              }
+              style={rangeFillStyle(positionX, 0, 100)}
+              className="range-thin mt-1.5 w-full"
+            />
+          </label>
+          <label className="mt-2 block text-[11px] text-zinc-500">
+            Vertical {Math.round(positionY)}%
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={1}
+              value={positionY}
+              onChange={(event) =>
+                setFocus({
+                  imagePositionX: positionX,
+                  imagePositionY: Number(event.target.value),
+                })
+              }
+              style={rangeFillStyle(positionY, 0, 100)}
+              className="range-thin mt-1.5 w-full"
+            />
+          </label>
+        </>
+      ) : null}
       <label className="mt-3 block text-[11px] text-zinc-500">
         Opacity {Math.round(slide.background.imageOpacity * 100)}%
         <input
@@ -2584,13 +2865,6 @@ function BackgroundImagePanel({
           className="range-thin mt-1.5 w-full"
         />
       </label>
-      {slide.background.imageId && assetUrls[slide.background.imageId] ? (
-        <img
-          src={assetUrls[slide.background.imageId]}
-          alt=""
-          className="mt-3 h-20 w-full rounded-lg object-cover ring-1 ring-white/10"
-        />
-      ) : null}
     </>
   )
 }

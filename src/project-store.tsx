@@ -235,6 +235,22 @@ type ProjectContextValue = {
   ) => Promise<void>
   attachClipart: (slideId: string, file: File) => Promise<void>
   attachBackgroundImage: (slideId: string, file: File) => Promise<void>
+  /** Register a remote/library asset URL for canvas rendering. */
+  registerAssetUrl: (assetId: string, url: string) => void
+  /** Admin: use a demo screen as the phone screenshot (`demo:{id}`). */
+  applyDemoScreenshot: (
+    slideId: string,
+    frameId: string,
+    demoId: string,
+    url: string,
+    slot?: FrameScreenSlot,
+  ) => void
+  /** Use a published library background (`background:{id}`). */
+  applyLibraryBackground: (
+    slideId: string,
+    backgroundId: string,
+    url: string,
+  ) => void
   saveDraft: () => Promise<void>
   /** Persist current draft + thumbnail immediately (e.g. leaving the editor). */
   flushSave: () => Promise<void>
@@ -275,6 +291,8 @@ function copyBackground(background: Slide["background"]): Slide["background"] {
     imageId: background.imageId,
     imageFit: background.imageFit,
     imageOpacity: background.imageOpacity,
+    imagePositionX: background.imagePositionX,
+    imagePositionY: background.imagePositionY,
   })
 }
 
@@ -2046,6 +2064,69 @@ export function ProjectProvider({
     [storeAsset],
   )
 
+  const registerAssetUrl = useCallback((assetId: string, url: string) => {
+    setAssetUrls((current) =>
+      current[assetId] === url ? current : { ...current, [assetId]: url },
+    )
+  }, [])
+
+  const applyDemoScreenshot = useCallback(
+    (
+      slideId: string,
+      frameId: string,
+      demoId: string,
+      url: string,
+      slot: FrameScreenSlot = "a",
+    ) => {
+      const assetId = `demo:${demoId}`
+      setAssetUrls((current) => ({ ...current, [assetId]: url }))
+      setProject((current) => ({
+        ...current,
+        slides: current.slides.map((slide) => {
+          if (slide.id !== slideId) return slide
+          return {
+            ...slide,
+            frames: slide.frames.map((frame) => {
+              if (frame.id !== frameId) return frame
+              if (slot === "b") {
+                return createFrame({
+                  ...frame,
+                  screenshotIdB: assetId,
+                  screenMode: "split",
+                })
+              }
+              return createFrame({ ...frame, screenshotId: assetId })
+            }),
+          }
+        }),
+      }))
+    },
+    [],
+  )
+
+  const applyLibraryBackground = useCallback(
+    (slideId: string, backgroundId: string, url: string) => {
+      const assetId = `background:${backgroundId}`
+      setAssetUrls((current) => ({ ...current, [assetId]: url }))
+      setProject((current) => ({
+        ...current,
+        slides: current.slides.map((slide) =>
+          slide.id === slideId
+            ? {
+                ...slide,
+                background: defaultBackground({
+                  ...slide.background,
+                  type: "image",
+                  imageId: assetId,
+                }),
+              }
+            : slide,
+        ),
+      }))
+    },
+    [],
+  )
+
   const activeSlide =
     project.slides.find((slide) => slide.id === project.activeSlideId) ??
     project.slides[0]
@@ -2534,6 +2615,9 @@ export function ProjectProvider({
       attachScreenshot,
       attachClipart,
       attachBackgroundImage,
+      registerAssetUrl,
+      applyDemoScreenshot,
+      applyLibraryBackground,
       saveDraft,
       flushSave,
       undo,
@@ -2616,6 +2700,9 @@ export function ProjectProvider({
       attachScreenshot,
       attachClipart,
       attachBackgroundImage,
+      registerAssetUrl,
+      applyDemoScreenshot,
+      applyLibraryBackground,
       saveDraft,
       flushSave,
       undo,

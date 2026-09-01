@@ -54,6 +54,33 @@ export type LibraryClipartRecord = {
   url?: string
 }
 
+export type DemoAspect = "iphone" | "ipad"
+
+/** Admin-only phone/tablet UI mockups for use as device screenshots. */
+export type LibraryDemoScreenRecord = {
+  id: string
+  name: string
+  prompt: string
+  aspect: DemoAspect
+  batch_id: string
+  storage_path: string
+  sort_order: number
+  created_at?: string
+  url?: string
+}
+
+/** Published slide backgrounds available to all users. */
+export type LibraryBackgroundRecord = {
+  id: string
+  name: string
+  prompt: string
+  storage_path: string
+  sort_order: number
+  published: boolean
+  created_at?: string
+  url?: string
+}
+
 export function canExport(profile: Profile | null): boolean {
   if (!profile) return false
   // Admins get clean exports without a subscription.

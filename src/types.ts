@@ -57,6 +57,10 @@ export type SlideBackground = {
   imageId: string | null
   imageFit: "cover" | "contain"
   imageOpacity: number
+  /** Focal point for cover/contain (0–100). 50 = center. */
+  imagePositionX: number
+  /** Focal point for cover/contain (0–100). 50 = center. */
+  imagePositionY: number
 }
 
 export type FrameScreenMode = "single" | "split"

@@ -4,13 +4,19 @@ import { useEffect, useState, type FormEvent } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import {
+  deleteLibraryBackground,
   deleteLibraryClipart,
+  deleteDemoScreen,
   deleteTemplate,
+  listAllBackgrounds,
   listAllCliparts,
   listAllTemplates,
+  listDemoScreens,
   listProjects,
+  publishDemoScreens,
   publishProjectAsTemplate,
   createProject,
+  upsertLibraryBackground,
   upsertLibraryClipart,
   upsertTemplate,
 } from "../api/projects"
@@ -18,6 +24,10 @@ import {
   generateClipartPreview,
   pngBase64ToFile,
 } from "../api/generate-clipart"
+import {
+  generateMediaPreview,
+  type DemoAspect,
+} from "../api/generate-media"
 import { analyzeStoreLayout } from "../api/analyze-store-layout"
 import { importStoreApp } from "../api/import-store-app"
 import { buildProjectFromStoreAnalysis } from "../import-store-project"
@@ -26,13 +36,15 @@ import { createSampleProject } from "../constants"
 import { IMAGE_ACCEPT, isImageFile, normalizeImageFile } from "../image-upload"
 import { renderTemplatePreviewDataUrl } from "../template-preview"
 import type {
+  LibraryBackgroundRecord,
   LibraryClipartRecord,
+  LibraryDemoScreenRecord,
   ProjectRecord,
   TemplateRecord,
 } from "../types/cloud"
 import { TemplateThumbnail } from "../components/TemplateThumbnail"
 
-type AdminTab = "templates" | "clipart"
+type AdminTab = "templates" | "clipart" | "demos" | "backgrounds"
 
 export function AdminPage() {
   const { ready, userId, isAdmin, usingLocalBackend } = useAuth()
@@ -40,6 +52,8 @@ export function AdminPage() {
   const [tab, setTab] = useState<AdminTab>("templates")
   const [templates, setTemplates] = useState<TemplateRecord[]>([])
   const [cliparts, setCliparts] = useState<LibraryClipartRecord[]>([])
+  const [demos, setDemos] = useState<LibraryDemoScreenRecord[]>([])
+  const [backgrounds, setBackgrounds] = useState<LibraryBackgroundRecord[]>([])
   const [projects, setProjects] = useState<ProjectRecord[]>([])
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
@@ -50,6 +64,18 @@ export function AdminPage() {
   const [genPreviewBase64, setGenPreviewBase64] = useState<string | null>(null)
   const [genPreviewMime, setGenPreviewMime] = useState("image/webp")
   const [genBusy, setGenBusy] = useState(false)
+  const [demoPrompt, setDemoPrompt] = useState("")
+  const [demoName, setDemoName] = useState("")
+  const [demoAspect, setDemoAspect] = useState<DemoAspect>("iphone")
+  const [demoPreviews, setDemoPreviews] = useState<
+    { imageBase64: string; mime: string }[]
+  >([])
+  const [demoBusy, setDemoBusy] = useState(false)
+  const [bgPrompt, setBgPrompt] = useState("")
+  const [bgName, setBgName] = useState("")
+  const [bgPreviewBase64, setBgPreviewBase64] = useState<string | null>(null)
+  const [bgPreviewMime, setBgPreviewMime] = useState("image/webp")
+  const [bgBusy, setBgBusy] = useState(false)
   const [storeQuery, setStoreQuery] = useState("")
   const [storeBusy, setStoreBusy] = useState(false)
   const [storeImport, setStoreImport] = useState<{
@@ -61,14 +87,18 @@ export function AdminPage() {
   } | null>(null)
 
   const reload = async () => {
-    const [t, c, p] = await Promise.all([
+    const [t, c, p, d, b] = await Promise.all([
       listAllTemplates(),
       listAllCliparts(),
       listProjects(),
+      listDemoScreens().catch(() => [] as LibraryDemoScreenRecord[]),
+      listAllBackgrounds().catch(() => [] as LibraryBackgroundRecord[]),
     ])
     setTemplates(t)
     setCliparts(c)
     setProjects(p)
+    setDemos(d)
+    setBackgrounds(b)
   }
 
   useEffect(() => {
@@ -240,6 +270,127 @@ export function AdminPage() {
     }
   }
 
+  const onGenerateDemos = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setError(null)
+    setMessage(null)
+    setDemoBusy(true)
+    setDemoPreviews([])
+    try {
+      const result = await generateMediaPreview({
+        kind: "demo",
+        prompt: demoPrompt,
+        name: demoName || undefined,
+        aspect: demoAspect,
+      })
+      setDemoPreviews(
+        result.images.map((img) => ({
+          imageBase64: img.imageBase64,
+          mime: img.mime,
+        })),
+      )
+      if (result.name && !demoName.trim()) setDemoName(result.name)
+      setMessage(
+        `${result.images.length} demo screens ready — publish to save (admin-only).`,
+      )
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Generation failed")
+    } finally {
+      setDemoBusy(false)
+    }
+  }
+
+  const onPublishDemos = async () => {
+    if (!demoPreviews.length) return
+    setError(null)
+    setMessage(null)
+    setBusy(true)
+    try {
+      const baseName =
+        demoName.trim() || demoPrompt.trim().slice(0, 40) || "App demo"
+      const files = demoPreviews.map((img, i) => {
+        const ext = img.mime.includes("webp") ? "webp" : "png"
+        return pngBase64ToFile(
+          img.imageBase64,
+          `${baseName.replace(/[^\w.\-]+/g, "_")}-${i + 1}.${ext}`,
+          img.mime,
+        )
+      })
+      await publishDemoScreens({
+        name: baseName,
+        prompt: demoPrompt.trim(),
+        aspect: demoAspect,
+        files,
+      })
+      setMessage("Demo screens published (visible to admins only)")
+      setDemoPreviews([])
+      setDemoPrompt("")
+      setDemoName("")
+      await reload()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Publish failed")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const onGenerateBackground = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setError(null)
+    setMessage(null)
+    setBgBusy(true)
+    setBgPreviewBase64(null)
+    try {
+      const result = await generateMediaPreview({
+        kind: "background",
+        prompt: bgPrompt,
+        name: bgName || undefined,
+      })
+      const first = result.images[0]
+      if (!first) throw new Error("No image returned")
+      setBgPreviewBase64(first.imageBase64)
+      setBgPreviewMime(first.mime)
+      if (result.name && !bgName.trim()) setBgName(result.name)
+      setMessage("Background preview ready — publish for all users.")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Generation failed")
+    } finally {
+      setBgBusy(false)
+    }
+  }
+
+  const onPublishBackground = async () => {
+    if (!bgPreviewBase64) return
+    setError(null)
+    setMessage(null)
+    setBusy(true)
+    try {
+      const ext = bgPreviewMime.includes("webp") ? "webp" : "png"
+      const file = pngBase64ToFile(
+        bgPreviewBase64,
+        `${(bgName || "background").replace(/[^\w.\-]+/g, "_")}.${ext}`,
+        bgPreviewMime,
+      )
+      await upsertLibraryBackground({
+        name: bgName.trim() || bgPrompt.trim().slice(0, 40) || "Background",
+        prompt: bgPrompt.trim(),
+        sort_order: backgrounds.length,
+        published: true,
+        file,
+      })
+      setMessage("Background published for all users")
+      setBgPreviewBase64(null)
+      setBgPreviewMime("image/webp")
+      setBgPrompt("")
+      setBgName("")
+      await reload()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Publish failed")
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const onImportFromStore = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setError(null)
@@ -337,6 +488,8 @@ export function AdminPage() {
               [
                 { id: "templates", label: "Templates" },
                 { id: "clipart", label: "Clipart" },
+                { id: "demos", label: "Demos" },
+                { id: "backgrounds", label: "Backgrounds" },
               ] as const
             ).map((item) => {
               const active = tab === item.id
@@ -721,6 +874,277 @@ export function AdminPage() {
               {cliparts.length === 0 ? (
                 <p className="col-span-full text-sm text-zinc-500">
                   No cliparts yet.
+                </p>
+              ) : null}
+            </div>
+          </section>
+        ) : null}
+
+        {tab === "demos" ? (
+          <section
+            role="tabpanel"
+            aria-labelledby="admin-tab-demos"
+            className="space-y-4"
+          >
+            <p className="text-sm text-zinc-400">
+              Generate 5 phone-aspect app UI mockups from a prompt. Published
+              demos are <strong className="font-medium text-zinc-300">admin-only</strong>{" "}
+              and can be applied as device screenshots in the editor.
+            </p>
+            <form
+              onSubmit={(e) => void onGenerateDemos(e)}
+              className="space-y-3 rounded-lg border border-white/[0.08] bg-white/[0.02] p-4"
+            >
+              <h2 className="text-sm font-semibold text-zinc-200">
+                Generate app demos (AI × 5)
+              </h2>
+              {usingLocalBackend ? (
+                <p className="text-xs text-amber-200/90">
+                  Requires Supabase +{" "}
+                  <code className="text-amber-100">generate-media</code> Edge
+                  Function.
+                </p>
+              ) : null}
+              <label className="block text-xs text-zinc-400">
+                App prompt
+                <input
+                  value={demoPrompt}
+                  onChange={(e) => setDemoPrompt(e.target.value)}
+                  required
+                  maxLength={600}
+                  placeholder="meditation app with calm purple UI and daily streaks"
+                  disabled={usingLocalBackend || demoBusy}
+                  className="mt-1 block w-full rounded border border-white/10 bg-[#0a0a0e] px-2 py-2 text-sm text-white disabled:opacity-50"
+                />
+              </label>
+              <div className="flex flex-wrap gap-3">
+                <label className="text-xs text-zinc-400">
+                  Name
+                  <input
+                    value={demoName}
+                    onChange={(e) => setDemoName(e.target.value)}
+                    placeholder="Calm streaks"
+                    disabled={demoBusy}
+                    className="mt-1 block rounded border border-white/10 bg-[#0a0a0e] px-2 py-1.5 text-sm text-white"
+                  />
+                </label>
+                <label className="text-xs text-zinc-400">
+                  Aspect
+                  <select
+                    value={demoAspect}
+                    onChange={(e) =>
+                      setDemoAspect(e.target.value as DemoAspect)
+                    }
+                    disabled={demoBusy}
+                    className="mt-1 block rounded border border-white/10 bg-[#0a0a0e] px-2 py-1.5 text-sm text-white"
+                  >
+                    <option value="iphone">iPhone</option>
+                    <option value="ipad">iPad</option>
+                  </select>
+                </label>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="submit"
+                  disabled={usingLocalBackend || demoBusy || !demoPrompt.trim()}
+                  className="rounded-md bg-[#e8ff47] px-3 py-2 text-xs font-semibold text-[#0a0a0c] hover:bg-[#f0ff7a] disabled:opacity-50"
+                >
+                  {demoBusy ? "Generating 5…" : "Generate 5"}
+                </button>
+                {demoPreviews.length ? (
+                  <>
+                    <button
+                      type="button"
+                      disabled={busy || demoBusy}
+                      onClick={() => void onPublishDemos()}
+                      className="rounded-md border border-white/15 px-3 py-2 text-xs font-semibold text-zinc-100 hover:bg-white/[0.06] disabled:opacity-50"
+                    >
+                      Publish all
+                    </button>
+                    <button
+                      type="button"
+                      disabled={demoBusy}
+                      onClick={() => setDemoPreviews([])}
+                      className="rounded-md px-3 py-2 text-xs text-zinc-400 hover:text-white"
+                    >
+                      Discard
+                    </button>
+                  </>
+                ) : null}
+              </div>
+              {demoPreviews.length ? (
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+                  {demoPreviews.map((img, i) => (
+                    <div
+                      key={i}
+                      className="overflow-hidden rounded-lg bg-black/40 ring-1 ring-white/10"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={`data:${img.mime};base64,${img.imageBase64}`}
+                        alt={`Demo preview ${i + 1}`}
+                        className="aspect-[9/19] w-full object-cover"
+                      />
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </form>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {demos.map((demo) => (
+                <div
+                  key={demo.id}
+                  className="rounded-lg border border-white/[0.08] p-2 text-center"
+                >
+                  {demo.url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={demo.url}
+                      alt={demo.name}
+                      className="mx-auto aspect-[9/19] w-full rounded object-cover"
+                    />
+                  ) : null}
+                  <div className="mt-1 truncate text-[11px]">{demo.name}</div>
+                  <div className="text-[10px] text-zinc-500">{demo.aspect}</div>
+                  <button
+                    type="button"
+                    className="text-[10px] text-red-400"
+                    onClick={() =>
+                      void deleteDemoScreen(demo.id).then(reload)
+                    }
+                  >
+                    Delete
+                  </button>
+                </div>
+              ))}
+              {demos.length === 0 ? (
+                <p className="col-span-full text-sm text-zinc-500">
+                  No demo screens yet.
+                </p>
+              ) : null}
+            </div>
+          </section>
+        ) : null}
+
+        {tab === "backgrounds" ? (
+          <section
+            role="tabpanel"
+            aria-labelledby="admin-tab-backgrounds"
+            className="space-y-4"
+          >
+            <p className="text-sm text-zinc-400">
+              Generate slide backgrounds from a prompt. Published backgrounds
+              appear for <strong className="font-medium text-zinc-300">all users</strong>{" "}
+              in the editor Background → Image library.
+            </p>
+            <form
+              onSubmit={(e) => void onGenerateBackground(e)}
+              className="space-y-3 rounded-lg border border-white/[0.08] bg-white/[0.02] p-4"
+            >
+              <h2 className="text-sm font-semibold text-zinc-200">
+                Generate background (AI)
+              </h2>
+              {usingLocalBackend ? (
+                <p className="text-xs text-amber-200/90">
+                  Requires Supabase +{" "}
+                  <code className="text-amber-100">generate-media</code> Edge
+                  Function.
+                </p>
+              ) : null}
+              <label className="block text-xs text-zinc-400">
+                Prompt
+                <input
+                  value={bgPrompt}
+                  onChange={(e) => setBgPrompt(e.target.value)}
+                  required
+                  maxLength={600}
+                  placeholder="soft peach to coral gradient with gentle light flares"
+                  disabled={usingLocalBackend || bgBusy}
+                  className="mt-1 block w-full rounded border border-white/10 bg-[#0a0a0e] px-2 py-2 text-sm text-white disabled:opacity-50"
+                />
+              </label>
+              <label className="text-xs text-zinc-400">
+                Name
+                <input
+                  value={bgName}
+                  onChange={(e) => setBgName(e.target.value)}
+                  placeholder="Peach flare"
+                  disabled={bgBusy}
+                  className="mt-1 block rounded border border-white/10 bg-[#0a0a0e] px-2 py-1.5 text-sm text-white"
+                />
+              </label>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="submit"
+                  disabled={usingLocalBackend || bgBusy || !bgPrompt.trim()}
+                  className="rounded-md bg-[#e8ff47] px-3 py-2 text-xs font-semibold text-[#0a0a0c] hover:bg-[#f0ff7a] disabled:opacity-50"
+                >
+                  {bgBusy ? "Generating…" : "Generate"}
+                </button>
+                {bgPreviewBase64 ? (
+                  <>
+                    <button
+                      type="button"
+                      disabled={busy || bgBusy}
+                      onClick={() => void onPublishBackground()}
+                      className="rounded-md border border-white/15 px-3 py-2 text-xs font-semibold text-zinc-100 hover:bg-white/[0.06] disabled:opacity-50"
+                    >
+                      Publish
+                    </button>
+                    <button
+                      type="button"
+                      disabled={bgBusy}
+                      onClick={() => setBgPreviewBase64(null)}
+                      className="rounded-md px-3 py-2 text-xs text-zinc-400 hover:text-white"
+                    >
+                      Discard
+                    </button>
+                  </>
+                ) : null}
+              </div>
+              {bgPreviewBase64 ? (
+                <div className="overflow-hidden rounded-lg bg-black/40 ring-1 ring-white/10">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={`data:${bgPreviewMime};base64,${bgPreviewBase64}`}
+                    alt="Background preview"
+                    className="max-h-64 w-full object-cover"
+                  />
+                </div>
+              ) : null}
+            </form>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {backgrounds.map((bg) => (
+                <div
+                  key={bg.id}
+                  className="rounded-lg border border-white/[0.08] p-2 text-center"
+                >
+                  {bg.url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={bg.url}
+                      alt={bg.name}
+                      className="mx-auto h-24 w-full rounded object-cover"
+                    />
+                  ) : null}
+                  <div className="mt-1 truncate text-[11px]">{bg.name}</div>
+                  <div className="text-[10px] text-zinc-500">
+                    {bg.published ? "Published" : "Draft"}
+                  </div>
+                  <button
+                    type="button"
+                    className="text-[10px] text-red-400"
+                    onClick={() =>
+                      void deleteLibraryBackground(bg.id).then(reload)
+                    }
+                  >
+                    Delete
+                  </button>
+                </div>
+              ))}
+              {backgrounds.length === 0 ? (
+                <p className="col-span-full text-sm text-zinc-500">
+                  No backgrounds yet.
                 </p>
               ) : null}
             </div>

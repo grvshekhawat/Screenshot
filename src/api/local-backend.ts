@@ -10,7 +10,10 @@ import {
 import { builtInSampleScreens, sampleScreenDataUrl } from "../sample-screens"
 import { renderProjectPreviewDataUrl } from "../template-preview"
 import type {
+  DemoAspect,
+  LibraryBackgroundRecord,
   LibraryClipartRecord,
+  LibraryDemoScreenRecord,
   Profile,
   ProjectRecord,
   TemplateRecord,
@@ -24,6 +27,8 @@ const LS_PROJECTS = "ss:local-projects"
 const LS_ASSETS = "ss:local-assets"
 const LS_TEMPLATES = "ss:local-templates"
 const LS_CLIPARTS = "ss:local-cliparts"
+const LS_DEMOS = "ss:local-demo-screens"
+const LS_BACKGROUNDS = "ss:local-backgrounds"
 const LS_CATALOG_SEED = "ss:catalog-seed-v"
 const LS_HIDDEN_TEMPLATES = "ss:hidden-templates"
 
@@ -444,6 +449,139 @@ export async function localLoadLibraryClipartUrl(
   const record = all.find((item) => item.id === libraryId)
   if (!record) return null
   return (await resolveClipartUrl(record)) ?? null
+}
+
+async function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = () => reject(new Error("Failed to read file"))
+    reader.readAsDataURL(file)
+  })
+}
+
+export async function localListDemoScreens(): Promise<LibraryDemoScreenRecord[]> {
+  const all = await readStore<LibraryDemoScreenRecord[]>(LS_DEMOS, [])
+  return all.map((row) => ({
+    ...row,
+    url: row.storage_path.startsWith("data:") ? row.storage_path : row.url,
+  }))
+}
+
+export async function localPublishDemoScreens(input: {
+  name: string
+  prompt: string
+  aspect: DemoAspect
+  files: File[]
+}): Promise<LibraryDemoScreenRecord[]> {
+  const all = await readStore<LibraryDemoScreenRecord[]>(LS_DEMOS, [])
+  const batch_id = uid()
+  const rows: LibraryDemoScreenRecord[] = []
+  for (let i = 0; i < input.files.length; i += 1) {
+    const dataUrl = await fileToDataUrl(input.files[i]!)
+    const id = uid()
+    const record: LibraryDemoScreenRecord = {
+      id,
+      name: input.files.length > 1 ? `${input.name} ${i + 1}` : input.name,
+      prompt: input.prompt,
+      aspect: input.aspect,
+      batch_id,
+      storage_path: dataUrl,
+      sort_order: i,
+      url: dataUrl,
+    }
+    rows.push(record)
+    all.unshift(record)
+  }
+  await writeStore(LS_DEMOS, all)
+  return rows
+}
+
+export async function localDeleteDemoScreen(id: string): Promise<void> {
+  const all = await readStore<LibraryDemoScreenRecord[]>(LS_DEMOS, [])
+  await writeStore(
+    LS_DEMOS,
+    all.filter((row) => row.id !== id),
+  )
+}
+
+export async function localLoadDemoScreenUrl(
+  id: string,
+): Promise<string | null> {
+  const all = await readStore<LibraryDemoScreenRecord[]>(LS_DEMOS, [])
+  const row = all.find((item) => item.id === id)
+  if (!row) return null
+  return row.url ?? (row.storage_path.startsWith("data:") ? row.storage_path : null)
+}
+
+export async function localListPublishedBackgrounds(): Promise<
+  LibraryBackgroundRecord[]
+> {
+  const all = await readStore<LibraryBackgroundRecord[]>(LS_BACKGROUNDS, [])
+  return all
+    .filter((row) => row.published)
+    .map((row) => ({
+      ...row,
+      url: row.storage_path.startsWith("data:") ? row.storage_path : row.url,
+    }))
+}
+
+export async function localListAllBackgrounds(): Promise<
+  LibraryBackgroundRecord[]
+> {
+  const all = await readStore<LibraryBackgroundRecord[]>(LS_BACKGROUNDS, [])
+  return all.map((row) => ({
+    ...row,
+    url: row.storage_path.startsWith("data:") ? row.storage_path : row.url,
+  }))
+}
+
+export async function localUpsertBackground(input: {
+  id?: string
+  name: string
+  prompt?: string
+  sort_order?: number
+  published: boolean
+  file?: File
+  storage_path?: string
+}): Promise<LibraryBackgroundRecord> {
+  const all = await readStore<LibraryBackgroundRecord[]>(LS_BACKGROUNDS, [])
+  const id = input.id ?? uid()
+  let storage_path = input.storage_path ?? ""
+  if (input.file) {
+    storage_path = await fileToDataUrl(input.file)
+  }
+  const record: LibraryBackgroundRecord = {
+    id,
+    name: input.name,
+    prompt: input.prompt ?? "",
+    storage_path,
+    sort_order: input.sort_order ?? 0,
+    published: input.published,
+    url: storage_path.startsWith("data:") ? storage_path : undefined,
+  }
+  const index = all.findIndex((row) => row.id === id)
+  if (index >= 0) all[index] = record
+  else all.unshift(record)
+  await writeStore(LS_BACKGROUNDS, all)
+  return record
+}
+
+export async function localDeleteBackground(id: string): Promise<void> {
+  const all = await readStore<LibraryBackgroundRecord[]>(LS_BACKGROUNDS, [])
+  await writeStore(
+    LS_BACKGROUNDS,
+    all.filter((row) => row.id !== id),
+  )
+}
+
+export async function localLoadBackgroundUrl(
+  id: string,
+): Promise<string | null> {
+  const all = await readStore<LibraryBackgroundRecord[]>(LS_BACKGROUNDS, [])
+  const row = all.find((item) => item.id === id)
+  if (!row) return null
+  return row.url ?? (row.storage_path.startsWith("data:") ? row.storage_path : null)
 }
 
 async function seedCatalogIfNeeded() {

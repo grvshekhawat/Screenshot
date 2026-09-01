@@ -17,7 +17,10 @@ import {
   renderTemplatePreviewDataUrl,
 } from "../template-preview"
 import type {
+  DemoAspect,
+  LibraryBackgroundRecord,
   LibraryClipartRecord,
+  LibraryDemoScreenRecord,
   Profile,
   ProjectRecord,
   TemplateRecord,
@@ -245,12 +248,19 @@ async function buildProjectThumbnailPath(
 
 /** Prefer signed URL (works on private buckets); fall back to public URL. */
 async function resolveClipartUrl(storagePath: string): Promise<string> {
+  return resolveBucketUrl("cliparts", storagePath)
+}
+
+async function resolveBucketUrl(
+  bucket: string,
+  storagePath: string,
+): Promise<string> {
   const supabase = getSupabase()!
   const { data: signed } = await supabase.storage
-    .from("cliparts")
+    .from(bucket)
     .createSignedUrl(storagePath, 60 * 60 * 24 * 7)
   if (signed?.signedUrl) return signed.signedUrl
-  const { data } = supabase.storage.from("cliparts").getPublicUrl(storagePath)
+  const { data } = supabase.storage.from(bucket).getPublicUrl(storagePath)
   return data.publicUrl
 }
 
@@ -420,6 +430,9 @@ export async function resolveAssetUrls(
       libraryIds.push(assetId)
       continue
     }
+    if (assetId.startsWith("demo:") || assetId.startsWith("background:")) {
+      continue
+    }
     projectIds.push(assetId)
   }
 
@@ -440,6 +453,52 @@ export async function resolveAssetUrls(
           .maybeSingle()
         if (error || !data?.storage_path) return
         const url = await resolveClipartUrl(data.storage_path as string)
+        if (url) urls[assetId] = url
+      }),
+    )
+  }
+
+  const demoIds = assetIds.filter((id) => id.startsWith("demo:"))
+  if (demoIds.length > 0) {
+    await Promise.all(
+      demoIds.map(async (assetId) => {
+        const id = assetId.slice("demo:".length)
+        if (!isSupabaseConfigured()) {
+          const url = await local.localLoadDemoScreenUrl(id)
+          if (url) urls[assetId] = url
+          return
+        }
+        const supabase = getSupabase()!
+        const { data, error } = await supabase
+          .from("library_demo_screens")
+          .select("storage_path")
+          .eq("id", id)
+          .maybeSingle()
+        if (error || !data?.storage_path) return
+        const url = await resolveBucketUrl("demo-screens", data.storage_path)
+        if (url) urls[assetId] = url
+      }),
+    )
+  }
+
+  const backgroundIds = assetIds.filter((id) => id.startsWith("background:"))
+  if (backgroundIds.length > 0) {
+    await Promise.all(
+      backgroundIds.map(async (assetId) => {
+        const id = assetId.slice("background:".length)
+        if (!isSupabaseConfigured()) {
+          const url = await local.localLoadBackgroundUrl(id)
+          if (url) urls[assetId] = url
+          return
+        }
+        const supabase = getSupabase()!
+        const { data, error } = await supabase
+          .from("library_backgrounds")
+          .select("storage_path")
+          .eq("id", id)
+          .maybeSingle()
+        if (error || !data?.storage_path) return
+        const url = await resolveBucketUrl("backgrounds", data.storage_path)
         if (url) urls[assetId] = url
       }),
     )
@@ -1161,5 +1220,213 @@ export async function deleteLibraryClipart(id: string): Promise<void> {
   if (!isSupabaseConfigured()) return local.localDeleteClipart(id)
   const supabase = getSupabase()!
   const { error } = await supabase.from("library_cliparts").delete().eq("id", id)
+  if (error) throw error
+}
+
+async function withDemoScreenUrl(
+  record: LibraryDemoScreenRecord,
+): Promise<LibraryDemoScreenRecord> {
+  if (!record.storage_path) return record
+  if (record.storage_path.startsWith("data:")) {
+    return { ...record, url: record.storage_path }
+  }
+  return {
+    ...record,
+    url: await resolveBucketUrl("demo-screens", record.storage_path),
+  }
+}
+
+async function withBackgroundUrl(
+  record: LibraryBackgroundRecord,
+): Promise<LibraryBackgroundRecord> {
+  if (!record.storage_path) return record
+  if (record.storage_path.startsWith("data:")) {
+    return { ...record, url: record.storage_path }
+  }
+  return {
+    ...record,
+    url: await resolveBucketUrl("backgrounds", record.storage_path),
+  }
+}
+
+/** Admin-only: list all generated demo phone screens. */
+export async function listDemoScreens(): Promise<LibraryDemoScreenRecord[]> {
+  if (!isSupabaseConfigured()) return local.localListDemoScreens()
+  const supabase = getSupabase()!
+  const { data, error } = await supabase
+    .from("library_demo_screens")
+    .select("*")
+    .order("created_at", { ascending: false })
+  if (error) throw error
+  return Promise.all(
+    (data ?? []).map((row) =>
+      withDemoScreenUrl(row as LibraryDemoScreenRecord),
+    ),
+  )
+}
+
+export async function publishDemoScreens(input: {
+  name: string
+  prompt: string
+  aspect: DemoAspect
+  files: File[]
+}): Promise<LibraryDemoScreenRecord[]> {
+  if (!input.files.length) throw new Error("No images to publish")
+  if (!isSupabaseConfigured()) {
+    return local.localPublishDemoScreens(input)
+  }
+  const supabase = getSupabase()!
+  const batch_id = crypto.randomUUID()
+  const rows: LibraryDemoScreenRecord[] = []
+  for (let i = 0; i < input.files.length; i += 1) {
+    const file = input.files[i]!
+    const id = crypto.randomUUID()
+    const safeName = file.name.replace(/[^\w.\-]+/g, "_")
+    const storage_path = `${batch_id}/${id}-${safeName}`
+    const { error: uploadError } = await supabase.storage
+      .from("demo-screens")
+      .upload(storage_path, file, {
+        upsert: true,
+        contentType: file.type || "image/webp",
+      })
+    if (uploadError) throw uploadError
+    const payload = {
+      id,
+      name: input.files.length > 1 ? `${input.name} ${i + 1}` : input.name,
+      prompt: input.prompt,
+      aspect: input.aspect,
+      batch_id,
+      storage_path,
+      sort_order: i,
+    }
+    const { data, error } = await supabase
+      .from("library_demo_screens")
+      .insert(payload)
+      .select("*")
+      .single()
+    if (error) throw error
+    rows.push(await withDemoScreenUrl(data as LibraryDemoScreenRecord))
+  }
+  return rows
+}
+
+export async function deleteDemoScreen(id: string): Promise<void> {
+  if (!isSupabaseConfigured()) return local.localDeleteDemoScreen(id)
+  const supabase = getSupabase()!
+  const { data } = await supabase
+    .from("library_demo_screens")
+    .select("storage_path")
+    .eq("id", id)
+    .maybeSingle()
+  if (data?.storage_path) {
+    await supabase.storage.from("demo-screens").remove([data.storage_path])
+  }
+  const { error } = await supabase
+    .from("library_demo_screens")
+    .delete()
+    .eq("id", id)
+  if (error) throw error
+}
+
+export async function listPublishedBackgrounds(): Promise<
+  LibraryBackgroundRecord[]
+> {
+  if (!isSupabaseConfigured()) return local.localListPublishedBackgrounds()
+  const supabase = getSupabase()!
+  const { data, error } = await supabase
+    .from("library_backgrounds")
+    .select("*")
+    .eq("published", true)
+    .order("sort_order")
+  if (error) throw error
+  return Promise.all(
+    (data ?? []).map((row) =>
+      withBackgroundUrl(row as LibraryBackgroundRecord),
+    ),
+  )
+}
+
+export async function listAllBackgrounds(): Promise<LibraryBackgroundRecord[]> {
+  if (!isSupabaseConfigured()) return local.localListAllBackgrounds()
+  const supabase = getSupabase()!
+  const { data, error } = await supabase
+    .from("library_backgrounds")
+    .select("*")
+    .order("created_at", { ascending: false })
+  if (error) throw error
+  return Promise.all(
+    (data ?? []).map((row) =>
+      withBackgroundUrl(row as LibraryBackgroundRecord),
+    ),
+  )
+}
+
+export async function upsertLibraryBackground(input: {
+  id?: string
+  name: string
+  prompt?: string
+  sort_order?: number
+  published: boolean
+  file?: File
+  storage_path?: string
+}): Promise<LibraryBackgroundRecord> {
+  if (!isSupabaseConfigured()) {
+    return local.localUpsertBackground(input)
+  }
+  const supabase = getSupabase()!
+  let storage_path = input.storage_path ?? ""
+  const id = input.id ?? crypto.randomUUID()
+  if (input.file) {
+    const safeName = input.file.name.replace(/[^\w.\-]+/g, "_")
+    storage_path = `${id}-${safeName}`
+    const { error: uploadError } = await supabase.storage
+      .from("backgrounds")
+      .upload(storage_path, input.file, {
+        upsert: true,
+        contentType: input.file.type || "image/webp",
+      })
+    if (uploadError) throw uploadError
+  }
+  const payload = {
+    name: input.name,
+    prompt: input.prompt ?? "",
+    storage_path,
+    sort_order: input.sort_order ?? 0,
+    published: input.published,
+  }
+  if (input.id) {
+    const { data, error } = await supabase
+      .from("library_backgrounds")
+      .update(payload)
+      .eq("id", input.id)
+      .select("*")
+      .single()
+    if (error) throw error
+    return withBackgroundUrl(data as LibraryBackgroundRecord)
+  }
+  const { data, error } = await supabase
+    .from("library_backgrounds")
+    .insert({ id, ...payload })
+    .select("*")
+    .single()
+  if (error) throw error
+  return withBackgroundUrl(data as LibraryBackgroundRecord)
+}
+
+export async function deleteLibraryBackground(id: string): Promise<void> {
+  if (!isSupabaseConfigured()) return local.localDeleteBackground(id)
+  const supabase = getSupabase()!
+  const { data } = await supabase
+    .from("library_backgrounds")
+    .select("storage_path")
+    .eq("id", id)
+    .maybeSingle()
+  if (data?.storage_path) {
+    await supabase.storage.from("backgrounds").remove([data.storage_path])
+  }
+  const { error } = await supabase
+    .from("library_backgrounds")
+    .delete()
+    .eq("id", id)
   if (error) throw error
 }

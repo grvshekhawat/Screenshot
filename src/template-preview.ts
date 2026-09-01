@@ -189,6 +189,8 @@ function drawImageFit(
   w: number,
   h: number,
   fit: "cover" | "contain",
+  positionX = 50,
+  positionY = 50,
 ) {
   const iw = img.naturalWidth || img.width
   const ih = img.naturalHeight || img.height
@@ -197,8 +199,11 @@ function drawImageFit(
     fit === "contain" ? Math.min(w / iw, h / ih) : Math.max(w / iw, h / ih)
   const dw = iw * scale
   const dh = ih * scale
-  const dx = x + (w - dw) / 2
-  const dy = y + (h - dh) / 2
+  const px = Math.min(1, Math.max(0, positionX / 100))
+  const py = Math.min(1, Math.max(0, positionY / 100))
+  // Matches CSS object-position: focal point of image aligns with box.
+  const dx = x + (w - dw) * px
+  const dy = y + (h - dh) * py
   ctx.drawImage(img, dx, dy, dw, dh)
 }
 
@@ -231,6 +236,8 @@ function paintBackground(
         width,
         height,
         background.imageFit ?? "cover",
+        background.imagePositionX ?? 50,
+        background.imagePositionY ?? 50,
       )
       ctx.restore()
       return

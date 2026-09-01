@@ -6,6 +6,8 @@
 stripe-checkout (POST): create Checkout Session (promotion codes enabled), return { url }
 stripe-portal (POST): create Billing Portal session, return { url }
 stripe-webhook: verify signature, upsert profiles.subscription_status
+generate-clipart (POST): admin OpenAI sticker (transparent WebP)
+generate-media (POST): admin OpenAI demos (5×) or backgrounds
 
 paypal-subscribe (POST): create PayPal subscription, return { url }
 paypal-manage (POST): return PayPal manage URL for subscription id

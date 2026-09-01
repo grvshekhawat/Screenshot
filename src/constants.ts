@@ -252,6 +252,8 @@ export function cssFontFamily(font: string | undefined | null): string {
 export function defaultBackground(
   overrides: Partial<SlideBackground> = {},
 ): SlideBackground {
+  const imagePositionX = normalizeBgPosition(overrides.imagePositionX)
+  const imagePositionY = normalizeBgPosition(overrides.imagePositionY)
   return {
     type: "gradient",
     colors: ["#7c3aed", "#db2777"],
@@ -260,7 +262,14 @@ export function defaultBackground(
     imageFit: "cover",
     imageOpacity: 1,
     ...overrides,
+    imagePositionX,
+    imagePositionY,
   }
+}
+
+function normalizeBgPosition(raw: unknown): number {
+  if (typeof raw !== "number" || !Number.isFinite(raw)) return 50
+  return Math.min(100, Math.max(0, raw))
 }
 
 export const PALETTES: { name: string; colors: [string, string] }[] = [

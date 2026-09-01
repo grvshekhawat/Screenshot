@@ -9,12 +9,16 @@ Ship order: **Supabase → billing → front-end → verify → announce**.
   - [ ] `supabase/migrations/001_init.sql`
   - [ ] `supabase/migrations/002_public_catalog.sql`
   - [ ] `supabase/migrations/003_admin_catalog.sql`
+  - [ ] `supabase/migrations/004_library_media.sql` (demo screens + backgrounds tables)
+  - [ ] `supabase/migrations/005_storage_media_buckets.sql` (buckets `demo-screens` + `backgrounds`)
 - [x] Auth → Providers → **Email** enabled
 - [x] Auth → turn **off Confirm email** (or configure custom SMTP if you want confirmation)
 - [x] Create Storage buckets:
   - [x] `project-assets` (private)
   - [x] `templates`
   - [x] `cliparts`
+  - [ ] `demo-screens` (via `005_storage_media_buckets.sql`)
+  - [ ] `backgrounds` (via `005_storage_media_buckets.sql`)
 - [x] Confirm Storage policies match migrations / dashboard setup notes in `001_init.sql`
 - [x] Bucket CORS allows the production origin (needed for thumbnail / export image capture)
 - [x] Set your user `profiles.role = 'admin'` after first sign-up
@@ -30,6 +34,7 @@ Ship order: **Supabase → billing → front-end → verify → announce**.
   - [x] `stripe-portal`
   - [x] `stripe-webhook`
   - [ ] `generate-clipart` (admin AI stickers — OpenAI)
+  - [ ] `generate-media` (admin AI demos ×5 + backgrounds — OpenAI)
   - [ ] `import-store-app` (admin store listing scrape)
   - [ ] `analyze-store-layout` (admin AI layout → components; needs OpenAI)
   - [ ] `paypal-subscribe` (optional)
@@ -67,8 +72,19 @@ supabase secrets set OPENAI_API_KEY=sk-...
 supabase functions deploy generate-clipart
 ```
 
-- Admin-only (`profiles.role = admin`). Prompt → transparent PNG preview on `/admin` → Publish uses existing `library_cliparts` / `cliparts` bucket.
-- Model: OpenAI `gpt-image-1.5`, medium quality, ~$0.03–0.05 per generation. Not available in local demo mode.
+- Admin-only (`profiles.role = admin`). Prompt → transparent PNG/WebP preview on `/admin` → Publish uses existing `library_cliparts` / `cliparts` bucket.
+- Model: OpenAI `gpt-image-1.5`, low quality WebP. Not available in local demo mode.
+
+### Admin AI demos + backgrounds (`generate-media`)
+
+```bash
+# Run migration 004_library_media.sql first; create buckets demo-screens + backgrounds
+npx supabase functions deploy generate-media
+```
+
+- **Demos:** prompt + iPhone/iPad aspect → **5** portrait mockups → `library_demo_screens` (admin-only RLS). Editor: Phone → Screen → Admin demos.
+- **Backgrounds:** prompt → 1 image → `library_backgrounds` published for everyone. Editor: Background → Image → Library.
+- Same `OPENAI_API_KEY`; model `gpt-image-1.5`, size `1024x1536`, low quality WebP.
 
 ### Admin store import (`import-store-app` + `analyze-store-layout`)
 

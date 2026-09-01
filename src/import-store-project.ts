@@ -176,14 +176,14 @@ export async function buildProjectFromStoreAnalysis(input: {
           cliparts: [],
           lenses: [],
           selectedId: "",
-          background: {
+          background: defaultBackground({
             type: "image",
             colors: ["#000000", "#000000"],
             angle: 180,
             imageId: sourceAssetId,
             imageFit: "cover",
             imageOpacity: 1,
-          },
+          }),
           templateId: "device-bottom",
         }),
       )
@@ -388,14 +388,14 @@ export function buildProjectFromStoreImport(input: {
       cliparts: [],
       lenses: [],
       selectedId: "",
-      background: {
+      background: defaultBackground({
         type: "image",
         colors: ["#000000", "#000000"],
         angle: 180,
         imageId: assetId,
         imageFit: "cover",
         imageOpacity: 1,
-      },
+      }),
       templateId: "device-bottom",
     }),
   )

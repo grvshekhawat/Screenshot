@@ -249,6 +249,7 @@ export function Artboard({
             width: "100%",
             height: "100%",
             objectFit: bg.imageFit,
+            objectPosition: `${bg.imagePositionX ?? 50}% ${bg.imagePositionY ?? 50}%`,
             opacity: bg.imageOpacity,
             pointerEvents: "none",
           }}
