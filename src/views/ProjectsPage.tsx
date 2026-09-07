@@ -154,7 +154,7 @@ export function ProjectsPage() {
     setError(null)
     try {
       const record = await createProject(createSampleProject(orientation))
-      router.push(`/app/${record.id}`)
+      router.push(`/app/${record.id}?uploadFirst=1`)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not create project")
     } finally {
@@ -173,7 +173,7 @@ export function ProjectsPage() {
     setError(null)
     try {
       const record = await cloneTemplateToProject(template)
-      router.push(`/app/${record.id}`)
+      router.push(`/app/${record.id}?uploadFirst=1`)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not use template")
     } finally {

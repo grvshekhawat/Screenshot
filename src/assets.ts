@@ -23,6 +23,31 @@ export function assetIdsFromActiveLayout(project: Project): string[] {
   return [...ids]
 }
 
+function includeLibraryId(project: Project, id: string | null | undefined): boolean {
+  if (!id) return false
+  if (id.startsWith("sample-")) return false
+  const templateIds = new Set(project.templateScreenshotIds ?? [])
+  if (templateIds.has(id)) return false
+  return true
+}
+
+/** Library ids that should appear in picker UI (no template placeholders). */
+export function screenshotLibraryIdsForUi(project: Project): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const id of project.screenshotLibrary ?? []) {
+    if (!includeLibraryId(project, id) || seen.has(id)) continue
+    seen.add(id)
+    out.push(id)
+  }
+  return out
+}
+
+/** Screenshot library ids — loaded lazily (not on initial editor hydrate). */
+export function assetIdsFromScreenshotLibrary(project: Project): string[] {
+  return screenshotLibraryIdsForUi(project)
+}
+
 /** Assets used only in non-active sizeLayouts (other phone models). */
 export function assetIdsFromInactiveLayouts(project: Project): string[] {
   const active = new Set(assetIdsFromActiveLayout(project))
@@ -47,6 +72,9 @@ export function assetIdsFromProject(project: Project): string[] {
     for (const slide of layout.slides) {
       collectSlideAssets(slide, ids)
     }
+  }
+  for (const id of screenshotLibraryIdsForUi(project)) {
+    ids.add(id)
   }
   return [...ids]
 }

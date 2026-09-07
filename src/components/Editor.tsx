@@ -22,7 +22,7 @@ import { Inspector, type MenuId } from "./Inspector"
 
 type UploadMode = "screenshot" | "clipart" | "background"
 
-export function Editor() {
+export function Editor({ promptUploadFirst = false }: { promptUploadFirst?: boolean }) {
   const { canExport, userId, refreshProfile } = useAuth()
   const {
     ready,
@@ -38,6 +38,9 @@ export function Editor() {
     canvasFocused,
     selectedIds,
     attachScreenshot,
+    uploadScreenshotsToLibrary,
+    autoAssignScreenshots,
+    ensureAssetUrls,
     attachClipart,
     attachBackgroundImage,
     saveDraft,
@@ -58,11 +61,14 @@ export function Editor() {
   const [paywallBusy, setPaywallBusy] = useState(false)
   const [paywallError, setPaywallError] = useState<string | null>(null)
   const [toolMenu, setToolMenu] = useState<MenuId | null>("content")
+  const [showUploadFirstPrompt, setShowUploadFirstPrompt] =
+    useState(promptUploadFirst)
   const [onboarding, setOnboarding] = useState<OnboardingProgress>(() =>
     loadOnboardingProgress(),
   )
   const [canvasChromeHost, setCanvasChromeHost] =
     useState<HTMLDivElement | null>(null)
+  const uploadFirstRef = useRef<HTMLInputElement>(null)
 
   const hasComponentSelection = Boolean(
     canvasFocused && selectedIds.length > 0,
@@ -130,6 +136,28 @@ export function Editor() {
     uploadMode.current = "background"
     uploadSlideId.current = slideId ?? activeSlide.id
     fileRef.current?.click()
+  }
+
+  const onUploadFirstFiles = (files: FileList | File[]) => {
+    const picked = [...files].filter((item) => isImageFile(item))
+    if (!picked.length) return
+    const run = async () => {
+      setError(null)
+      setBusy("Uploading screenshots…")
+      try {
+        const ids = await uploadScreenshotsToLibrary(picked)
+        if (!ids.length) return
+        void ensureAssetUrls(ids)
+        autoAssignScreenshots(ids)
+        setToolMenu("content")
+        setShowUploadFirstPrompt(false)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Upload failed")
+      } finally {
+        setBusy(null)
+      }
+    }
+    void run()
   }
 
   const onFiles = (
@@ -410,6 +438,35 @@ export function Editor() {
                 onDismiss={() => markOnboarding({ dismissed: true })}
               />
             ) : null}
+            {showUploadFirstPrompt ? (
+              <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/60 p-4">
+                <div className="w-full max-w-md rounded-xl border border-white/10 bg-[#0b0b10] p-5 shadow-2xl">
+                  <h3 className="text-lg font-semibold tracking-tight text-white">
+                    Upload screenshots first
+                  </h3>
+                  <p className="mt-2 text-sm leading-relaxed text-zinc-400">
+                    Add your app screenshots now. We will place them across
+                    available phone screens in sequence.
+                  </p>
+                  <div className="mt-4 flex gap-2">
+                    <button
+                      type="button"
+                      className="rounded-md bg-[#e8ff47] px-3 py-2 text-sm font-semibold text-[#0a0a0c] hover:bg-[#f0ff7a]"
+                      onClick={() => uploadFirstRef.current?.click()}
+                    >
+                      Upload screenshots
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-md border border-white/15 px-3 py-2 text-sm text-zinc-300 hover:border-white/25 hover:text-white"
+                      onClick={() => setShowUploadFirstPrompt(false)}
+                    >
+                      Skip for now
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </div>
         </Inspector>
       </div>
@@ -420,6 +477,17 @@ export function Editor() {
         className="hidden"
         onChange={(event) => {
           if (event.target.files) onFiles(event.target.files)
+          event.target.value = ""
+        }}
+      />
+      <input
+        ref={uploadFirstRef}
+        type="file"
+        accept={IMAGE_ACCEPT}
+        multiple
+        className="hidden"
+        onChange={(event) => {
+          if (event.target.files) onUploadFirstFiles(event.target.files)
           event.target.value = ""
         }}
       />

@@ -31,6 +31,8 @@ type DeviceFrameProps = {
   rotationY?: number
   /** Chassis depth as a % of the model's own thickness (100 = stock). */
   thickness?: number
+  /** Apple Watch: draw sport band stubs (default true). */
+  showBand?: boolean
   onUploadClick?: (slot?: "a" | "b") => void
 }
 
@@ -52,6 +54,7 @@ export function DeviceFrame({
   rotationX = 0,
   rotationY = 0,
   thickness,
+  showBand = true,
   onUploadClick,
 }: DeviceFrameProps) {
   const isLandscapePhone =
@@ -80,7 +83,9 @@ export function DeviceFrame({
         ? 0.47
         : chromeId === "ipad-13"
           ? 0.75
-          : 0.657
+          : chromeId === "apple-watch"
+            ? 416 / 496
+            : 0.657
 
   const screen = (
     <ScreenContent
@@ -135,6 +140,16 @@ export function DeviceFrame({
           screen
         )}
       </PixelFrame>
+    ) : chromeId === "apple-watch" ? (
+      <AppleWatchFrame
+        width={frameWidth}
+        color={finish}
+        dropShadow={dropShadow}
+        showBand={showBand}
+        {...tilt}
+      >
+        {screen}
+      </AppleWatchFrame>
     ) : (
       <IPadFrame
         width={frameWidth}
@@ -534,6 +549,258 @@ function PixelFrame({
             boxShadow: `0 0 0 ${Math.max(2, width * 0.006)}px #111`,
           }}
         />
+      </div>
+    </div>
+  )
+}
+
+function AppleWatchFrame({
+  width,
+  color,
+  dropShadow,
+  rotationX = 0,
+  rotationY = 0,
+  thickness,
+  showBand = true,
+  children,
+}: {
+  width: number
+  color: string
+  dropShadow?: string
+  rotationX?: number
+  rotationY?: number
+  thickness?: number
+  showBand?: boolean
+  children: ReactNode
+}) {
+  const shell = width * 0.012
+  const bezel = width * 0.09
+  const outerRadius = width * 0.28
+  const bezelRadius = width * 0.25
+  const screenRadius = width * 0.22
+  const chrome = deviceChromeStyles(color, width, "watch")
+  const depth = chassisDepth(width, "watch", thickness)
+  const crownSize = Math.max(10, width * 0.118)
+  const crownStem = Math.max(4, width * 0.028)
+  const sideBtnH = width * 0.11
+  const sideBtnT = Math.max(2.5, width * 0.022)
+  const bandW = width * 0.78
+  const bandH = width * 0.48
+  const bandInset = (width - bandW) / 2
+  // Soft rubber / sport band — a touch darker than the case finish.
+  const bandBase = shadeFrameColor(color, 0.22)
+  const bandHi = tintFrameColor(bandBase, 0.18)
+  const bandDeep = shadeFrameColor(bandBase, 0.35)
+
+  return (
+    <div
+      style={{
+        position: "relative",
+        width: "100%",
+        height: "100%",
+        filter: dropShadow,
+      }}
+    >
+      {showBand ? (
+        <>
+          {/* Sport band stubs (behind the case, like marketing product shots). */}
+          <div
+            aria-hidden
+            style={{
+              position: "absolute",
+              left: bandInset,
+              top: -bandH * 0.72,
+              width: bandW,
+              height: bandH,
+              zIndex: 0,
+              pointerEvents: "none",
+              borderRadius: `${width * 0.08}px ${width * 0.08}px ${width * 0.04}px ${width * 0.04}px`,
+              background: `linear-gradient(180deg, ${bandDeep} 0%, ${bandBase} 28%, ${bandHi} 55%, ${bandBase} 100%)`,
+              boxShadow: `
+            inset 0 ${width * 0.01}px ${width * 0.02}px rgba(255,255,255,0.12),
+            inset 0 -${width * 0.008}px ${width * 0.014}px rgba(0,0,0,0.35),
+            0 ${width * 0.01}px ${width * 0.02}px rgba(0,0,0,0.25)
+          `,
+              clipPath: `polygon(
+            8% 0%, 92% 0%,
+            100% 18%, 100% 100%,
+            0% 100%, 0% 18%
+          )`,
+            }}
+          />
+          <div
+            aria-hidden
+            style={{
+              position: "absolute",
+              left: bandInset,
+              bottom: -bandH * 0.72,
+              width: bandW,
+              height: bandH,
+              zIndex: 0,
+              pointerEvents: "none",
+              borderRadius: `${width * 0.04}px ${width * 0.04}px ${width * 0.08}px ${width * 0.08}px`,
+              background: `linear-gradient(0deg, ${bandDeep} 0%, ${bandBase} 28%, ${bandHi} 55%, ${bandBase} 100%)`,
+              boxShadow: `
+            inset 0 -${width * 0.01}px ${width * 0.02}px rgba(255,255,255,0.12),
+            inset 0 ${width * 0.008}px ${width * 0.014}px rgba(0,0,0,0.35),
+            0 -${width * 0.01}px ${width * 0.02}px rgba(0,0,0,0.25)
+          `,
+              clipPath: `polygon(
+            0% 0%, 100% 0%,
+            100% 82%, 92% 100%,
+            8% 100%, 0% 82%
+          )`,
+            }}
+          />
+          {/* Lug bridges — where band meets the case */}
+          <div
+            aria-hidden
+            style={{
+              position: "absolute",
+              left: width * 0.14,
+              top: -width * 0.025,
+              width: width * 0.72,
+              height: width * 0.06,
+              zIndex: 0,
+              borderRadius: width * 0.02,
+              background: `linear-gradient(180deg, ${shadeFrameColor(color, 0.15)} 0%, ${shadeFrameColor(color, 0.4)} 100%)`,
+              pointerEvents: "none",
+            }}
+          />
+          <div
+            aria-hidden
+            style={{
+              position: "absolute",
+              left: width * 0.14,
+              bottom: -width * 0.025,
+              width: width * 0.72,
+              height: width * 0.06,
+              zIndex: 0,
+              borderRadius: width * 0.02,
+              background: `linear-gradient(0deg, ${shadeFrameColor(color, 0.15)} 0%, ${shadeFrameColor(color, 0.4)} 100%)`,
+              pointerEvents: "none",
+            }}
+          />
+        </>
+      ) : null}
+      <ChassisDepth
+        color={color}
+        depth={depth}
+        borderRadius={outerRadius}
+        rotationX={rotationX}
+        rotationY={rotationY}
+      />
+      {/* Digital crown */}
+      {rotationY <= 4 ? (
+        <div
+          aria-hidden
+          style={{
+            position: "absolute",
+            right: -crownStem * 0.55,
+            top: "28%",
+            width: crownStem + crownSize * 0.55,
+            height: crownSize,
+            zIndex: 0,
+            pointerEvents: "none",
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              left: 0,
+              top: "50%",
+              width: crownStem,
+              height: crownSize * 0.38,
+              transform: "translateY(-50%)",
+              borderRadius: crownStem / 2,
+              background: `linear-gradient(90deg, ${shadeFrameColor(color, 0.35)} 0%, ${tintFrameColor(color, 0.2)} 55%, ${shadeFrameColor(color, 0.2)} 100%)`,
+              boxShadow: `inset 0 1px 1px rgba(255,255,255,0.25), inset 0 -1px 1px rgba(0,0,0,0.4)`,
+            }}
+          />
+          <div
+            style={{
+              position: "absolute",
+              right: 0,
+              top: 0,
+              width: crownSize,
+              height: crownSize,
+              borderRadius: "50%",
+              background: `radial-gradient(circle at 35% 30%, ${tintFrameColor(color, 0.45)} 0%, ${color} 42%, ${shadeFrameColor(color, 0.35)} 100%)`,
+              boxShadow: `
+                0 0 0 ${Math.max(1, width * 0.004)}px ${shadeFrameColor(color, 0.55)},
+                inset 0 0 0 ${Math.max(1, width * 0.008)}px ${shadeFrameColor(color, 0.25)},
+                inset ${width * 0.01}px ${width * 0.012}px ${width * 0.02}px rgba(255,255,255,0.28)
+              `,
+            }}
+          />
+        </div>
+      ) : null}
+      <SideButton
+        side="right"
+        top="52%"
+        length={sideBtnH}
+        thickness={sideBtnT}
+        color={color}
+        width={width}
+        depth={depth}
+        rotationX={rotationX}
+        rotationY={rotationY}
+      />
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          zIndex: 1,
+          borderRadius: outerRadius,
+          background: chrome.bodyBackground,
+          boxShadow: chrome.bodyBoxShadow,
+        }}
+      />
+      <FrameEdgeShading
+        rotationX={rotationX}
+        rotationY={rotationY}
+        color={color}
+        borderRadius={outerRadius}
+        width={width}
+      />
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          zIndex: 1,
+          borderRadius: outerRadius,
+          pointerEvents: "none",
+          background: `linear-gradient(145deg, ${tintFrameColor(color, 0.3)} 0%, transparent 36%, transparent 70%, ${shadeFrameColor(color, 0.25)} 100%)`,
+          opacity: 0.4,
+          mixBlendMode: "overlay",
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          top: shell,
+          right: shell,
+          bottom: shell,
+          left: shell,
+          zIndex: 1,
+          borderRadius: bezelRadius,
+          background: "#000",
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          top: bezel,
+          right: bezel,
+          bottom: bezel,
+          left: bezel,
+          zIndex: 1,
+          overflow: "hidden",
+          borderRadius: screenRadius,
+          background: "#000",
+        }}
+      >
+        {children}
       </div>
     </div>
   )
@@ -1071,22 +1338,51 @@ function ScreenImage({
   src: string
   fit?: "cover" | "contain"
 }) {
+  // Avoid CSS object-fit: modern-screenshot (DOM capture for export / project
+  // thumbnails) often ignores it. Phone frames hide the bug because shot and
+  // screen share ~9:19; watch (~5:6) makes the stretch obvious.
+  const cover = fit === "cover"
   return (
-    <img
-      src={src}
-      alt="App screenshot"
-      draggable={false}
-      crossOrigin={src.startsWith("http") ? "anonymous" : undefined}
+    <div
       style={{
-        display: "block",
+        position: "relative",
         width: "100%",
         height: "100%",
-        objectFit: fit,
-        objectPosition: "center center",
+        overflow: "hidden",
         background: "#0a0a0a",
         pointerEvents: "none",
       }}
-    />
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src}
+        alt="App screenshot"
+        draggable={false}
+        crossOrigin={src.startsWith("http") ? "anonymous" : undefined}
+        style={{
+          position: "absolute",
+          left: "50%",
+          top: "50%",
+          transform: "translate(-50%, -50%)",
+          display: "block",
+          ...(cover
+            ? {
+                width: "auto",
+                height: "auto",
+                minWidth: "100%",
+                minHeight: "100%",
+                maxWidth: "none",
+                maxHeight: "none",
+              }
+            : {
+                width: "auto",
+                height: "auto",
+                maxWidth: "100%",
+                maxHeight: "100%",
+              }),
+        }}
+      />
+    </div>
   )
 }
 

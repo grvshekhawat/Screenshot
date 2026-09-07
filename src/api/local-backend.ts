@@ -213,6 +213,7 @@ export async function localCreateProject(
 export async function localSaveProject(
   id: string,
   project: Project,
+  options?: { regenerateThumbnail?: boolean },
 ): Promise<ProjectRecord> {
   const all = await readStore<ProjectRecord[]>(LS_PROJECTS, [])
   const index = all.findIndex((p) => p.id === id)
@@ -221,14 +222,16 @@ export async function localSaveProject(
   if (all[index].user_id !== userId) throw new Error("Forbidden")
   const data = normalizeProject(project)
   let thumbnail_path: string | null = all[index].thumbnail_path
-  try {
-    thumbnail_path = await renderProjectPreviewDataUrl(data, {
-      assetUrls: await localPreviewAssetUrls(data),
-      // DOM capture at native size → scale into strip (matches editor positions).
-      paintOnly: false,
-    })
-  } catch {
-    // Keep previous thumbnail if render fails.
+  if (options?.regenerateThumbnail ?? false) {
+    try {
+      thumbnail_path = await renderProjectPreviewDataUrl(data, {
+        assetUrls: await localPreviewAssetUrls(data),
+        // DOM capture so thumbnails match the editor (object-fit bake + chrome).
+        paintOnly: false,
+      })
+    } catch {
+      // Keep previous thumbnail if render fails.
+    }
   }
   const updated: ProjectRecord = {
     ...all[index],

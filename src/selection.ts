@@ -29,6 +29,7 @@ export type SelectionPatch = {
   rotationX?: number
   rotationY?: number
   deviceId?: Frame["deviceId"]
+  showBand?: boolean
   /** Text */
   size?: number
   font?: string
@@ -77,6 +78,7 @@ const FRAME_KEYS = [
   "thickness",
   "deviceId",
   "color",
+  "showBand",
 ] as const
 
 const TEXT_KEYS = [

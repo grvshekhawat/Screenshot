@@ -138,15 +138,49 @@ export function thumbnailAspectClass(
   layout: ThumbnailLayout,
   project?: Project,
 ): string {
-  const landscapeBoard =
-    project != null &&
-    STORE_TARGETS[project.targetId]?.orientation === "landscape"
+  const target =
+    project != null ? STORE_TARGETS[project.targetId] : undefined
+  const landscapeBoard = target?.orientation === "landscape"
+
+  // Watch artboards are nearly square (416×496). Phone strip/stack ratios
+  // make project/template cards look like the wrong resolution.
+  if (target?.id === "apple-watch") {
+    if (layout === "portrait") return "aspect-[5/7]"
+    return "aspect-[3/1]"
+  }
+
   if (landscapeBoard) {
     // 2×2 (or 3×2) grid of landscape slides — closer to square than a strip.
     return "aspect-[16/10]"
   }
   if (layout === "portrait") return "aspect-[10/16]"
   return "aspect-[2.3/1]"
+}
+
+/**
+ * Thumbnail cell aspect for screenshot / demo pickers.
+ * Watch and iPad shots must not use the phone 9:19 crop.
+ */
+export function screenshotPickerAspectClass(
+  deviceId?: string | null,
+  targetId?: string | null,
+): string {
+  if (deviceId === "apple-watch" || targetId === "apple-watch") {
+    return "aspect-[5/6]"
+  }
+  if (
+    deviceId === "ipad-13" ||
+    deviceId === "ipad-11" ||
+    deviceId === "ipad-13-land" ||
+    deviceId === "ipad-11-land" ||
+    targetId === "ipad-13" ||
+    targetId === "ipad-11" ||
+    targetId === "ipad-13-landscape" ||
+    targetId === "ipad-11-landscape"
+  ) {
+    return "aspect-[3/4]"
+  }
+  return "aspect-[9/19]"
 }
 
 function artboardSize(project: Project): { width: number; height: number } {
@@ -445,6 +479,25 @@ function paintFrame(
     ctx.restore()
   }
 
+  // Watch bands sit behind the case (same order as DeviceFrame).
+  if (spec.chrome === "watch" && frame.showBand !== false) {
+    const bandW = deviceW * 0.78
+    const bandH = deviceW * 0.48
+    const bandX = x + (deviceW - bandW) / 2
+    ctx.fillStyle = "#1f1f21"
+    roundRect(ctx, bandX, y - bandH * 0.72, bandW, bandH, deviceW * 0.06)
+    ctx.fill()
+    roundRect(
+      ctx,
+      bandX,
+      y + deviceH - bandH * 0.28,
+      bandW,
+      bandH,
+      deviceW * 0.06,
+    )
+    ctx.fill()
+  }
+
   ctx.fillStyle = spec.color
   roundRect(ctx, x, y, deviceW, deviceH, outerR)
   ctx.fill()
@@ -516,6 +569,29 @@ function paintFrame(
       )
     }
     ctx.fillStyle = "#0b0f14"
+    ctx.fill()
+  } else if (spec.chrome === "watch") {
+    const crown = ref * 0.1
+    const stem = ref * 0.025
+    ctx.fillStyle = "#1a1a1c"
+    roundRect(
+      ctx,
+      x + deviceW - stem * 0.2,
+      y + deviceH * 0.3 - crown * 0.2,
+      stem,
+      crown * 0.4,
+      stem / 2,
+    )
+    ctx.fill()
+    ctx.beginPath()
+    ctx.arc(
+      x + deviceW + crown * 0.15,
+      y + deviceH * 0.3,
+      crown / 2,
+      0,
+      Math.PI * 2,
+    )
+    ctx.fillStyle = spec.color
     ctx.fill()
   }
 

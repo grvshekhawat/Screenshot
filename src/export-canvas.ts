@@ -31,6 +31,16 @@ async function inlineImages(root: HTMLElement) {
     [...root.querySelectorAll("img")].map(async (img) => {
       const src = img.currentSrc || img.src
       if (!src || src.startsWith("data:")) return
+      // blob: URLs are already in memory — no Storage egress.
+      if (src.startsWith("blob:")) {
+        try {
+          img.src = await blobUrlToDataUrl(src)
+          await img.decode()
+        } catch {
+          /* ignore */
+        }
+        return
+      }
       try {
         img.src = await blobUrlToDataUrl(src)
         await img.decode()

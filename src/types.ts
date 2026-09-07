@@ -3,6 +3,7 @@ export type DeviceId =
   | "pixel"
   | "ipad-13"
   | "ipad-11"
+  | "apple-watch"
   | "iphone-69-land"
   | "pixel-land"
   | "ipad-13-land"
@@ -15,6 +16,7 @@ export type StoreTargetId =
   | "ipad-13"
   | "ipad-11"
   | "play-phone"
+  | "apple-watch"
   | "iphone-69-landscape"
   | "iphone-65-landscape"
   | "iphone-63-landscape"
@@ -98,6 +100,11 @@ export type Frame = {
   shadowOpacity: number
   /** Shadow tint (hex) */
   shadowColor: string
+  /**
+   * Apple Watch only: draw sport band stubs with the case.
+   * Ignored for phones / tablets.
+   */
+  showBand: boolean
   overflow: "cut" | "continue"
 }
 
@@ -278,6 +285,16 @@ export type Project = {
   slides: Slide[]
   /** Independent layouts per store size (always kept in sync with current). */
   sizeLayouts: Partial<Record<StoreTargetId, SizeLayout>>
+  /**
+   * Uploaded screenshot asset ids available to assign to any phone
+   * (bulk upload + re-pick like a media library).
+   */
+  screenshotLibrary: string[]
+  /**
+   * Screens that came from the template this project was created from.
+   * They act as placeholders, so a bulk upload replaces them.
+   */
+  templateScreenshotIds?: string[]
 }
 
 export type SelectedKind = "frame" | "text" | "clipart" | "lens"

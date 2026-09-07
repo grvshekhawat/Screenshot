@@ -66,14 +66,17 @@ import {
 import {
   getProject,
   listPublishedCliparts,
-  resolveAssetUrls,
+  resolveAssetUrlsPreferLocal,
   saveProjectRecord,
   uploadProjectAsset,
 } from "./api/projects"
 import { captureSlideSnapshot } from "./export"
 import {
+  assignScreenshotsToFreeSlots,
+  availableScreenshotSlots,
+} from "./screenshot-assign"
+import {
   loadProject,
-  loadScreenshot,
   saveProject,
   saveScreenshot,
 } from "./storage"
@@ -113,6 +116,8 @@ type ProjectContextValue = {
   viewProject: Project
   assetUrls: Record<string, string>
   libraryCliparts: { id: string; name: string; category: string; url: string }[]
+  /** Load published clipart URLs when the user opens Content → Clipart. */
+  loadLibraryCliparts: () => void
   saveState: SaveState
   lastSavedAt: number | null
   /** True when local edits have not been persisted since the last save. */
@@ -233,10 +238,25 @@ type ProjectContextValue = {
     frameId?: string,
     slot?: FrameScreenSlot,
   ) => Promise<void>
+  /** Upload many screenshots into the project library (no auto-assign). */
+  uploadScreenshotsToLibrary: (files: FileList | File[]) => Promise<string[]>
+  /** Fill free phone screens with these assets; returns how many were placed. */
+  autoAssignScreenshots: (assetIds: string[]) => number
+  /** Assign an existing library / uploaded screenshot to a phone slot. */
+  applyProjectScreenshot: (
+    slideId: string,
+    frameId: string,
+    assetId: string,
+    slot?: FrameScreenSlot,
+  ) => void
+  /** Remove a screenshot from the project library (does not clear frames using it). */
+  removeFromScreenshotLibrary: (assetId: string) => void
   attachClipart: (slideId: string, file: File) => Promise<void>
   attachBackgroundImage: (slideId: string, file: File) => Promise<void>
   /** Register a remote/library asset URL for canvas rendering. */
   registerAssetUrl: (assetId: string, url: string) => void
+  /** Resolve missing asset URLs on demand (prefers IndexedDB). */
+  ensureAssetUrls: (assetIds: string[]) => Promise<void>
   /** Admin: use a demo screen as the phone screenshot (`demo:{id}`). */
   applyDemoScreenshot: (
     slideId: string,
@@ -480,7 +500,6 @@ export function ProjectProvider({
     let cancelled = false
     const hydrate = async () => {
       setReady(false)
-      const urls: Record<string, string> = {}
       let loaded: Project
 
       if (projectId) {
@@ -492,15 +511,7 @@ export function ProjectProvider({
       }
 
       const activeIds = assetIdsFromActiveLayout(loaded)
-      const resolved = await resolveAssetUrls(activeIds)
-      Object.assign(urls, resolved)
-      await Promise.all(
-        activeIds.map(async (id) => {
-          if (urls[id]) return
-          const blob = await loadScreenshot(id)
-          if (blob) urls[id] = URL.createObjectURL(blob)
-        }),
-      )
+      const urls = await resolveAssetUrlsPreferLocal(activeIds)
 
       if (cancelled) {
         for (const url of Object.values(urls)) {
@@ -518,43 +529,15 @@ export function ProjectProvider({
       setSaveState("saved")
       setReady(true)
 
-      // Background: other size-layout assets + clipart library (do not block editor).
+      // Background: other size-layout assets (do not block editor).
       void (async () => {
         const inactiveIds = assetIdsFromInactiveLayouts(loaded)
         if (inactiveIds.length > 0) {
-          const more = await resolveAssetUrls(inactiveIds)
-          const extras: Record<string, string> = { ...more }
-          await Promise.all(
-            inactiveIds.map(async (id) => {
-              if (extras[id]) return
-              const blob = await loadScreenshot(id)
-              if (blob) extras[id] = URL.createObjectURL(blob)
-            }),
-          )
+          const extras = await resolveAssetUrlsPreferLocal(inactiveIds)
           if (!cancelled && Object.keys(extras).length > 0) {
             setAssetUrls((prev) => ({ ...prev, ...extras }))
           }
         }
-
-        const library = await listPublishedCliparts().catch(() => [])
-        if (cancelled) return
-        const libraryUrls: Record<string, string> = {}
-        for (const item of library) {
-          if (item.url) libraryUrls[`library:${item.id}`] = item.url
-        }
-        if (Object.keys(libraryUrls).length > 0) {
-          setAssetUrls((prev) => ({ ...prev, ...libraryUrls }))
-        }
-        setLibraryCliparts(
-          library
-            .filter((item) => item.url)
-            .map((item) => ({
-              id: item.id,
-              name: item.name,
-              category: item.category,
-              url: item.url!,
-            })),
-        )
       })()
     }
     void hydrate().catch(() => {
@@ -575,14 +558,17 @@ export function ProjectProvider({
     setSaveState("unsaved")
   }, [project, ready, projectId])
 
-  const persistSnapshot = useCallback(async () => {
+  const persistSnapshot = useCallback(async (regenerateThumbnail = false) => {
     if (!readyRef.current) return
     if (saveInFlightRef.current) await saveInFlightRef.current
     setSaveState("saving")
     const snapshot = projectRef.current
     const run = (async () => {
-      if (projectId) await saveProjectRecord(projectId, snapshot)
-      else await saveProject(snapshot)
+      if (projectId) {
+        await saveProjectRecord(projectId, snapshot, { regenerateThumbnail })
+      } else {
+        await saveProject(snapshot)
+      }
       dirtyRef.current = false
       setSaveState("saved")
       setLastSavedAt(Date.now())
@@ -608,7 +594,7 @@ export function ProjectProvider({
     if (!ready) return
     autosaveIntervalRef.current = window.setInterval(() => {
       if (!dirtyRef.current) return
-      void persistSnapshot().catch((err) => console.error(err))
+      void persistSnapshot(false).catch((err) => console.error(err))
     }, AUTOSAVE_INTERVAL_MS)
     return () => {
       if (autosaveIntervalRef.current !== null) {
@@ -635,15 +621,7 @@ export function ProjectProvider({
     if (missing.length === 0) return
     let cancelled = false
     void (async () => {
-      const resolved = await resolveAssetUrls(missing)
-      const extras: Record<string, string> = { ...resolved }
-      await Promise.all(
-        missing.map(async (id) => {
-          if (extras[id]) return
-          const blob = await loadScreenshot(id)
-          if (blob) extras[id] = URL.createObjectURL(blob)
-        }),
-      )
+      const extras = await resolveAssetUrlsPreferLocal(missing)
       if (cancelled || Object.keys(extras).length === 0) return
       setAssetUrls((prev) => ({ ...prev, ...extras }))
     })()
@@ -652,12 +630,33 @@ export function ProjectProvider({
     }
   }, [ready, project.targetId])
 
+  // Lazy-load screenshot library thumbnails when picker panels mount (ensureAssetUrls).
+
+  const libraryClipartsLoadedRef = useRef(false)
+  const loadLibraryCliparts = useCallback(() => {
+    if (libraryClipartsLoadedRef.current) return
+    libraryClipartsLoadedRef.current = true
+    void (async () => {
+      const library = await listPublishedCliparts().catch(() => [])
+      setLibraryCliparts(
+        library
+          .filter((item) => item.url)
+          .map((item) => ({
+            id: item.id,
+            name: item.name,
+            category: item.category,
+            url: item.url!,
+          })),
+      )
+    })()
+  }, [])
+
   const saveDraft = useCallback(async () => {
-    await persistSnapshot()
+    await persistSnapshot(true)
   }, [persistSnapshot])
 
   const flushSave = useCallback(async () => {
-    await persistSnapshot()
+    await persistSnapshot(true)
   }, [persistSnapshot])
 
   const storeAsset = useCallback(async (file: File) => {
@@ -683,6 +682,94 @@ export function ProjectProvider({
     }
     return { id, file: normalized }
   }, [projectId])
+
+  const addScreenshotIdsToLibrary = useCallback((ids: string[]) => {
+    if (!ids.length) return
+    setProject((current) => {
+      const seen = new Set(current.screenshotLibrary ?? [])
+      const next = [...(current.screenshotLibrary ?? [])]
+      let changed = false
+      for (const id of ids) {
+        if (!id || seen.has(id)) continue
+        seen.add(id)
+        next.push(id)
+        changed = true
+      }
+      if (!changed) return current
+      return { ...current, screenshotLibrary: next }
+    })
+  }, [])
+
+  const removeFromScreenshotLibrary = useCallback((assetId: string) => {
+    setProject((current) => ({
+      ...current,
+      screenshotLibrary: (current.screenshotLibrary ?? []).filter(
+        (id) => id !== assetId,
+      ),
+    }))
+  }, [])
+
+  const uploadScreenshotsToLibrary = useCallback(
+    async (files: FileList | File[]) => {
+      const { isImageFile } = await import("./image-upload")
+      // Snapshot immediately — callers may pass a live FileList that clears later.
+      const images = [...files].filter(isImageFile)
+      if (!images.length) return [] as string[]
+      const ids: string[] = []
+      for (const file of images) {
+        const { id } = await storeAsset(file)
+        ids.push(id)
+      }
+      addScreenshotIdsToLibrary(ids)
+      return ids
+    },
+    [storeAsset, addScreenshotIdsToLibrary],
+  )
+
+  /** Caller adds ids to the library first (upload already does). */
+  const autoAssignScreenshots = useCallback(
+    (assetIds: string[]) => {
+      if (!assetIds.length) return 0
+      const free = availableScreenshotSlots(projectRef.current).length
+      const assigned = Math.min(free, assetIds.length)
+      if (assigned === 0) return 0
+      setProject((current) => assignScreenshotsToFreeSlots(current, assetIds))
+      return assigned
+    },
+    [setProject],
+  )
+
+  const applyProjectScreenshot = useCallback(
+    (
+      slideId: string,
+      frameId: string,
+      assetId: string,
+      slot: FrameScreenSlot = "a",
+    ) => {
+      addScreenshotIdsToLibrary([assetId])
+      setProject((current) => ({
+        ...current,
+        slides: current.slides.map((slide) => {
+          if (slide.id !== slideId) return slide
+          return {
+            ...slide,
+            frames: slide.frames.map((frame) => {
+              if (frame.id !== frameId) return frame
+              if (slot === "b") {
+                return createFrame({
+                  ...frame,
+                  screenshotIdB: assetId,
+                  screenMode: "split",
+                })
+              }
+              return createFrame({ ...frame, screenshotId: assetId })
+            }),
+          }
+        }),
+      }))
+    },
+    [addScreenshotIdsToLibrary],
+  )
 
   const setName = useCallback((name: string) => {
     setProject((current) => ({ ...current, name }))
@@ -1971,6 +2058,7 @@ export function ProjectProvider({
       slot: FrameScreenSlot = "a",
     ) => {
       const { id } = await storeAsset(file)
+      addScreenshotIdsToLibrary([id])
       setProject((current) => ({
         ...current,
         slides: current.slides.map((slide) => {
@@ -2007,7 +2095,7 @@ export function ProjectProvider({
         }),
       }))
     },
-    [storeAsset],
+    [storeAsset, addScreenshotIdsToLibrary],
   )
 
   const attachClipart = useCallback(
@@ -2070,6 +2158,14 @@ export function ProjectProvider({
     )
   }, [])
 
+  const ensureAssetUrls = useCallback(async (assetIds: string[]) => {
+    const missing = assetIds.filter((id) => id && !assetUrlsRef.current[id])
+    if (!missing.length) return
+    const extras = await resolveAssetUrlsPreferLocal(missing)
+    if (Object.keys(extras).length === 0) return
+    setAssetUrls((prev) => ({ ...prev, ...extras }))
+  }, [])
+
   const applyDemoScreenshot = useCallback(
     (
       slideId: string,
@@ -2080,6 +2176,7 @@ export function ProjectProvider({
     ) => {
       const assetId = `demo:${demoId}`
       setAssetUrls((current) => ({ ...current, [assetId]: url }))
+      addScreenshotIdsToLibrary([assetId])
       setProject((current) => ({
         ...current,
         slides: current.slides.map((slide) => {
@@ -2101,7 +2198,7 @@ export function ProjectProvider({
         }),
       }))
     },
-    [],
+    [addScreenshotIdsToLibrary],
   )
 
   const applyLibraryBackground = useCallback(
@@ -2550,6 +2647,7 @@ export function ProjectProvider({
       viewProject,
       assetUrls,
       libraryCliparts,
+      loadLibraryCliparts,
       saveState,
       lastSavedAt,
       hasUnsavedChanges,
@@ -2613,9 +2711,14 @@ export function ProjectProvider({
       moveLens,
       copyComponentToSlide,
       attachScreenshot,
+      uploadScreenshotsToLibrary,
+      autoAssignScreenshots,
+      applyProjectScreenshot,
+      removeFromScreenshotLibrary,
       attachClipart,
       attachBackgroundImage,
       registerAssetUrl,
+      ensureAssetUrls,
       applyDemoScreenshot,
       applyLibraryBackground,
       saveDraft,
@@ -2635,6 +2738,7 @@ export function ProjectProvider({
       viewProject,
       assetUrls,
       libraryCliparts,
+      loadLibraryCliparts,
       saveState,
       lastSavedAt,
       hasUnsavedChanges,
@@ -2698,9 +2802,14 @@ export function ProjectProvider({
       moveLens,
       copyComponentToSlide,
       attachScreenshot,
+      uploadScreenshotsToLibrary,
+      autoAssignScreenshots,
+      applyProjectScreenshot,
+      removeFromScreenshotLibrary,
       attachClipart,
       attachBackgroundImage,
       registerAssetUrl,
+      ensureAssetUrls,
       applyDemoScreenshot,
       applyLibraryBackground,
       saveDraft,

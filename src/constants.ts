@@ -33,7 +33,7 @@ export type DeviceSpec = {
   bezel: number
   outerRadius: number
   screenRadius: number
-  chrome: "island" | "punch" | "tablet"
+  chrome: "island" | "punch" | "tablet" | "watch"
   color: string
 }
 
@@ -77,6 +77,17 @@ export const DEVICES: Record<DeviceId, DeviceSpec> = {
     screenRadius: 0.038,
     chrome: "tablet",
     color: "#3a3a3c",
+  },
+  "apple-watch": {
+    id: "apple-watch",
+    name: "Apple Watch 46mm",
+    // Series 10/11 screen 416×496 (W/H ≈ 0.839); case is slightly squarer.
+    aspect: 416 / 496,
+    bezel: 0.09,
+    outerRadius: 0.28,
+    screenRadius: 0.22,
+    chrome: "watch",
+    color: "#2c2c2e",
   },
   "iphone-69-land": {
     id: "iphone-69-land",
@@ -177,6 +188,14 @@ export const STORE_TARGETS: Record<StoreTargetId, StoreTarget> = {
     width: 1080,
     height: 1920,
     folder: "android/phone",
+    orientation: "portrait",
+  },
+  "apple-watch": {
+    id: "apple-watch",
+    name: "App Store · Apple Watch 46mm",
+    width: 416,
+    height: 496,
+    folder: "ios/apple-watch",
     orientation: "portrait",
   },
   "iphone-69-landscape": {
@@ -568,8 +587,16 @@ export function maxFittingDeviceScale(
   if (!(artboardWidth > 0) || !(artboardHeight > 0) || !(aspect > 0)) return 1
   const byWidth = 1
   const byHeight = (artboardHeight * aspect) / artboardWidth
-  const max = Math.min(byWidth, byHeight)
-  return Math.min(1.15, Math.max(0.2, max))
+  let max = Math.min(byWidth, byHeight)
+  // Sport bands extend past the case (see AppleWatchFrame bandH * 0.72).
+  // Reserve that height so 100% scale still fits on watch artboards.
+  if (deviceId === "apple-watch") {
+    const bandOverhang = 0.72 * 0.48
+    const visualHeightPerWidth = 1 / aspect + 2 * bandOverhang
+    const byBandHeight = artboardHeight / (artboardWidth * visualHeightPerWidth)
+    max = Math.min(max, byBandHeight)
+  }
+  return Math.min(1.15, Math.max(0.15, max))
 }
 
 export function createFrame(
@@ -640,6 +667,7 @@ export function createFrame(
     shadowColor: normalizeFrameColor(rest.shadowColor, "#000000"),
     flipH: normalizeFlipFlag(rest.flipH),
     flipV: normalizeFlipFlag(rest.flipV),
+    showBand: rest.showBand !== false,
     id: id ?? crypto.randomUUID(),
   }
 }
@@ -1475,7 +1503,50 @@ export function normalizeSlide(raw: LegacySlide): Slide {
   })
 }
 
-export function normalizeProject(project: Project): Project {
+function collectScreenshotIdsFromSlides(slides: Slide[]): string[] {
+  const ids: string[] = []
+  for (const slide of slides) {
+    for (const frame of slide.frames) {
+      if (frame.screenshotId) ids.push(frame.screenshotId)
+      if (frame.screenshotIdB) ids.push(frame.screenshotIdB)
+    }
+  }
+  return ids
+}
+
+export type ProjectInput = Omit<Project, "screenshotLibrary"> & {
+  screenshotLibrary?: string[]
+}
+
+function normalizeScreenshotLibrary(
+  project: ProjectInput,
+  slides: Slide[],
+  sizeLayouts: Project["sizeLayouts"],
+): string[] {
+  const seen = new Set<string>()
+  const templateIds = new Set((project.templateScreenshotIds ?? []).filter(Boolean))
+  const out: string[] = []
+  const push = (id: string | null | undefined) => {
+    if (!id || seen.has(id)) return
+    // Skip virtual library prefixes — only real uploads / demos used as shots
+    if (id.startsWith("background:")) return
+    // Built-in sample screens are template placeholders — keep them on slides only.
+    if (id.startsWith("sample-")) return
+    // Project template screenshots should not appear in the re-pick UI; they’re placeholders.
+    if (templateIds.has(id)) return
+    seen.add(id)
+    out.push(id)
+  }
+  for (const id of project.screenshotLibrary ?? []) push(id)
+  for (const id of collectScreenshotIdsFromSlides(slides)) push(id)
+  for (const layout of Object.values(sizeLayouts)) {
+    if (!layout) continue
+    for (const id of collectScreenshotIdsFromSlides(layout.slides)) push(id)
+  }
+  return out
+}
+
+export function normalizeProject(project: ProjectInput): Project {
   const slides = project.slides.map((slide) =>
     sanitizeSlideSelection(normalizeSlide(slide as LegacySlide)),
   )
@@ -1532,6 +1603,10 @@ export function normalizeProject(project: Project): Project {
     sizeLayouts,
     slides,
     activeSlideId,
+    screenshotLibrary: normalizeScreenshotLibrary(project, slides, sizeLayouts),
+    templateScreenshotIds: [
+      ...new Set((project.templateScreenshotIds ?? []).filter(Boolean)),
+    ],
   }
 }
 
@@ -1589,5 +1664,6 @@ export function createSampleProject(
         activeSlideId: first.id,
       },
     },
+    screenshotLibrary: [],
   }
 }

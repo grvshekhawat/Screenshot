@@ -69,6 +69,7 @@ export function PlacedDevice({
         transformOrigin: "center center",
         transformStyle: "flat",
         isolation: "isolate",
+        overflow: "visible",
         zIndex,
         cursor: interactive ? "grab" : "default",
         touchAction: interactive ? "none" : undefined,
@@ -101,6 +102,7 @@ export function PlacedDevice({
         rotationX={frame.rotationX}
         rotationY={frame.rotationY}
         thickness={frame.thickness}
+        showBand={frame.showBand !== false}
         onUploadClick={(slot) => onUploadClick?.(frame.id, slot)}
       />
       {!forExport && selected && interactive && onResizeStart ? (

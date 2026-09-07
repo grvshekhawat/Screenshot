@@ -1,6 +1,6 @@
 import type { DeviceId } from "./types"
 
-export type DeviceChromeKind = "island" | "punch" | "tablet"
+export type DeviceChromeKind = "island" | "punch" | "tablet" | "watch"
 
 export type DeviceColorPreset = {
   id: string
@@ -8,7 +8,7 @@ export type DeviceColorPreset = {
   color: string
 }
 
-/** Official-ish finishes for each chrome family (island = iPhone, punch = Pixel, tablet = iPad). */
+/** Official-ish finishes for each chrome family (island = iPhone, punch = Pixel, tablet = iPad, watch = Apple Watch). */
 export const DEVICE_COLOR_PRESETS: Record<DeviceChromeKind, DeviceColorPreset[]> =
   {
     island: [
@@ -31,9 +31,17 @@ export const DEVICE_COLOR_PRESETS: Record<DeviceChromeKind, DeviceColorPreset[]>
       { id: "blue", name: "Blue", color: "#5b7db3" },
       { id: "pink", name: "Pink", color: "#e8b4bc" },
     ],
+    watch: [
+      { id: "jet-black", name: "Jet Black", color: "#2c2c2e" },
+      { id: "silver", name: "Silver", color: "#d8d8da" },
+      { id: "gold", name: "Gold", color: "#d4af7a" },
+      { id: "natural", name: "Natural Titanium", color: "#a8a29a" },
+      { id: "midnight", name: "Midnight", color: "#1a1a1c" },
+    ],
   }
 
 export function deviceChromeKind(deviceId: DeviceId): DeviceChromeKind {
+  if (deviceId === "apple-watch") return "watch"
   if (deviceId === "pixel" || deviceId === "pixel-land") return "punch"
   if (
     deviceId === "ipad-13" ||
@@ -55,6 +63,7 @@ const CHASSIS_DEPTH_RATIO: Record<DeviceChromeKind, number> = {
   island: 0.075,
   punch: 0.075,
   tablet: 0.028,
+  watch: 0.055,
 }
 
 /** frame.thickness is a percentage of the model's own depth (100 = stock). */
@@ -182,14 +191,19 @@ export function deviceChromeStyles(
 
   const hair = Math.max(1, width * 0.0025)
   // Thin metal lip only — deepest inset is always black (real bezel is a separate layer).
-  const lip = Math.max(1, width * (kind === "island" ? 0.004 : 0.003))
+  const lip = Math.max(
+    1,
+    width * (kind === "island" ? 0.004 : kind === "watch" ? 0.005 : 0.003),
+  )
 
   const bodyBackground =
     kind === "island"
       ? `linear-gradient(90deg, ${edge} 0%, ${nearEdge} 7%, ${deep} 18%, ${mid} 50%, ${deep} 82%, ${nearEdge} 93%, ${edge} 100%)`
       : kind === "punch"
         ? `linear-gradient(90deg, ${edge} 0%, ${nearEdge} 10%, ${mid} 50%, ${nearEdge} 90%, ${edge} 100%)`
-        : `linear-gradient(90deg, ${edge} 0%, ${nearEdge} 12%, ${mid} 50%, ${nearEdge} 88%, ${edge} 100%)`
+        : kind === "watch"
+          ? `linear-gradient(135deg, ${edge} 0%, ${nearEdge} 18%, ${mid} 48%, ${deep} 78%, ${nearEdge} 100%)`
+          : `linear-gradient(90deg, ${edge} 0%, ${nearEdge} 12%, ${mid} 50%, ${nearEdge} 88%, ${edge} 100%)`
 
   const bodyBoxShadow =
     kind === "island"
@@ -199,7 +213,14 @@ export function deviceChromeStyles(
             inset 0 ${width * 0.01}px ${width * 0.018}px ${softHighlight},
             inset 0 0 0 ${lip}px rgba(0,0,0,0.35)
           `
-      : `inset 0 0 0 ${Math.max(1, width * 0.003)}px ${highlight}, inset 0 0 0 ${lip}px rgba(0,0,0,0.4)`
+      : kind === "watch"
+        ? `
+            0 0 0 ${hair}px ${outline},
+            inset 0 0 0 ${Math.max(1, width * 0.004)}px ${highlight},
+            inset 0 ${width * 0.012}px ${width * 0.02}px ${softHighlight},
+            inset 0 0 0 ${lip}px rgba(0,0,0,0.45)
+          `
+        : `inset 0 0 0 ${Math.max(1, width * 0.003)}px ${highlight}, inset 0 0 0 ${lip}px rgba(0,0,0,0.4)`
 
   return {
     bodyBackground,

@@ -126,11 +126,30 @@ async function resolvePreviewAssetUrls(
   project: Project,
 ): Promise<Record<string, string>> {
   const urls: Record<string, string> = {}
-  const resolved = await resolveAssetUrls(assetIdsFromProject(project))
+  const ids = assetIdsFromProject(project)
+
+  // Prefer IndexedDB blobs — avoids re-downloading from Storage on every save.
+  await Promise.all(
+    ids.map(async (id) => {
+      if (id.includes(":")) return
+      const blob = await loadScreenshot(id)
+      if (!blob) return
+      const objectUrl = URL.createObjectURL(blob)
+      try {
+        urls[id] = await blobUrlToDataUrl(objectUrl)
+      } finally {
+        URL.revokeObjectURL(objectUrl)
+      }
+    }),
+  )
+
+  const missing = ids.filter((id) => !urls[id])
+  if (missing.length === 0) return urls
+
+  const resolved = await resolveAssetUrls(missing)
   await Promise.all(
     Object.entries(resolved).map(async ([id, url]) => {
-      if (!url) return
-      // Data URLs survive DOM capture without CORS / fetch failures.
+      if (!url || urls[id]) return
       if (url.startsWith("data:")) {
         urls[id] = url
         return
@@ -139,20 +158,6 @@ async function resolvePreviewAssetUrls(
         urls[id] = await blobUrlToDataUrl(url)
       } catch {
         urls[id] = url
-      }
-    }),
-  )
-  // Fill any missing via local screenshot blobs.
-  await Promise.all(
-    assetIdsFromProject(project).map(async (id) => {
-      if (urls[id]) return
-      const blob = await loadScreenshot(id)
-      if (!blob) return
-      const objectUrl = URL.createObjectURL(blob)
-      try {
-        urls[id] = await blobUrlToDataUrl(objectUrl)
-      } finally {
-        URL.revokeObjectURL(objectUrl)
       }
     }),
   )
@@ -246,11 +251,6 @@ async function buildProjectThumbnailPath(
   }
 }
 
-/** Prefer signed URL (works on private buckets); fall back to public URL. */
-async function resolveClipartUrl(storagePath: string): Promise<string> {
-  return resolveBucketUrl("cliparts", storagePath)
-}
-
 async function resolveBucketUrl(
   bucket: string,
   storagePath: string,
@@ -264,11 +264,56 @@ async function resolveBucketUrl(
   return data.publicUrl
 }
 
+/** One Storage API call to sign many paths in the same bucket. */
+async function batchSignBucketUrls(
+  bucket: string,
+  storagePaths: string[],
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>()
+  const paths = [...new Set(storagePaths.filter(Boolean))]
+  if (!paths.length) return out
+  if (!isSupabaseConfigured()) return out
+
+  const supabase = getSupabase()!
+  const { data: batch, error } = await supabase.storage
+    .from(bucket)
+    .createSignedUrls(paths, 60 * 60 * 24 * 7)
+
+  if (!error && batch) {
+    for (const row of batch) {
+      if (row.path && row.signedUrl && !row.error) {
+        out.set(row.path, row.signedUrl)
+      }
+    }
+  }
+
+  await Promise.all(
+    paths
+      .filter((path) => !out.has(path))
+      .map(async (path) => {
+        out.set(path, await resolveBucketUrl(bucket, path))
+      }),
+  )
+  return out
+}
+
+async function withClipartUrlsBatch(
+  records: LibraryClipartRecord[],
+): Promise<LibraryClipartRecord[]> {
+  const paths = records.map((row) => row.storage_path).filter(Boolean)
+  const signed = await batchSignBucketUrls("cliparts", paths)
+  return records.map((row) => ({
+    ...row,
+    url: row.storage_path ? signed.get(row.storage_path) : undefined,
+  }))
+}
+
 async function withClipartUrl(
   record: LibraryClipartRecord,
 ): Promise<LibraryClipartRecord> {
   if (!record.storage_path) return record
-  return { ...record, url: await resolveClipartUrl(record.storage_path) }
+  const [withUrl] = await withClipartUrlsBatch([record])
+  return withUrl
 }
 
 export async function fetchProfile(userId: string): Promise<Profile | null> {
@@ -352,10 +397,16 @@ export async function createProject(
 export async function saveProjectRecord(
   id: string,
   project: Project,
+  options?: { regenerateThumbnail?: boolean },
 ): Promise<ProjectRecord> {
-  if (!isSupabaseConfigured()) return local.localSaveProject(id, project)
+  if (!isSupabaseConfigured()) {
+    return local.localSaveProject(id, project, options)
+  }
   const supabase = getSupabase()!
-  const thumbnail_path = await buildProjectThumbnailPath(id, project)
+  const regenerateThumbnail = options?.regenerateThumbnail ?? false
+  const thumbnail_path = regenerateThumbnail
+    ? await buildProjectThumbnailPath(id, project)
+    : null
   const { data, error } = await supabase
     .from("projects")
     .update({
@@ -437,71 +488,107 @@ export async function resolveAssetUrls(
   }
 
   if (libraryIds.length > 0) {
-    await Promise.all(
-      libraryIds.map(async (assetId) => {
-        const libraryId = assetId.slice("library:".length)
-        if (!isSupabaseConfigured()) {
+    const idList = libraryIds.map((assetId) => assetId.slice("library:".length))
+    if (!isSupabaseConfigured()) {
+      await Promise.all(
+        libraryIds.map(async (assetId) => {
+          const libraryId = assetId.slice("library:".length)
           const url = await local.localLoadLibraryClipartUrl(libraryId)
           if (url) urls[assetId] = url
-          return
+        }),
+      )
+    } else {
+      const supabase = getSupabase()!
+      const { data, error } = await supabase
+        .from("library_cliparts")
+        .select("id, storage_path")
+        .in("id", idList)
+      if (!error && data?.length) {
+        const pathById = new Map(
+          data.map((row) => [row.id as string, row.storage_path as string]),
+        )
+        const signed = await batchSignBucketUrls(
+          "cliparts",
+          [...pathById.values()],
+        )
+        for (const assetId of libraryIds) {
+          const libraryId = assetId.slice("library:".length)
+          const path = pathById.get(libraryId)
+          const url = path ? signed.get(path) : undefined
+          if (url) urls[assetId] = url
         }
-        const supabase = getSupabase()!
-        const { data, error } = await supabase
-          .from("library_cliparts")
-          .select("storage_path")
-          .eq("id", libraryId)
-          .maybeSingle()
-        if (error || !data?.storage_path) return
-        const url = await resolveClipartUrl(data.storage_path as string)
-        if (url) urls[assetId] = url
-      }),
-    )
+      }
+    }
   }
 
   const demoIds = assetIds.filter((id) => id.startsWith("demo:"))
   if (demoIds.length > 0) {
-    await Promise.all(
-      demoIds.map(async (assetId) => {
-        const id = assetId.slice("demo:".length)
-        if (!isSupabaseConfigured()) {
+    const idList = demoIds.map((id) => id.slice("demo:".length))
+    if (!isSupabaseConfigured()) {
+      await Promise.all(
+        demoIds.map(async (assetId) => {
+          const id = assetId.slice("demo:".length)
           const url = await local.localLoadDemoScreenUrl(id)
           if (url) urls[assetId] = url
-          return
+        }),
+      )
+    } else {
+      const supabase = getSupabase()!
+      const { data, error } = await supabase
+        .from("library_demo_screens")
+        .select("id, storage_path")
+        .in("id", idList)
+      if (!error && data?.length) {
+        const pathById = new Map(
+          data.map((row) => [row.id as string, row.storage_path as string]),
+        )
+        const signed = await batchSignBucketUrls(
+          "demo-screens",
+          [...pathById.values()],
+        )
+        for (const assetId of demoIds) {
+          const id = assetId.slice("demo:".length)
+          const path = pathById.get(id)
+          const url = path ? signed.get(path) : undefined
+          if (url) urls[assetId] = url
         }
-        const supabase = getSupabase()!
-        const { data, error } = await supabase
-          .from("library_demo_screens")
-          .select("storage_path")
-          .eq("id", id)
-          .maybeSingle()
-        if (error || !data?.storage_path) return
-        const url = await resolveBucketUrl("demo-screens", data.storage_path)
-        if (url) urls[assetId] = url
-      }),
-    )
+      }
+    }
   }
 
   const backgroundIds = assetIds.filter((id) => id.startsWith("background:"))
   if (backgroundIds.length > 0) {
-    await Promise.all(
-      backgroundIds.map(async (assetId) => {
-        const id = assetId.slice("background:".length)
-        if (!isSupabaseConfigured()) {
+    const idList = backgroundIds.map((id) => id.slice("background:".length))
+    if (!isSupabaseConfigured()) {
+      await Promise.all(
+        backgroundIds.map(async (assetId) => {
+          const id = assetId.slice("background:".length)
           const url = await local.localLoadBackgroundUrl(id)
           if (url) urls[assetId] = url
-          return
+        }),
+      )
+    } else {
+      const supabase = getSupabase()!
+      const { data, error } = await supabase
+        .from("library_backgrounds")
+        .select("id, storage_path")
+        .in("id", idList)
+      if (!error && data?.length) {
+        const pathById = new Map(
+          data.map((row) => [row.id as string, row.storage_path as string]),
+        )
+        const signed = await batchSignBucketUrls(
+          "backgrounds",
+          [...pathById.values()],
+        )
+        for (const assetId of backgroundIds) {
+          const id = assetId.slice("background:".length)
+          const path = pathById.get(id)
+          const url = path ? signed.get(path) : undefined
+          if (url) urls[assetId] = url
         }
-        const supabase = getSupabase()!
-        const { data, error } = await supabase
-          .from("library_backgrounds")
-          .select("storage_path")
-          .eq("id", id)
-          .maybeSingle()
-        if (error || !data?.storage_path) return
-        const url = await resolveBucketUrl("backgrounds", data.storage_path)
-        if (url) urls[assetId] = url
-      }),
-    )
+      }
+    }
   }
 
   if (projectIds.length === 0) return urls
@@ -550,6 +637,34 @@ export async function resolveAssetUrls(
   }
 
   return urls
+}
+
+/**
+ * Resolve asset URLs preferring IndexedDB blobs (zero Storage egress) before
+ * signing / downloading from Supabase.
+ */
+export async function resolveAssetUrlsPreferLocal(
+  assetIds: string[],
+): Promise<Record<string, string>> {
+  const urls: Record<string, string> = {}
+  const missing: string[] = []
+  await Promise.all(
+    assetIds.map(async (id) => {
+      if (id.includes(":")) {
+        missing.push(id)
+        return
+      }
+      const blob = await loadScreenshot(id)
+      if (blob) {
+        urls[id] = URL.createObjectURL(blob)
+        return
+      }
+      missing.push(id)
+    }),
+  )
+  if (missing.length === 0) return urls
+  const remote = await resolveAssetUrls(missing)
+  return { ...urls, ...remote }
 }
 
 export async function resolveTemplatePreviewUrl(
@@ -1117,7 +1232,30 @@ export async function cloneTemplateToProject(
     slideIdMap.get(cloned.activeSlideId) ?? cloned.slides[0]?.id ?? ""
 
   cloned = await remapProjectAssetsFromTemplate(template.id, cloned)
+  // Template screens are placeholders — a bulk upload replaces them.
+  cloned = {
+    ...cloned,
+    templateScreenshotIds: templateScreenshotIdsOf(cloned),
+  }
   return createProject(cloned)
+}
+
+function templateScreenshotIdsOf(project: Project): string[] {
+  const ids = new Set<string>()
+  const collect = (slides: Project["slides"]) => {
+    for (const slide of slides) {
+      for (const frame of slide.frames) {
+        if (frame.screenshotId) ids.add(frame.screenshotId)
+        if (frame.screenshotIdB) ids.add(frame.screenshotIdB)
+      }
+    }
+  }
+  collect(project.slides)
+  for (const layout of Object.values(project.sizeLayouts ?? {})) {
+    if (!layout) continue
+    collect(layout.slides)
+  }
+  return [...ids]
 }
 
 export async function listPublishedCliparts(): Promise<LibraryClipartRecord[]> {
@@ -1129,9 +1267,7 @@ export async function listPublishedCliparts(): Promise<LibraryClipartRecord[]> {
     .eq("published", true)
     .order("sort_order")
   if (error) throw error
-  return Promise.all(
-    (data ?? []).map((row) => withClipartUrl(row as LibraryClipartRecord)),
-  )
+  return withClipartUrlsBatch((data ?? []) as LibraryClipartRecord[])
 }
 
 export async function listAllCliparts(): Promise<LibraryClipartRecord[]> {
@@ -1142,9 +1278,7 @@ export async function listAllCliparts(): Promise<LibraryClipartRecord[]> {
     .select("*")
     .order("sort_order")
   if (error) throw error
-  return Promise.all(
-    (data ?? []).map((row) => withClipartUrl(row as LibraryClipartRecord)),
-  )
+  return withClipartUrlsBatch((data ?? []) as LibraryClipartRecord[])
 }
 
 export async function upsertLibraryClipart(input: {

@@ -16,6 +16,7 @@ export function deviceForExportTarget(
   _fromTargetId: StoreTargetId,
   toTargetId: StoreTargetId,
 ): DeviceId {
+  if (toTargetId === "apple-watch") return "apple-watch"
   if (toTargetId === "play-phone") return "pixel"
   if (toTargetId === "play-phone-landscape") return "pixel-land"
   if (toTargetId === "ipad-13-landscape") return "ipad-13-land"
@@ -106,10 +107,21 @@ export function adaptFrameToStoreTarget(
   const heightFrac = (frame.scale / fromDevice.aspect) * fromArt
   let scale = (heightFrac * toDevice.aspect) / toArt
 
-  const headroom = isIpadStoreTarget(toTargetId) ? 0.84 : 0.9
+  // Watch canvases are tiny and nearly square; leave room for sport bands.
+  const headroom =
+    toTargetId === "apple-watch"
+      ? 0.58
+      : isIpadStoreTarget(toTargetId)
+        ? 0.84
+        : 0.9
   const maxByHeight = (headroom * toDevice.aspect) / toArt
-  const maxByWidth = isIpadStoreTarget(toTargetId) ? 0.88 : 0.9
-  scale = Math.min(Math.max(0.2, scale), maxByHeight, maxByWidth)
+  const maxByWidth =
+    toTargetId === "apple-watch"
+      ? 0.62
+      : isIpadStoreTarget(toTargetId)
+        ? 0.88
+        : 0.9
+  scale = Math.min(Math.max(0.15, scale), maxByHeight, maxByWidth)
 
   const halfHeightPct = ((scale / toDevice.aspect) * toArt * 100) / 2
   const topReserve = isIpadStoreTarget(toTargetId) ? 16 : 14

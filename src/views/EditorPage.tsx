@@ -1,12 +1,12 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useParams, useRouter } from "next/navigation"
+import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { useAuth } from "../auth/AuthProvider"
 import { Editor } from "../components/Editor"
 import { ProjectProvider, useProject } from "../project-store"
 
-function EditorChrome() {
+function EditorChrome({ promptUploadFirst }: { promptUploadFirst: boolean }) {
   const router = useRouter()
   const { flushSave, saveState, hasUnsavedChanges } = useProject()
   const [leaving, setLeaving] = useState(false)
@@ -63,7 +63,7 @@ function EditorChrome() {
         </button>
       </div>
       <div className="min-h-0 flex-1">
-        <Editor />
+        <Editor promptUploadFirst={promptUploadFirst} />
       </div>
     </div>
   )
@@ -71,6 +71,7 @@ function EditorChrome() {
 
 export function EditorPage() {
   const params = useParams<{ projectId: string }>()
+  const searchParams = useSearchParams()
   const projectId = params.projectId
   const { ready, userId } = useAuth()
   const router = useRouter()
@@ -88,9 +89,11 @@ export function EditorPage() {
     )
   }
 
+  const promptUploadFirst = searchParams.get("uploadFirst") === "1"
+
   return (
     <ProjectProvider projectId={projectId}>
-      <EditorChrome />
+      <EditorChrome promptUploadFirst={promptUploadFirst} />
     </ProjectProvider>
   )
 }

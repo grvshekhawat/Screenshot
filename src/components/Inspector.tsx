@@ -35,6 +35,7 @@ import {
   normalizeFrameColor,
 } from "../device-chrome"
 import { storeTargetsForOrientation } from "../orientation"
+import { screenshotPickerAspectClass } from "../template-preview"
 import {
   artboardToAttached,
   attachedToArtboard,
@@ -77,8 +78,10 @@ import {
   canGroupSelection,
   canUngroupSelection,
 } from "../groups"
+import { screenshotLibraryIdsForUi } from "../assets"
 import { OverflowChoice } from "./OverflowChoice"
 import { ScreenshotDropZone } from "./ScreenshotDropZone"
+import { IMAGE_ACCEPT } from "../image-upload"
 import { useAuth } from "../auth/AuthProvider"
 import {
   listDemoScreens,
@@ -299,6 +302,7 @@ export function Inspector({
     moveLens,
     addLibraryClipart,
     libraryCliparts,
+    loadLibraryCliparts,
     copyComponentToSlide,
     setFrameOverflow,
     setClipartOverflow,
@@ -346,6 +350,10 @@ export function Inspector({
     setContentTab(tab)
     onMenuChange("content")
   }, [kind, selectionKey, onMenuChange])
+
+  useEffect(() => {
+    if (contentTab === "clipart") loadLibraryCliparts()
+  }, [contentTab, loadLibraryCliparts])
 
   const toggleMenu = (id: MenuId) =>
     onMenuChange(menu === id ? null : id)
@@ -655,6 +663,7 @@ function ContentTools({
   addLens: (slideId: string) => void
   addLibraryClipart: (slideId: string, libraryId: string, url: string) => void
 }) {
+  const { applyProjectScreenshot } = useProject()
   const selectedSet = new Set(
     selectedIds.length > 0 ? selectedIds : getSelectedIds(slide),
   )
@@ -714,14 +723,21 @@ function ContentTools({
               </button>
             ))}
           </div>
-          <p className="mt-3 text-[11px] text-zinc-500">
-            Select a phone to edit it in Properties, or upload a screenshot
-            there.
-          </p>
+          <ProjectScreenshotLibraryPanel
+            onAssignToSelected={(assetId) => {
+              const frameId =
+                selectedIds.find((id) =>
+                  slide.frames.some((frame) => frame.id === id),
+                ) ?? slide.frames[0]?.id
+              if (!frameId) return
+              applyProjectScreenshot(slide.id, frameId, assetId, "a")
+              selectFrame(slide.id, frameId)
+            }}
+          />
           {slide.frames.some((item) => isRowSelected(item.id)) ? (
             <div className="mt-2">
               <ScreenshotDropZone
-                label="Upload screenshot"
+                label="Upload to selected phone"
                 onClick={() =>
                   onUploadClick(
                     selectedIds.find((id) =>
@@ -812,6 +828,7 @@ function ContentTools({
                         <img
                           src={item.url}
                           alt={item.name}
+                          loading="lazy"
                           className="mx-auto h-10 w-10 object-contain"
                         />
                       </button>
@@ -1104,27 +1121,10 @@ function PhoneProperties({
     artboardHeight,
   )
   const scalePercent = Math.round((frame.scale / fitScale) * 100)
-  const { applyDemoScreenshot } = useProject()
+  const { applyDemoScreenshot, applyProjectScreenshot, assetUrls, project } =
+    useProject()
   const { isAdmin } = useAuth()
-  const [demos, setDemos] = useState<LibraryDemoScreenRecord[]>([])
-
-  useEffect(() => {
-    if (!isAdmin) {
-      setDemos([])
-      return
-    }
-    let cancelled = false
-    void listDemoScreens()
-      .then((rows) => {
-        if (!cancelled) setDemos(rows.filter((row) => row.url))
-      })
-      .catch(() => {
-        if (!cancelled) setDemos([])
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [isAdmin])
+  const libraryIds = screenshotLibraryIdsForUi(project)
 
   return (
     <PropertyCopyProvider kind="frame" layer={frame}>
@@ -1173,9 +1173,20 @@ function PhoneProperties({
                 Remove screenshot
               </button>
             ) : null}
-            {isAdmin && demos.length > 0 ? (
-              <DemoScreenPicker
-                demos={demos}
+            <ProjectScreenshotPicker
+              assetIds={libraryIds}
+              assetUrls={assetUrls}
+              selectedId={frame.screenshotId}
+              deviceId={frame.deviceId}
+              targetId={project.targetId}
+              onPick={(assetId) =>
+                applyProjectScreenshot(slide.id, frame.id, assetId, "a")
+              }
+            />
+            {isAdmin ? (
+              <AdminDemoPicker
+                deviceId={frame.deviceId}
+                targetId={project.targetId}
                 onPick={(demo) => {
                   if (!demo.url) return
                   applyDemoScreenshot(slide.id, frame.id, demo.id, demo.url, "a")
@@ -1230,6 +1241,16 @@ function PhoneProperties({
                   Remove
                 </button>
               ) : null}
+              <ProjectScreenshotPicker
+                assetIds={libraryIds}
+                assetUrls={assetUrls}
+                selectedId={frame.screenshotId}
+                deviceId={frame.deviceId}
+                targetId={project.targetId}
+                onPick={(assetId) =>
+                  applyProjectScreenshot(slide.id, frame.id, assetId, "a")
+                }
+              />
             </div>
             <div>
               <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
@@ -1254,6 +1275,16 @@ function PhoneProperties({
                   Remove
                 </button>
               ) : null}
+              <ProjectScreenshotPicker
+                assetIds={libraryIds}
+                assetUrls={assetUrls}
+                selectedId={frame.screenshotIdB}
+                deviceId={frame.deviceId}
+                targetId={project.targetId}
+                onPick={(assetId) =>
+                  applyProjectScreenshot(slide.id, frame.id, assetId, "b")
+                }
+              />
             </div>
           </>
         )}
@@ -1283,6 +1314,30 @@ function PhoneProperties({
           color={frame.color}
           onChange={(color) => updateFrame(slide.id, frame.id, { color })}
         />
+        {frame.deviceId === "apple-watch" ? (
+          <label className="mt-2 flex cursor-pointer items-center justify-between gap-3 rounded-lg bg-zinc-900 px-3 py-2.5 text-sm text-zinc-200">
+            <span>Show band</span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={frame.showBand !== false}
+              onClick={() =>
+                updateFrame(slide.id, frame.id, {
+                  showBand: frame.showBand === false,
+                })
+              }
+              className={`relative h-5 w-9 shrink-0 rounded-full transition ${
+                frame.showBand !== false ? "bg-[#e8ff47]" : "bg-zinc-700"
+              }`}
+            >
+              <span
+                className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-[#0a0a0c] transition ${
+                  frame.showBand !== false ? "translate-x-4" : ""
+                }`}
+              />
+            </button>
+          </label>
+        ) : null}
       </PropertySection>
 
       <PropertySection id="position" title="Position" copySection="position">
@@ -2530,36 +2585,262 @@ function BackgroundColorPanel({
   )
 }
 
-function DemoScreenPicker({
-  demos,
+function ProjectScreenshotPicker({
+  assetIds,
+  assetUrls,
+  selectedId,
+  deviceId,
+  targetId,
   onPick,
 }: {
-  demos: LibraryDemoScreenRecord[]
-  onPick: (demo: LibraryDemoScreenRecord) => void
+  assetIds: string[]
+  assetUrls: Record<string, string>
+  selectedId: string | null
+  deviceId?: string | null
+  targetId?: string | null
+  onPick: (assetId: string) => void
 }) {
+  const { ensureAssetUrls } = useProject()
+  useEffect(() => {
+    if (assetIds.length) void ensureAssetUrls(assetIds)
+  }, [assetIds, ensureAssetUrls])
+
+  const thumbAspect = screenshotPickerAspectClass(deviceId, targetId)
+  const items = assetIds
+    .map((id) => ({ id, url: assetUrls[id] }))
+    .filter((item): item is { id: string; url: string } => Boolean(item.url))
+  if (!items.length) return null
+
   return (
     <div className="mt-3">
       <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
-        Admin demos
+        Project screenshots
       </p>
-      <div className="grid max-h-40 grid-cols-3 gap-1.5 overflow-y-auto">
-        {demos.map((demo) => (
+      <div className="grid max-h-44 grid-cols-3 gap-1.5 overflow-y-auto">
+        {items.map((item) => (
           <button
-            key={demo.id}
+            key={item.id}
             type="button"
-            title={demo.name}
-            onClick={() => onPick(demo)}
-            className="overflow-hidden rounded-md ring-1 ring-white/10 hover:ring-[#e8ff47]/60"
+            title="Use this screenshot"
+            onClick={() => onPick(item.id)}
+            className={`overflow-hidden rounded-md ring-1 ${
+              selectedId === item.id
+                ? "ring-[#e8ff47]"
+                : "ring-white/10 hover:ring-[#e8ff47]/60"
+            }`}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={demo.url}
-              alt={demo.name}
-              className="aspect-[9/19] w-full object-cover"
+              src={item.url}
+              alt=""
+              loading="lazy"
+              className={`${thumbAspect} w-full object-cover`}
             />
           </button>
         ))}
       </div>
+    </div>
+  )
+}
+
+function ProjectScreenshotLibraryPanel({
+  onAssignToSelected,
+}: {
+  onAssignToSelected: (assetId: string) => void
+}) {
+  const {
+    project,
+    assetUrls,
+    ensureAssetUrls,
+    uploadScreenshotsToLibrary,
+    autoAssignScreenshots,
+    removeFromScreenshotLibrary,
+  } = useProject()
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+  const libraryIds = screenshotLibraryIdsForUi(project)
+  const activeSlide =
+    project.slides.find((slide) => slide.id === project.activeSlideId) ??
+    project.slides[0]
+  const selectedFrame =
+    activeSlide?.frames.find((frame) =>
+      (activeSlide.selectedIds ?? []).includes(frame.id),
+    ) ?? activeSlide?.frames[0]
+  const thumbAspect = screenshotPickerAspectClass(
+    selectedFrame?.deviceId,
+    project.targetId,
+  )
+
+  useEffect(() => {
+    if (libraryIds.length) void ensureAssetUrls(libraryIds)
+  }, [libraryIds, ensureAssetUrls])
+
+  const onUpload = async (files: File[]) => {
+    if (!files.length) return
+    setBusy(true)
+    setMessage(null)
+    try {
+      const ids = await uploadScreenshotsToLibrary(files)
+      if (!ids.length) {
+        setMessage("No images found")
+        return
+      }
+      void ensureAssetUrls(ids)
+      const placed = autoAssignScreenshots(ids)
+      const total = `${ids.length} screenshot${ids.length === 1 ? "" : "s"}`
+      setMessage(
+        placed === ids.length
+          ? `Added ${total} to your phones`
+          : placed > 0
+            ? `Placed ${placed} of ${ids.length} — tap a thumbnail for the rest`
+            : `Added ${total} — tap a thumbnail to place them`,
+      )
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Upload failed")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="mt-3 space-y-2">
+      <p className="text-[11px] text-zinc-500">
+        Upload all screenshots at once — they fill the empty phones in order.
+        Tap a thumbnail to place any that are left.
+      </p>
+      <input
+        ref={inputRef}
+        type="file"
+        accept={IMAGE_ACCEPT}
+        multiple
+        className="hidden"
+        onChange={(event) => {
+          // Copy before clearing — FileList is live and empties when value is reset.
+          const files = event.target.files ? [...event.target.files] : []
+          event.target.value = ""
+          void onUpload(files)
+        }}
+      />
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => inputRef.current?.click()}
+        className="w-full rounded-lg border border-dashed border-zinc-700 px-3 py-2.5 text-sm text-zinc-300 hover:border-[#e8ff47]/55 hover:text-white disabled:opacity-50"
+      >
+        {busy ? "Uploading…" : "Upload screenshots"}
+      </button>
+      {message ? (
+        <p className="text-[11px] text-zinc-400">{message}</p>
+      ) : null}
+      {libraryIds.length > 0 ? (
+        <div className="grid max-h-52 grid-cols-3 gap-1.5 overflow-y-auto">
+          {libraryIds.map((id) => {
+            const url = assetUrls[id]
+            return (
+              <div key={id} className="group relative">
+                <button
+                  type="button"
+                  title="Assign to selected phone"
+                  disabled={!url}
+                  onClick={() => url && onAssignToSelected(id)}
+                  className="w-full overflow-hidden rounded-md ring-1 ring-white/10 hover:ring-[#e8ff47]/60 disabled:opacity-60"
+                >
+                  {url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={url}
+                      alt=""
+                      loading="lazy"
+                      className={`${thumbAspect} w-full object-cover`}
+                    />
+                  ) : (
+                    <div
+                      className={`flex ${thumbAspect} w-full items-center justify-center bg-zinc-900 text-[10px] text-zinc-500`}
+                    >
+                      …
+                    </div>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  title="Remove from library"
+                  onClick={() => removeFromScreenshotLibrary(id)}
+                  className="absolute top-1 right-1 rounded bg-black/70 px-1 text-[10px] text-red-300 opacity-0 hover:text-red-200 group-hover:opacity-100"
+                >
+                  ×
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function AdminDemoPicker({
+  onPick,
+  deviceId,
+  targetId,
+}: {
+  onPick: (demo: LibraryDemoScreenRecord) => void
+  deviceId?: string | null
+  targetId?: string | null
+}) {
+  const [open, setOpen] = useState(false)
+  const [demos, setDemos] = useState<LibraryDemoScreenRecord[]>([])
+  const [loading, setLoading] = useState(false)
+  const thumbAspect = screenshotPickerAspectClass(deviceId, targetId)
+
+  const toggle = () => {
+    const next = !open
+    setOpen(next)
+    if (!next || demos.length > 0 || loading) return
+    setLoading(true)
+    void listDemoScreens()
+      .then((rows) => setDemos(rows.filter((row) => row.url)))
+      .catch(() => setDemos([]))
+      .finally(() => setLoading(false))
+  }
+
+  return (
+    <div className="mt-3">
+      <button
+        type="button"
+        onClick={toggle}
+        className="w-full rounded-lg bg-zinc-900 px-3 py-2 text-left text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+      >
+        {open ? "Hide admin demos" : "Show admin demos"}
+        {demos.length > 0 ? ` (${demos.length})` : ""}
+      </button>
+      {open ? (
+        loading ? (
+          <p className="mt-2 text-[11px] text-zinc-500">Loading demos…</p>
+        ) : demos.length > 0 ? (
+          <div className="mt-2 grid max-h-40 grid-cols-3 gap-1.5 overflow-y-auto">
+            {demos.map((demo) => (
+              <button
+                key={demo.id}
+                type="button"
+                title={demo.name}
+                onClick={() => onPick(demo)}
+                className="overflow-hidden rounded-md ring-1 ring-white/10 hover:ring-[#e8ff47]/60"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={demo.url}
+                  alt={demo.name}
+                  loading="lazy"
+                  className={`${thumbAspect} w-full object-cover`}
+                />
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-2 text-[11px] text-zinc-500">No demos published yet.</p>
+        )
+      ) : null}
     </div>
   )
 }
@@ -2663,7 +2944,9 @@ function BackgroundImagePanel({
   updateSlide: ReturnType<typeof useProject>["updateSlide"]
 }) {
   const { applyLibraryBackground, project } = useProject()
+  const [libraryOpen, setLibraryOpen] = useState(false)
   const [library, setLibrary] = useState<LibraryBackgroundRecord[]>([])
+  const [libraryLoading, setLibraryLoading] = useState(false)
   const target = STORE_TARGETS[project.targetId]
   const artboardAspect = target.width / target.height
   const positionX = slide.background.imagePositionX ?? 50
@@ -2673,7 +2956,9 @@ function BackgroundImagePanel({
     : null
 
   useEffect(() => {
+    if (!libraryOpen || library.length > 0 || libraryLoading) return
     let cancelled = false
+    setLibraryLoading(true)
     void listPublishedBackgrounds()
       .then((rows) => {
         if (!cancelled) setLibrary(rows.filter((row) => row.url))
@@ -2681,10 +2966,13 @@ function BackgroundImagePanel({
       .catch(() => {
         if (!cancelled) setLibrary([])
       })
+      .finally(() => {
+        if (!cancelled) setLibraryLoading(false)
+      })
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [libraryOpen, library.length, libraryLoading])
 
   const setFocus = (next: {
     imagePositionX: number
@@ -2726,37 +3014,52 @@ function BackgroundImagePanel({
           ? "Replace background image"
           : "Upload background image"}
       </button>
-      {library.length > 0 ? (
-        <div className="mt-3">
-          <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
-            Library
-          </p>
-          <div className="grid max-h-36 grid-cols-3 gap-1.5 overflow-y-auto">
-            {library.map((bg) => (
-              <button
-                key={bg.id}
-                type="button"
-                title={bg.name}
-                onClick={() => {
-                  if (!bg.url) return
-                  applyLibraryBackground(slide.id, bg.id, bg.url)
-                }}
-                className={`overflow-hidden rounded-md ring-1 ${
-                  slide.background.imageId === `background:${bg.id}`
-                    ? "ring-[#e8ff47]"
-                    : "ring-white/10 hover:ring-white/25"
-                }`}
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={bg.url}
-                  alt={bg.name}
-                  className="h-14 w-full object-cover"
-                />
-              </button>
-            ))}
+      <button
+        type="button"
+        onClick={() => setLibraryOpen((open) => !open)}
+        className="mt-3 w-full rounded-lg bg-zinc-900 px-3 py-2 text-left text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+      >
+        {libraryOpen ? "Hide background library" : "Show background library"}
+        {library.length > 0 ? ` (${library.length})` : ""}
+      </button>
+      {libraryOpen ? (
+        libraryLoading ? (
+          <p className="mt-2 text-[11px] text-zinc-500">Loading backgrounds…</p>
+        ) : library.length > 0 ? (
+          <div className="mt-2">
+            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+              Library
+            </p>
+            <div className="grid max-h-36 grid-cols-3 gap-1.5 overflow-y-auto">
+              {library.map((bg) => (
+                <button
+                  key={bg.id}
+                  type="button"
+                  title={bg.name}
+                  onClick={() => {
+                    if (!bg.url) return
+                    applyLibraryBackground(slide.id, bg.id, bg.url)
+                  }}
+                  className={`overflow-hidden rounded-md ring-1 ${
+                    slide.background.imageId === `background:${bg.id}`
+                      ? "ring-[#e8ff47]"
+                      : "ring-white/10 hover:ring-white/25"
+                  }`}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={bg.url}
+                    alt={bg.name}
+                    loading="lazy"
+                    className="h-14 w-full object-cover"
+                  />
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        ) : (
+          <p className="mt-2 text-[11px] text-zinc-500">No backgrounds published yet.</p>
+        )
       ) : null}
       {slide.background.imageId ? (
         <button
@@ -3371,6 +3674,32 @@ function MultiSelectionProperties({
               color={framePrimary.color}
               onChange={(color) => patchSelectionCommon({ color })}
             />
+            {framePrimary.deviceId === "apple-watch" ? (
+              <label className="mt-2 flex cursor-pointer items-center justify-between gap-3 rounded-lg bg-zinc-900 px-3 py-2.5 text-sm text-zinc-200">
+                <span>Show band</span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={framePrimary.showBand !== false}
+                  onClick={() =>
+                    patchSelectionCommon({
+                      showBand: framePrimary.showBand === false,
+                    })
+                  }
+                  className={`relative h-5 w-9 shrink-0 rounded-full transition ${
+                    framePrimary.showBand !== false
+                      ? "bg-[#e8ff47]"
+                      : "bg-zinc-700"
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-[#0a0a0c] transition ${
+                      framePrimary.showBand !== false ? "translate-x-4" : ""
+                    }`}
+                  />
+                </button>
+              </label>
+            ) : null}
           </PropertySection>
         ) : null}
 
