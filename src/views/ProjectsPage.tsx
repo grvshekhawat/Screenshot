@@ -13,11 +13,12 @@ import {
 } from "../api/projects"
 import { useAuth } from "../auth/AuthProvider"
 import { syncStripeSubscription } from "../billing/checkout"
-import { createSampleProject } from "../constants"
+import { createSampleProject, createSampleVideoProject } from "../constants"
 import { MAX_CLOUD_PROJECTS } from "../config"
 import {
+  projectMatchesFilter,
   projectOrientation,
-  type ArtboardOrientation,
+  type ProjectsFilter,
 } from "../orientation"
 import type { ProjectRecord, TemplateRecord } from "../types/cloud"
 import { MARKETING_DISPLAY } from "../components/MarketingHeader"
@@ -44,13 +45,14 @@ export function ProjectsPage() {
   const [templates, setTemplates] = useState<TemplateRecord[]>([])
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [orientation, setOrientation] =
-    useState<ArtboardOrientation>("portrait")
+  const [filter, setFilter] = useState<ProjectsFilter>("portrait")
 
   useEffect(() => {
     try {
       const raw = localStorage.getItem(ORIENT_KEY)
-      if (raw === "landscape" || raw === "portrait") setOrientation(raw)
+      if (raw === "landscape" || raw === "portrait" || raw === "video") {
+        setFilter(raw)
+      }
     } catch {
       // ignore
     }
@@ -108,11 +110,11 @@ export function ProjectsPage() {
 
   useEffect(() => {
     try {
-      localStorage.setItem(ORIENT_KEY, orientation)
+      localStorage.setItem(ORIENT_KEY, filter)
     } catch {
       // ignore
     }
-  }, [orientation])
+  }, [filter])
 
   useEffect(() => {
     if (ready && !userId) router.replace("/login")
@@ -120,17 +122,17 @@ export function ProjectsPage() {
 
   const visibleProjects = useMemo(
     () =>
-      projects.filter(
-        (project) => projectOrientation(project.data) === orientation,
-      ),
-    [projects, orientation],
+      projects.filter((project) => projectMatchesFilter(project.data, filter)),
+    [projects, filter],
   )
   const visibleTemplates = useMemo(
     () =>
-      templates.filter(
-        (template) => projectOrientation(template.data) === orientation,
-      ),
-    [templates, orientation],
+      filter === "video"
+        ? []
+        : templates.filter(
+            (template) => projectOrientation(template.data) === filter,
+          ),
+    [templates, filter],
   )
 
   if (ready && !userId) {
@@ -153,7 +155,11 @@ export function ProjectsPage() {
     setBusy(true)
     setError(null)
     try {
-      const record = await createProject(createSampleProject(orientation))
+      const data =
+        filter === "video"
+          ? createSampleVideoProject()
+          : createSampleProject(filter)
+      const record = await createProject(data)
       router.push(`/app/${record.id}?uploadFirst=1`)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not create project")
@@ -278,41 +284,41 @@ export function ProjectsPage() {
                 ? `${projects.length} projects`
                 : `${projects.length} of ${MAX_CLOUD_PROJECTS} projects`}
               <span className="mx-2 text-zinc-700">·</span>
-              {visibleProjects.length} {orientation}
+              {visibleProjects.length} {filter}
               <span className="mx-2 text-zinc-700">·</span>
               {atCap
                 ? "Limit reached — delete one to add another"
-                : "Free watermarked PNG · Pro for clean ZIP"}
+                : filter === "video"
+                  ? "Free watermarked PNG · Pro for MP4"
+                  : "Free watermarked PNG · Pro for clean ZIP"}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <div
               className="flex rounded-md border border-white/10 p-0.5"
               role="group"
-              aria-label="Orientation"
+              aria-label="Project type"
             >
-              <button
-                type="button"
-                onClick={() => setOrientation("portrait")}
-                className={`rounded px-3 py-1.5 text-xs font-medium transition ${
-                  orientation === "portrait"
-                    ? "bg-white/10 text-white"
-                    : "text-zinc-500 hover:text-zinc-300"
-                }`}
-              >
-                Portrait
-              </button>
-              <button
-                type="button"
-                onClick={() => setOrientation("landscape")}
-                className={`rounded px-3 py-1.5 text-xs font-medium transition ${
-                  orientation === "landscape"
-                    ? "bg-white/10 text-white"
-                    : "text-zinc-500 hover:text-zinc-300"
-                }`}
-              >
-                Landscape
-              </button>
+              {(
+                [
+                  ["portrait", "Portrait"],
+                  ["landscape", "Landscape"],
+                  ["video", "Video"],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setFilter(id)}
+                  className={`rounded px-3 py-1.5 text-xs font-medium transition ${
+                    filter === id
+                      ? "bg-white/10 text-white"
+                      : "text-zinc-500 hover:text-zinc-300"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
             <button
               type="button"
@@ -325,7 +331,7 @@ export function ProjectsPage() {
               onClick={() => void onCreate()}
               className="rounded-md bg-[#e8ff47] px-4 py-2 text-sm font-semibold text-[#0a0a0c] transition hover:bg-[#f0ff7a] disabled:opacity-40"
             >
-              New {orientation} project
+              New {filter} project
             </button>
           </div>
         </div>
@@ -397,12 +403,14 @@ export function ProjectsPage() {
                 className="text-lg font-semibold tracking-tight text-zinc-200"
                 style={{ fontFamily: MARKETING_DISPLAY }}
               >
-                No {orientation} projects yet
+                No {filter} projects yet
               </p>
               <p className="mx-auto mt-2 max-w-md text-[14px] text-zinc-500">
                 {atCap
-                  ? `You’ve used all ${MAX_CLOUD_PROJECTS} project slots in other orientations. Delete a project above to create a ${orientation} one.`
-                  : "Start blank or pick a template below—your screenshots stay here until you export."}
+                  ? `You’ve used all ${MAX_CLOUD_PROJECTS} project slots. Delete a project to create a ${filter} one.`
+                  : filter === "video"
+                    ? "Start a blank video project—set how long each slide plays, then export MP4."
+                    : "Start blank or pick a template below—your screenshots stay here until you export."}
               </p>
               {!atCap ? (
                 <button
@@ -411,13 +419,14 @@ export function ProjectsPage() {
                   onClick={() => void onCreate()}
                   className="mt-6 rounded-md bg-[#e8ff47] px-5 py-2.5 text-sm font-semibold text-[#0a0a0c] transition hover:bg-[#f0ff7a] disabled:opacity-40"
                 >
-                  Create {orientation} project
+                  Create {filter} project
                 </button>
               ) : null}
             </div>
           ) : null}
         </div>
 
+        {filter !== "video" ? (
         <section className="relative mt-16 border-t border-white/[0.06] pt-14">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
@@ -430,7 +439,7 @@ export function ProjectsPage() {
               <p className="mt-2 text-[14px] text-zinc-500">
                 {atCap
                   ? `Templates are paused until you delete a project (${MAX_CLOUD_PROJECTS} max).`
-                  : `${orientation} layouts—click to clone into a new project.`}
+                  : `${filter} layouts—click to clone into a new project.`}
               </p>
             </div>
             <Link
@@ -452,11 +461,12 @@ export function ProjectsPage() {
             ))}
             {visibleTemplates.length === 0 ? (
               <p className="text-sm text-zinc-500 sm:col-span-2">
-                No {orientation} templates published yet.
+                No {filter} templates published yet.
               </p>
             ) : null}
           </div>
         </section>
+        ) : null}
       </main>
     </div>
   )

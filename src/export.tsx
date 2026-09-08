@@ -3,6 +3,7 @@ import { saveAs } from "file-saver"
 import { STORE_TARGETS } from "./constants"
 import { renderOffscreenArtboard } from "./export-slide"
 import {
+  projectKindOf,
   projectOrientation,
   storeTargetIdsForOrientation,
 } from "./orientation"
@@ -119,7 +120,10 @@ export async function downloadProjectZip(
 ): Promise<void> {
   const zip = new JSZip()
   const targets = options?.allSizes
-    ? storeTargetIdsForOrientation(projectOrientation(project))
+    ? storeTargetIdsForOrientation(
+        projectOrientation(project),
+        projectKindOf(project),
+      )
     : [project.targetId]
   const adaptedTargets = targets.map((targetId) => ({
     targetId,

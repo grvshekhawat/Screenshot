@@ -51,6 +51,68 @@ async function inlineImages(root: HTMLElement) {
   )
 }
 
+/**
+ * modern-screenshot often ignores CSS object-fit, which stretches non-matching
+ * shots (e.g. phone UI on Apple Watch). Bake cover/contain into the bitmap so
+ * capture matches the live editor.
+ */
+async function bakeObjectFitImages(root: HTMLElement) {
+  const imgs = [...root.querySelectorAll("img")].filter(
+    (img): img is HTMLImageElement => img instanceof HTMLImageElement,
+  )
+  await Promise.all(
+    imgs.map(async (img) => {
+      const fitAttr = img.getAttribute("data-screen-fit")
+      const fit =
+        fitAttr === "contain" || fitAttr === "cover"
+          ? fitAttr
+          : getComputedStyle(img).objectFit
+      if (fit !== "cover" && fit !== "contain") return
+
+      const rect = img.getBoundingClientRect()
+      const w = Math.max(1, Math.round(rect.width))
+      const h = Math.max(1, Math.round(rect.height))
+      if (w < 2 || h < 2) return
+
+      try {
+        await img.decode()
+      } catch {
+        return
+      }
+      const iw = img.naturalWidth
+      const ih = img.naturalHeight
+      if (!(iw > 0) || !(ih > 0)) return
+
+      const canvas = document.createElement("canvas")
+      canvas.width = w
+      canvas.height = h
+      const ctx = canvas.getContext("2d")
+      if (!ctx) return
+      ctx.fillStyle = "#0a0a0a"
+      ctx.fillRect(0, 0, w, h)
+      const scale =
+        fit === "contain" ? Math.min(w / iw, h / ih) : Math.max(w / iw, h / ih)
+      const dw = iw * scale
+      const dh = ih * scale
+      ctx.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh)
+
+      img.style.objectFit = "fill"
+      img.removeAttribute("data-screen-fit")
+      try {
+        img.src = canvas.toDataURL("image/webp", 0.92)
+        await img.decode()
+      } catch {
+        try {
+          img.src = canvas.toDataURL("image/png")
+          await img.decode()
+        } catch {
+          /* keep original */
+        }
+      }
+    }),
+  )
+}
+
 const GOOGLE_FONTS_HREF =
   "https://fonts.googleapis.com/css2?family=DM+Sans:wght@500;600;700&family=Inter:wght@400;600;700&family=Lato:wght@400;700&family=Montserrat:wght@500;600;700&family=Open+Sans:wght@400;600;700&family=Outfit:wght@500;600;700&family=Playfair+Display:wght@600;700&family=Poppins:wght@500;600;700&family=Roboto:wght@400;500;700&family=Space+Grotesk:wght@500;600;700&display=swap"
 
@@ -171,6 +233,7 @@ export async function captureArtboardDom(
   }
 
   await inlineImages(artboard)
+  await bakeObjectFitImages(artboard)
   await document.fonts.ready.catch(() => undefined)
   await new Promise((resolve) => requestAnimationFrame(resolve))
   await new Promise((resolve) => requestAnimationFrame(resolve))

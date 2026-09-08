@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react"
 import { useAuth } from "../auth/AuthProvider"
 import { startCheckout } from "../billing/checkout"
 import { PaywallModal } from "../billing/PaywallModal"
-import { storeTargetsForOrientation, projectOrientation } from "../orientation"
+import { storeTargetsForOrientation, projectKindOf, projectOrientation } from "../orientation"
 import {
   loadOnboardingProgress,
   projectHasScreenshot,
@@ -11,6 +11,10 @@ import {
   type OnboardingStepId,
 } from "../editor-onboarding"
 import { downloadProjectZip, downloadSlidePng } from "../export"
+import {
+  canExportVideoInBrowser,
+  downloadProjectVideo,
+} from "../export-video"
 import { IMAGE_ACCEPT, isImageFile } from "../image-upload"
 import { modShortcutLabel } from "../platform"
 import { useProject } from "../project-store"
@@ -252,6 +256,26 @@ export function Editor({ promptUploadFirst = false }: { promptUploadFirst?: bool
     }
   }
 
+  const exportVideo = async () => {
+    if (!requireExportAccess()) return
+    if (!canExportVideoInBrowser()) {
+      setError(
+        "Video export needs a browser with WebCodecs (Chrome, Edge, or Firefox).",
+      )
+      return
+    }
+    setError(null)
+    setBusy("Preparing video…")
+    try {
+      await downloadProjectVideo(project, assetUrls, setBusy)
+      markOnboarding({ export: true })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Video export failed")
+    } finally {
+      setBusy(null)
+    }
+  }
+
   const onPaywallChoose = async (provider: "stripe") => {
     if (!userId) return
     setPaywallBusy(true)
@@ -285,6 +309,8 @@ export function Editor({ promptUploadFirst = false }: { promptUploadFirst?: bool
       </div>
     )
   }
+
+  const isVideoProject = projectKindOf(project) === "video"
 
   return (
     <div className="flex h-full flex-col">
@@ -362,51 +388,57 @@ export function Editor({ promptUploadFirst = false }: { promptUploadFirst?: bool
           onChange={(event) =>
             setTarget(event.target.value as typeof project.targetId)
           }
-          className="max-w-[240px] rounded-md border border-white/10 bg-[#0a0a0e] px-2 py-1.5 text-xs text-zinc-200"
+          disabled={isVideoProject}
+          className="max-w-[240px] rounded-md border border-white/10 bg-[#0a0a0e] px-2 py-1.5 text-xs text-zinc-200 disabled:opacity-60"
         >
-          {storeTargetsForOrientation(projectOrientation(project)).map(
-            (target) => (
-              <option key={target.id} value={target.id}>
-                {target.name}
-              </option>
-            ),
-          )}
+          {storeTargetsForOrientation(
+            projectOrientation(project),
+            projectKindOf(project),
+          ).map((target) => (
+            <option key={target.id} value={target.id}>
+              {target.name}
+            </option>
+          ))}
         </select>
-        <div
-          className="flex rounded-md border border-white/10 p-0.5"
-          role="group"
-          aria-label="Size edit mode"
-        >
-          <button
-            type="button"
-            title="Edits apply only to the selected store size"
-            onClick={() => setSizeEditMode("current")}
-            className={`rounded px-2 py-1 text-xs ${
-              (project.sizeEditMode ?? "current") === "current"
-                ? "bg-white/15 text-white"
-                : "text-zinc-400 hover:text-zinc-200"
-            }`}
+        {!isVideoProject ? (
+          <div
+            className="flex rounded-md border border-white/10 p-0.5"
+            role="group"
+            aria-label="Size edit mode"
           >
-            This size
-          </button>
-          <button
-            type="button"
-            title={
-              hasComponentSelection
-                ? "Apply the selected component to every store size"
-                : "Select a component first"
-            }
-            disabled={!hasComponentSelection && project.sizeEditMode !== "all"}
-            onClick={() => setSizeEditMode("all")}
-            className={`rounded px-2 py-1 text-xs disabled:opacity-40 ${
-              project.sizeEditMode === "all"
-                ? "bg-white/15 text-white"
-                : "text-zinc-400 hover:text-zinc-200"
-            }`}
-          >
-            All sizes
-          </button>
-        </div>
+            <button
+              type="button"
+              title="Edits apply only to the selected store size"
+              onClick={() => setSizeEditMode("current")}
+              className={`rounded px-2 py-1 text-xs ${
+                (project.sizeEditMode ?? "current") === "current"
+                  ? "bg-white/15 text-white"
+                  : "text-zinc-400 hover:text-zinc-200"
+              }`}
+            >
+              This size
+            </button>
+            <button
+              type="button"
+              title={
+                hasComponentSelection
+                  ? "Apply the selected component to every store size"
+                  : "Select a component first"
+              }
+              disabled={
+                !hasComponentSelection && project.sizeEditMode !== "all"
+              }
+              onClick={() => setSizeEditMode("all")}
+              className={`rounded px-2 py-1 text-xs disabled:opacity-40 ${
+                project.sizeEditMode === "all"
+                  ? "bg-white/15 text-white"
+                  : "text-zinc-400 hover:text-zinc-200"
+              }`}
+            >
+              All sizes
+            </button>
+          </div>
+        ) : null}
         {error ? <span className="text-xs text-red-400">{error}</span> : null}
       </header>
       <div className="flex min-h-0 flex-1">
@@ -419,6 +451,7 @@ export function Editor({ promptUploadFirst = false }: { promptUploadFirst?: bool
           onExportPng={() => void exportPng()}
           onExportZip={() => void exportZip(false)}
           onExportAllSizesZip={() => void exportZip(true)}
+          onExportVideo={() => void exportVideo()}
           canExportClean={canExport}
           busy={busy}
           menu={toolMenu}

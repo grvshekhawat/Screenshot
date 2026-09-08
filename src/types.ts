@@ -17,12 +17,16 @@ export type StoreTargetId =
   | "ipad-11"
   | "play-phone"
   | "apple-watch"
+  | "video-9x16"
   | "iphone-69-landscape"
   | "iphone-65-landscape"
   | "iphone-63-landscape"
   | "ipad-13-landscape"
   | "ipad-11-landscape"
   | "play-phone-landscape"
+
+/** Screenshot store listings vs timeline video projects. */
+export type ProjectKind = "screenshots" | "video"
 
 export type TemplateId =
   | "device-top"
@@ -253,6 +257,11 @@ export type Slide = {
   selectedIds: string[]
   background: SlideBackground
   templateId: TemplateId
+  /**
+   * How long this slide stays on screen in a video export (seconds).
+   * Used only for `projectKind: "video"` projects.
+   */
+  durationSec: number
 }
 
 export type SizeEditMode = "current" | "all"
@@ -267,6 +276,8 @@ export type SizeLayout = {
 
 export type Project = {
   name: string
+  /** screenshots = App Store / Play stills; video = 9:16 timeline MP4. */
+  projectKind: ProjectKind
   /** Canvas size currently shown / edited. */
   targetId: StoreTargetId
   /**

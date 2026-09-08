@@ -1,5 +1,5 @@
 import { STORE_TARGETS } from "./constants"
-import { projectOrientation, storeTargetIdsForOrientation } from "./orientation"
+import { projectKindOf, projectOrientation, storeTargetIdsForOrientation } from "./orientation"
 import {
   adaptClipartToStoreTarget,
   adaptFrameToStoreTarget,
@@ -237,6 +237,7 @@ export function propagateSelectedComponentToAllSizes(
 
   for (const targetId of storeTargetIdsForOrientation(
     projectOrientation(saved),
+    projectKindOf(saved),
   )) {
     if (targetId === fromId) continue
 

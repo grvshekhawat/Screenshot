@@ -4,6 +4,7 @@ import type {
   Frame,
   LensLayer,
   Project,
+  ProjectKind,
   SelectedKind,
   Slide,
   SlideBackground,
@@ -25,6 +26,25 @@ export const MAX_LENSES = 4
 /** Clipart width as % of artboard (or of device when attached). */
 export const CLIPART_WIDTH_MIN = 1
 export const CLIPART_WIDTH_MAX = 500
+
+/** Video slide hold time (seconds). */
+export const VIDEO_DURATION_MIN = 0.5
+export const VIDEO_DURATION_MAX = 15
+export const VIDEO_DURATION_DEFAULT = 3
+export const VIDEO_FPS = 30
+
+export function clampVideoDurationSec(value: unknown): number {
+  const n = typeof value === "number" ? value : Number(value)
+  if (!Number.isFinite(n)) return VIDEO_DURATION_DEFAULT
+  return Math.min(
+    VIDEO_DURATION_MAX,
+    Math.max(VIDEO_DURATION_MIN, Math.round(n * 10) / 10),
+  )
+}
+
+export function isVideoStoreTarget(targetId: StoreTargetId): boolean {
+  return targetId === "video-9x16"
+}
 
 export type DeviceSpec = {
   id: DeviceId
@@ -81,9 +101,9 @@ export const DEVICES: Record<DeviceId, DeviceSpec> = {
   "apple-watch": {
     id: "apple-watch",
     name: "Apple Watch 46mm",
-    // Series 10/11 screen 416×496 (W/H ≈ 0.839); case is slightly squarer.
+    // Series 10/11 screen 416×496 (W/H ≈ 0.839); thin active bezel.
     aspect: 416 / 496,
-    bezel: 0.09,
+    bezel: 0.055,
     outerRadius: 0.28,
     screenRadius: 0.22,
     chrome: "watch",
@@ -196,6 +216,14 @@ export const STORE_TARGETS: Record<StoreTargetId, StoreTarget> = {
     width: 416,
     height: 496,
     folder: "ios/apple-watch",
+    orientation: "portrait",
+  },
+  "video-9x16": {
+    id: "video-9x16",
+    name: "Video · 9:16 (1080×1920)",
+    width: 1080,
+    height: 1920,
+    folder: "video/9x16",
     orientation: "portrait",
   },
   "iphone-69-landscape": {
@@ -1431,6 +1459,9 @@ export function createSlide(overrides: SlideDraft = {}): Slide {
       ? defaultBackground(overrides.background)
       : defaultBackground(),
     templateId: overrides.templateId ?? "device-bottom",
+    durationSec: clampVideoDurationSec(
+      overrides.durationSec ?? VIDEO_DURATION_DEFAULT,
+    ),
   }
 }
 
@@ -1514,8 +1545,9 @@ function collectScreenshotIdsFromSlides(slides: Slide[]): string[] {
   return ids
 }
 
-export type ProjectInput = Omit<Project, "screenshotLibrary"> & {
+export type ProjectInput = Omit<Project, "screenshotLibrary" | "projectKind"> & {
   screenshotLibrary?: string[]
+  projectKind?: ProjectKind
 }
 
 function normalizeScreenshotLibrary(
@@ -1596,6 +1628,10 @@ export function normalizeProject(project: ProjectInput): Project {
 
   return {
     ...project,
+    projectKind:
+      project.projectKind === "video" || targetId === "video-9x16"
+        ? ("video" as const)
+        : ("screenshots" as const),
     targetId,
     designTargetId,
     sizeEditMode,
@@ -1652,6 +1688,57 @@ export function createSampleProject(
       orientation === "landscape"
         ? "My Landscape Screenshots"
         : "My App Screenshots",
+    projectKind: "screenshots" as const,
+    targetId,
+    designTargetId: targetId,
+    sizeEditMode: "current" as const,
+    thumbnailLayout: "landscape" as const,
+    activeSlideId: first.id,
+    slides,
+    sizeLayouts: {
+      [targetId]: {
+        slides: structuredClone(slides),
+        activeSlideId: first.id,
+      },
+    },
+    screenshotLibrary: [],
+  }
+}
+
+export function createSampleVideoProject() {
+  const targetId = "video-9x16" as const
+  const deviceId = "iphone-69" as const
+  const first = applyTemplate(
+    createSlide({
+      headline: "Welcome",
+      subline: "Your app in motion",
+      frames: [createFrame({ deviceId })],
+      durationSec: VIDEO_DURATION_DEFAULT,
+    }),
+    "device-bottom",
+  )
+  const second = applyTemplate(
+    createSlide({
+      headline: "Show the flow",
+      subline: "Hold each beat as long as you need",
+      frames: [createFrame({ deviceId })],
+      durationSec: VIDEO_DURATION_DEFAULT,
+    }),
+    "tilted",
+  )
+  const third = applyTemplate(
+    createSlide({
+      headline: "Export MP4",
+      subline: "Ready for ads and store previews",
+      frames: [createFrame({ deviceId })],
+      durationSec: VIDEO_DURATION_DEFAULT,
+    }),
+    "dark-glow",
+  )
+  const slides = [first, second, third]
+  return {
+    name: "My App Video",
+    projectKind: "video" as const,
     targetId,
     designTargetId: targetId,
     sizeEditMode: "current" as const,

@@ -21,6 +21,10 @@ import {
   PALETTES,
   STORE_TARGETS,
   TEMPLATES,
+  VIDEO_DURATION_DEFAULT,
+  VIDEO_DURATION_MAX,
+  VIDEO_DURATION_MIN,
+  clampVideoDurationSec,
   cssFontFamily,
   splitBackgroundCss,
   templateSplit,
@@ -34,7 +38,7 @@ import {
   normalizeChassisThickness,
   normalizeFrameColor,
 } from "../device-chrome"
-import { storeTargetsForOrientation } from "../orientation"
+import { projectKindOf, storeTargetsForOrientation } from "../orientation"
 import { screenshotPickerAspectClass } from "../template-preview"
 import {
   artboardToAttached,
@@ -50,6 +54,7 @@ import type {
   FrameScreenSlot,
   ClipartLayer,
   LensLayer,
+  Project,
   SelectedKind,
   SizeEditMode,
   Slide,
@@ -225,6 +230,7 @@ type InspectorProps = {
   onExportPng: () => void
   onExportZip: () => void
   onExportAllSizesZip: () => void
+  onExportVideo?: () => void
   canExportClean: boolean
   busy: string | null
   menu: MenuId | null
@@ -249,6 +255,7 @@ export function Inspector({
   onExportPng,
   onExportZip,
   onExportAllSizesZip,
+  onExportVideo,
   canExportClean,
   busy,
   menu,
@@ -314,6 +321,7 @@ export function Inspector({
   const frame = activeFrame
   const color2 = slide.background.colors[1] ?? slide.background.colors[0]
   const target = STORE_TARGETS[project.targetId]
+  const isVideoProject = projectKindOf(project) === "video"
   const edges = frame
     ? frameOverflow(frame, target.width, target.height)
     : null
@@ -362,7 +370,9 @@ export function Inspector({
     <div className="flex min-h-0 min-w-0 flex-1">
       <div className="flex shrink-0 border-r border-white/[0.06] bg-[#07070a]">
         <nav className="flex w-[88px] shrink-0 flex-col border-r border-white/[0.06] py-2">
-          {MENUS.map((item) => {
+          {MENUS.filter((item) =>
+            isVideoProject ? item.id !== "template" : true,
+          ).map((item) => {
             const active = menu === item.id
             return (
               <button
@@ -472,7 +482,8 @@ export function Inspector({
                 ) : null}
                 {menu === "export" ? (
                   <ExportPanel
-                    projectTargetId={project.targetId}
+                    project={project}
+                    activeSlideId={slide.id}
                     sizeEditMode={project.sizeEditMode ?? "current"}
                     hasComponentSelection={selectedIds.length > 0}
                     targetName={target.name}
@@ -480,9 +491,12 @@ export function Inspector({
                     canExportClean={canExportClean}
                     setTarget={setTarget}
                     setSizeEditMode={setSizeEditMode}
+                    updateSlide={updateSlide}
+                    selectSlide={selectSlide}
                     onExportPng={onExportPng}
                     onExportZip={onExportZip}
                     onExportAllSizesZip={onExportAllSizesZip}
+                    onExportVideo={onExportVideo}
                   />
                 ) : null}
               </div>
@@ -924,7 +938,8 @@ function ContentTools({
 }
 
 function ExportPanel({
-  projectTargetId,
+  project,
+  activeSlideId,
   sizeEditMode,
   hasComponentSelection,
   targetName,
@@ -932,11 +947,15 @@ function ExportPanel({
   canExportClean,
   setTarget,
   setSizeEditMode,
+  updateSlide,
+  selectSlide,
   onExportPng,
   onExportZip,
   onExportAllSizesZip,
+  onExportVideo,
 }: {
-  projectTargetId: StoreTargetId
+  project: Project
+  activeSlideId: string
   sizeEditMode: SizeEditMode
   hasComponentSelection: boolean
   targetName: string
@@ -944,125 +963,256 @@ function ExportPanel({
   canExportClean: boolean
   setTarget: (id: StoreTargetId) => void
   setSizeEditMode: (mode: SizeEditMode) => void
+  updateSlide: ReturnType<typeof useProject>["updateSlide"]
+  selectSlide: ReturnType<typeof useProject>["selectSlide"]
   onExportPng: () => void
   onExportZip: () => void
   onExportAllSizesZip: () => void
+  onExportVideo?: () => void
 }) {
+  const isVideo = projectKindOf(project) === "video"
+  const projectTargetId = project.targetId
+  const totalDuration = project.slides.reduce(
+    (sum, slide) =>
+      sum +
+      clampVideoDurationSec(slide.durationSec ?? VIDEO_DURATION_DEFAULT),
+    0,
+  )
+
   return (
     <div className="space-y-4">
-      <div>
-        <p className="mb-1.5 text-[11px] text-zinc-500">Edit mode</p>
-        <div
-          className="flex rounded-lg border border-white/10 p-0.5"
-          role="group"
-          aria-label="Size edit mode"
-        >
-          <button
-            type="button"
-            onClick={() => setSizeEditMode("current")}
-            className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium ${
-              sizeEditMode === "current"
-                ? "bg-white/15 text-white"
-                : "text-zinc-400 hover:text-zinc-200"
-            }`}
-          >
-            This size
-          </button>
-          <button
-            type="button"
-            disabled={!hasComponentSelection && sizeEditMode !== "all"}
-            title={
-              hasComponentSelection
-                ? "Apply the selected component to every store size"
-                : "Select a component first"
-            }
-            onClick={() => setSizeEditMode("all")}
-            className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium disabled:opacity-40 ${
-              sizeEditMode === "all"
-                ? "bg-white/15 text-white"
-                : "text-zinc-400 hover:text-zinc-200"
-            }`}
-          >
-            All sizes
-          </button>
-        </div>
-        <p className="mt-1.5 text-[11px] leading-relaxed text-zinc-500">
-          {sizeEditMode === "current"
-            ? "Each store size keeps its own layout. Switch sizes to edit them independently."
-            : "Applies the selected component to every store size (adapted). Other layers stay as-is."}
-        </p>
-      </div>
-      <label className="block text-[11px] text-zinc-500">
-        Store size
-        <select
-          value={projectTargetId}
-          onChange={(event) =>
-            setTarget(event.target.value as StoreTargetId)
-          }
-          className="mt-1 w-full rounded-lg border border-white/10 bg-[#0a0a0e] px-2.5 py-2 text-sm text-white outline-none"
-        >
-          {storeTargetsForOrientation(
-            STORE_TARGETS[projectTargetId]?.orientation ?? "portrait",
-          ).map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.name} ({item.width}×{item.height})
-            </option>
-          ))}
-        </select>
-      </label>
-      <p className="text-[11px] leading-relaxed text-zinc-500">
-        This project is locked to{" "}
-        {STORE_TARGETS[projectTargetId]?.orientation ?? "portrait"} sizes.
-        Switch Portrait / Landscape from the projects list to start the other
-        orientation.
-      </p>
-      <div>
-        <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
-          Slide
-        </h3>
-        <button
-          type="button"
-          disabled={Boolean(busy)}
-          onClick={onExportPng}
-          className="w-full rounded-lg bg-[#e8ff47] px-3 py-2.5 text-sm font-semibold text-[#0a0a0c] hover:bg-[#f0ff7a] disabled:opacity-50"
-        >
-          {busy ??
-            (canExportClean
-              ? "Download this slide"
-              : "Download preview (watermarked)")}
-        </button>
-        {!canExportClean ? (
-          <p className="mt-2 text-[11px] leading-relaxed text-zinc-500">
-            Free exports include a watermark. Upgrade to Pro for clean PNGs.
+      {isVideo ? (
+        <>
+          <p className="text-[11px] leading-relaxed text-zinc-500">
+            Video canvas is locked to 1080×1920 (9:16). Set how long each slide
+            holds, then download an MP4 (hard cuts, 30 fps).
           </p>
-        ) : null}
-      </div>
-      <div>
-        <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
-          Export ZIP
-        </h3>
-        <button
-          type="button"
-          disabled={Boolean(busy)}
-          onClick={onExportZip}
-          className="w-full rounded-lg bg-zinc-800 px-3 py-2.5 text-sm font-medium text-zinc-100 hover:bg-zinc-700 disabled:opacity-50"
-        >
-          {busy ?? `ZIP · ${targetName}`}
-        </button>
-        <button
-          type="button"
-          disabled={Boolean(busy)}
-          onClick={onExportAllSizesZip}
-          className="mt-2 w-full rounded-lg bg-zinc-800 px-3 py-2.5 text-sm font-medium text-zinc-100 hover:bg-zinc-700 disabled:opacity-50"
-        >
-          {busy ?? "ZIP · all store sizes"}
-        </button>
-        <p className="mt-2 text-[11px] leading-relaxed text-zinc-500">
-          {canExportClean
-            ? "All slides as clean PNGs. All sizes uses native chrome (iPhone / Pixel / iPad) and refits text + lenses to match the same magnified region."
-            : "ZIP export requires Pro."}
-        </p>
-      </div>
+          <div>
+            <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+              Timeline · {totalDuration.toFixed(1)}s total
+            </h3>
+            <ul className="space-y-2">
+              {project.slides.map((slide, index) => {
+                const duration = clampVideoDurationSec(
+                  slide.durationSec ?? VIDEO_DURATION_DEFAULT,
+                )
+                const active = slide.id === activeSlideId
+                return (
+                  <li
+                    key={slide.id}
+                    className={`rounded-lg border px-2.5 py-2 ${
+                      active
+                        ? "border-[#e8ff47]/40 bg-white/[0.06]"
+                        : "border-white/10 bg-[#0a0a0e]"
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => selectSlide(slide.id)}
+                      className="mb-1.5 w-full text-left text-xs font-medium text-zinc-200"
+                    >
+                      Slide {index + 1}
+                    </button>
+                    <label className="flex items-center gap-2 text-[11px] text-zinc-500">
+                      Duration (s)
+                      <input
+                        type="number"
+                        min={VIDEO_DURATION_MIN}
+                        max={VIDEO_DURATION_MAX}
+                        step={0.1}
+                        value={duration}
+                        onChange={(event) => {
+                          const next = clampVideoDurationSec(
+                            Number(event.target.value),
+                          )
+                          updateSlide(slide.id, { durationSec: next })
+                        }}
+                        className="ml-auto w-16 rounded-md border border-white/10 bg-[#07070a] px-2 py-1 text-right text-xs text-white outline-none"
+                      />
+                    </label>
+                    <input
+                      type="range"
+                      min={VIDEO_DURATION_MIN}
+                      max={VIDEO_DURATION_MAX}
+                      step={0.1}
+                      value={duration}
+                      onChange={(event) => {
+                        updateSlide(slide.id, {
+                          durationSec: clampVideoDurationSec(
+                            Number(event.target.value),
+                          ),
+                        })
+                      }}
+                      className="range-thin mt-2 w-full"
+                      aria-label={`Slide ${index + 1} duration`}
+                    />
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+          <div>
+            <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+              Video
+            </h3>
+            <button
+              type="button"
+              disabled={Boolean(busy) || !onExportVideo}
+              onClick={onExportVideo}
+              className="w-full rounded-lg bg-[#e8ff47] px-3 py-2.5 text-sm font-semibold text-[#0a0a0c] hover:bg-[#f0ff7a] disabled:opacity-50"
+            >
+              {busy ??
+                (canExportClean
+                  ? "Download video"
+                  : "Download video (Pro)")}
+            </button>
+            {!canExportClean ? (
+              <p className="mt-2 text-[11px] leading-relaxed text-zinc-500">
+                Video export requires Pro. Free can still download watermarked
+                stills below.
+              </p>
+            ) : (
+              <p className="mt-2 text-[11px] leading-relaxed text-zinc-500">
+                Needs Chrome, Edge, or Firefox with WebCodecs. Safari is not
+                supported yet.
+              </p>
+            )}
+          </div>
+          <div>
+            <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+              Still
+            </h3>
+            <button
+              type="button"
+              disabled={Boolean(busy)}
+              onClick={onExportPng}
+              className="w-full rounded-lg bg-zinc-800 px-3 py-2.5 text-sm font-medium text-zinc-100 hover:bg-zinc-700 disabled:opacity-50"
+            >
+              {busy ??
+                (canExportClean
+                  ? "Download this slide PNG"
+                  : "Download preview (watermarked)")}
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <div>
+            <p className="mb-1.5 text-[11px] text-zinc-500">Edit mode</p>
+            <div
+              className="flex rounded-lg border border-white/10 p-0.5"
+              role="group"
+              aria-label="Size edit mode"
+            >
+              <button
+                type="button"
+                onClick={() => setSizeEditMode("current")}
+                className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium ${
+                  sizeEditMode === "current"
+                    ? "bg-white/15 text-white"
+                    : "text-zinc-400 hover:text-zinc-200"
+                }`}
+              >
+                This size
+              </button>
+              <button
+                type="button"
+                disabled={!hasComponentSelection && sizeEditMode !== "all"}
+                title={
+                  hasComponentSelection
+                    ? "Apply the selected component to every store size"
+                    : "Select a component first"
+                }
+                onClick={() => setSizeEditMode("all")}
+                className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium disabled:opacity-40 ${
+                  sizeEditMode === "all"
+                    ? "bg-white/15 text-white"
+                    : "text-zinc-400 hover:text-zinc-200"
+                }`}
+              >
+                All sizes
+              </button>
+            </div>
+            <p className="mt-1.5 text-[11px] leading-relaxed text-zinc-500">
+              {sizeEditMode === "current"
+                ? "Each store size keeps its own layout. Switch sizes to edit them independently."
+                : "Applies the selected component to every store size (adapted). Other layers stay as-is."}
+            </p>
+          </div>
+          <label className="block text-[11px] text-zinc-500">
+            Store size
+            <select
+              value={projectTargetId}
+              onChange={(event) =>
+                setTarget(event.target.value as StoreTargetId)
+              }
+              className="mt-1 w-full rounded-lg border border-white/10 bg-[#0a0a0e] px-2.5 py-2 text-sm text-white outline-none"
+            >
+              {storeTargetsForOrientation(
+                STORE_TARGETS[projectTargetId]?.orientation ?? "portrait",
+              ).map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name} ({item.width}×{item.height})
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="text-[11px] leading-relaxed text-zinc-500">
+            This project is locked to{" "}
+            {STORE_TARGETS[projectTargetId]?.orientation ?? "portrait"} sizes.
+            Switch Portrait / Landscape from the projects list to start the
+            other orientation.
+          </p>
+          <div>
+            <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+              Slide
+            </h3>
+            <button
+              type="button"
+              disabled={Boolean(busy)}
+              onClick={onExportPng}
+              className="w-full rounded-lg bg-[#e8ff47] px-3 py-2.5 text-sm font-semibold text-[#0a0a0c] hover:bg-[#f0ff7a] disabled:opacity-50"
+            >
+              {busy ??
+                (canExportClean
+                  ? "Download this slide"
+                  : "Download preview (watermarked)")}
+            </button>
+            {!canExportClean ? (
+              <p className="mt-2 text-[11px] leading-relaxed text-zinc-500">
+                Free exports include a watermark. Upgrade to Pro for clean
+                PNGs.
+              </p>
+            ) : null}
+          </div>
+          <div>
+            <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+              Export ZIP
+            </h3>
+            <button
+              type="button"
+              disabled={Boolean(busy)}
+              onClick={onExportZip}
+              className="w-full rounded-lg bg-zinc-800 px-3 py-2.5 text-sm font-medium text-zinc-100 hover:bg-zinc-700 disabled:opacity-50"
+            >
+              {busy ?? `ZIP · ${targetName}`}
+            </button>
+            <button
+              type="button"
+              disabled={Boolean(busy)}
+              onClick={onExportAllSizesZip}
+              className="mt-2 w-full rounded-lg bg-zinc-800 px-3 py-2.5 text-sm font-medium text-zinc-100 hover:bg-zinc-700 disabled:opacity-50"
+            >
+              {busy ?? "ZIP · all store sizes"}
+            </button>
+            <p className="mt-2 text-[11px] leading-relaxed text-zinc-500">
+              {canExportClean
+                ? "All slides as clean PNGs. All sizes uses native chrome (iPhone / Pixel / iPad) and refits text + lenses to match the same magnified region."
+                : "ZIP export requires Pro."}
+            </p>
+          </div>
+        </>
+      )}
     </div>
   )
 }
@@ -2956,7 +3106,7 @@ function BackgroundImagePanel({
     : null
 
   useEffect(() => {
-    if (!libraryOpen || library.length > 0 || libraryLoading) return
+    if (!libraryOpen || library.length > 0) return
     let cancelled = false
     setLibraryLoading(true)
     void listPublishedBackgrounds()
@@ -2972,7 +3122,9 @@ function BackgroundImagePanel({
     return () => {
       cancelled = true
     }
-  }, [libraryOpen, library.length, libraryLoading])
+    // Do not depend on libraryLoading — including it re-runs the effect, cancels
+    // the in-flight fetch, and leaves loading stuck true forever.
+  }, [libraryOpen, library.length])
 
   const setFocus = (next: {
     imagePositionX: number

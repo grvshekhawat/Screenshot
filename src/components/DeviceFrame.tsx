@@ -573,24 +573,32 @@ function AppleWatchFrame({
   showBand?: boolean
   children: ReactNode
 }) {
-  const shell = width * 0.012
-  const bezel = width * 0.09
+  const shell = width * 0.01
+  const bezel = width * 0.055
   const outerRadius = width * 0.28
-  const bezelRadius = width * 0.25
-  const screenRadius = width * 0.22
+  const bezelRadius = width * 0.26
+  const screenRadius = width * 0.24
   const chrome = deviceChromeStyles(color, width, "watch")
   const depth = chassisDepth(width, "watch", thickness)
   const crownSize = Math.max(10, width * 0.118)
   const crownStem = Math.max(4, width * 0.028)
   const sideBtnH = width * 0.11
   const sideBtnT = Math.max(2.5, width * 0.022)
-  const bandW = width * 0.78
   const bandH = width * 0.48
-  const bandInset = (width - bandW) / 2
   // Soft rubber / sport band — a touch darker than the case finish.
   const bandBase = shadeFrameColor(color, 0.22)
   const bandHi = tintFrameColor(bandBase, 0.18)
   const bandDeep = shadeFrameColor(bandBase, 0.35)
+  // Sit bands in the chassis stack (same fake-depth as SideButton) so Y/X tilt
+  // doesn't leave straps stuck on the front while the case body slides.
+  const depthOffset = chassisDepthOffset(rotationX, rotationY, depth)
+  const bandParallax = 0.42
+  const bandTransform = depthOffset
+    ? `translate(calc(-50% + ${depthOffset.ox * bandParallax}px), ${depthOffset.oy * bandParallax}px)`
+    : "translateX(-50%)"
+  const lugTransform = depthOffset
+    ? `translate(calc(-50% + ${depthOffset.ox * bandParallax}px), ${depthOffset.oy * bandParallax}px)`
+    : "translateX(-50%)"
 
   return (
     <div
@@ -608,12 +616,13 @@ function AppleWatchFrame({
             aria-hidden
             style={{
               position: "absolute",
-              left: bandInset,
+              left: "50%",
               top: -bandH * 0.72,
-              width: bandW,
+              width: "78%",
               height: bandH,
               zIndex: 0,
               pointerEvents: "none",
+              transform: bandTransform,
               borderRadius: `${width * 0.08}px ${width * 0.08}px ${width * 0.04}px ${width * 0.04}px`,
               background: `linear-gradient(180deg, ${bandDeep} 0%, ${bandBase} 28%, ${bandHi} 55%, ${bandBase} 100%)`,
               boxShadow: `
@@ -632,12 +641,13 @@ function AppleWatchFrame({
             aria-hidden
             style={{
               position: "absolute",
-              left: bandInset,
+              left: "50%",
               bottom: -bandH * 0.72,
-              width: bandW,
+              width: "78%",
               height: bandH,
               zIndex: 0,
               pointerEvents: "none",
+              transform: bandTransform,
               borderRadius: `${width * 0.04}px ${width * 0.04}px ${width * 0.08}px ${width * 0.08}px`,
               background: `linear-gradient(0deg, ${bandDeep} 0%, ${bandBase} 28%, ${bandHi} 55%, ${bandBase} 100%)`,
               boxShadow: `
@@ -657,11 +667,12 @@ function AppleWatchFrame({
             aria-hidden
             style={{
               position: "absolute",
-              left: width * 0.14,
+              left: "50%",
               top: -width * 0.025,
-              width: width * 0.72,
+              width: "72%",
               height: width * 0.06,
               zIndex: 0,
+              transform: lugTransform,
               borderRadius: width * 0.02,
               background: `linear-gradient(180deg, ${shadeFrameColor(color, 0.15)} 0%, ${shadeFrameColor(color, 0.4)} 100%)`,
               pointerEvents: "none",
@@ -671,11 +682,12 @@ function AppleWatchFrame({
             aria-hidden
             style={{
               position: "absolute",
-              left: width * 0.14,
+              left: "50%",
               bottom: -width * 0.025,
-              width: width * 0.72,
+              width: "72%",
               height: width * 0.06,
               zIndex: 0,
+              transform: lugTransform,
               borderRadius: width * 0.02,
               background: `linear-gradient(0deg, ${shadeFrameColor(color, 0.15)} 0%, ${shadeFrameColor(color, 0.4)} 100%)`,
               pointerEvents: "none",
@@ -1338,51 +1350,23 @@ function ScreenImage({
   src: string
   fit?: "cover" | "contain"
 }) {
-  // Avoid CSS object-fit: modern-screenshot (DOM capture for export / project
-  // thumbnails) often ignores it. Phone frames hide the bug because shot and
-  // screen share ~9:19; watch (~5:6) makes the stretch obvious.
-  const cover = fit === "cover"
   return (
-    <div
+    <img
+      src={src}
+      alt="App screenshot"
+      draggable={false}
+      data-screen-fit={fit}
+      crossOrigin={src.startsWith("http") ? "anonymous" : undefined}
       style={{
-        position: "relative",
+        display: "block",
         width: "100%",
         height: "100%",
-        overflow: "hidden",
+        objectFit: fit,
+        objectPosition: "center center",
         background: "#0a0a0a",
         pointerEvents: "none",
       }}
-    >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={src}
-        alt="App screenshot"
-        draggable={false}
-        crossOrigin={src.startsWith("http") ? "anonymous" : undefined}
-        style={{
-          position: "absolute",
-          left: "50%",
-          top: "50%",
-          transform: "translate(-50%, -50%)",
-          display: "block",
-          ...(cover
-            ? {
-                width: "auto",
-                height: "auto",
-                minWidth: "100%",
-                minHeight: "100%",
-                maxWidth: "none",
-                maxHeight: "none",
-              }
-            : {
-                width: "auto",
-                height: "auto",
-                maxWidth: "100%",
-                maxHeight: "100%",
-              }),
-        }}
-      />
-    </div>
+    />
   )
 }
 
