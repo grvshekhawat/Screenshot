@@ -164,6 +164,13 @@ export async function captureSlideToCanvas(
       if (!(artboard instanceof HTMLElement)) {
         throw new Error("Artboard element missing")
       }
+      // Pin layout size so capture never inherits a scaled on-screen rect.
+      artboard.style.width = `${width}px`
+      artboard.style.height = `${height}px`
+      artboard.style.maxWidth = `${width}px`
+      artboard.style.maxHeight = `${height}px`
+      artboard.style.transform = "none"
+      artboard.style.zoom = "1"
 
       return await captureArtboardDom(artboard, width, height)
     } finally {

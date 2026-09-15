@@ -984,8 +984,8 @@ function ExportPanel({
       {isVideo ? (
         <>
           <p className="text-[11px] leading-relaxed text-zinc-500">
-            Video canvas is locked to 1080×1920 (9:16). Set how long each slide
-            holds, then download an MP4 (hard cuts, 30 fps).
+            Video canvas is locked to 886×1920 (App Store portrait preview).
+            Set how long each slide holds, then download an MP4 (hard cuts).
           </p>
           <div>
             <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">

@@ -50,7 +50,7 @@ export async function downloadProjectVideo(
     (await getFirstEncodableVideoCodec(["vp9", "av1"], { width, height }))
   if (!codec || !(await canEncodeVideo(codec, { width, height }))) {
     throw new Error(
-      "This browser cannot encode video at 1080×1920. Try Chrome or Edge.",
+      "This browser cannot encode video at 886×1920. Try Chrome or Edge.",
     )
   }
 

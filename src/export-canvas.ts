@@ -55,9 +55,13 @@ async function inlineImages(root: HTMLElement) {
  * modern-screenshot often ignores CSS object-fit, which stretches non-matching
  * shots (e.g. phone UI on Apple Watch). Bake cover/contain into the bitmap so
  * capture matches the live editor.
+ *
+ * Use layout box size (clientWidth/Height), never getBoundingClientRect — tilted
+ * devices return a skewed AABB and baking into that aspect then filling the real
+ * screen stretches circles into ovals.
  */
 async function bakeObjectFitImages(root: HTMLElement) {
-  const imgs = [...root.querySelectorAll("img")].filter(
+  const imgs = [...root.querySelectorAll("img[data-screen-fit]")].filter(
     (img): img is HTMLImageElement => img instanceof HTMLImageElement,
   )
   await Promise.all(
@@ -69,10 +73,14 @@ async function bakeObjectFitImages(root: HTMLElement) {
           : getComputedStyle(img).objectFit
       if (fit !== "cover" && fit !== "contain") return
 
-      const rect = img.getBoundingClientRect()
-      const w = Math.max(1, Math.round(rect.width))
-      const h = Math.max(1, Math.round(rect.height))
-      if (w < 2 || h < 2) return
+      const layoutW = img.clientWidth || img.offsetWidth
+      const layoutH = img.clientHeight || img.offsetHeight
+      if (layoutW < 2 || layoutH < 2) return
+
+      // Bake at 2× layout pixels when possible so export stays sharp under tilt.
+      const pixelRatio = Math.min(2, Math.max(1, window.devicePixelRatio || 1))
+      const w = Math.max(1, Math.round(layoutW * pixelRatio))
+      const h = Math.max(1, Math.round(layoutH * pixelRatio))
 
       try {
         await img.decode()
@@ -248,7 +256,7 @@ export async function captureArtboardDom(
   }
 
   try {
-    return await domToCanvas(artboard, {
+    const canvas = await domToCanvas(artboard, {
       width,
       height,
       scale: 1,
@@ -258,6 +266,18 @@ export async function captureArtboardDom(
       font: cssText ? { cssText } : {},
       fetchFn: fetchAsset,
     })
+    // modern-screenshot can occasionally return a canvas that doesn't match
+    // the requested store pixels — normalize so PNG/MP4 are exact.
+    if (canvas.width === width && canvas.height === height) return canvas
+    const normalized = document.createElement("canvas")
+    normalized.width = width
+    normalized.height = height
+    const ctx = normalized.getContext("2d")
+    if (!ctx) return canvas
+    ctx.fillStyle = "#000000"
+    ctx.fillRect(0, 0, width, height)
+    ctx.drawImage(canvas, 0, 0, width, height)
+    return normalized
   } finally {
     injected?.remove()
   }

@@ -220,8 +220,8 @@ export const STORE_TARGETS: Record<StoreTargetId, StoreTarget> = {
   },
   "video-9x16": {
     id: "video-9x16",
-    name: "Video · 9:16 (1080×1920)",
-    width: 1080,
+    name: "Video · App Preview (886×1920)",
+    width: 886,
     height: 1920,
     folder: "video/9x16",
     orientation: "portrait",
