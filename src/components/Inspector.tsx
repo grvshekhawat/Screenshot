@@ -18,6 +18,8 @@ import {
   MAX_TEXTS,
   CLIPART_WIDTH_MIN,
   CLIPART_WIDTH_MAX,
+  LAYER_ANIM_LABELS,
+  LAYER_ANIM_TYPES,
   PALETTES,
   STORE_TARGETS,
   TEMPLATES,
@@ -30,6 +32,10 @@ import {
   templateSplit,
   deviceShadowPreset,
   maxFittingDeviceScale,
+  createFrame,
+  getProjectTarget,
+  VIDEO_CUSTOM_WIDTH_DEFAULT,
+  VIDEO_CUSTOM_HEIGHT_DEFAULT,
 } from "../constants"
 import {
   MAX_CHASSIS_THICKNESS,
@@ -39,6 +45,7 @@ import {
   normalizeFrameColor,
 } from "../device-chrome"
 import { projectKindOf, storeTargetsForOrientation } from "../orientation"
+import { frameLinkLabel } from "../video-tween"
 import { screenshotPickerAspectClass } from "../template-preview"
 import {
   artboardToAttached,
@@ -53,6 +60,7 @@ import type {
   Frame,
   FrameScreenSlot,
   ClipartLayer,
+  LayerAnimType,
   LensLayer,
   Project,
   SelectedKind,
@@ -85,6 +93,7 @@ import {
 } from "../groups"
 import { screenshotLibraryIdsForUi } from "../assets"
 import { OverflowChoice } from "./OverflowChoice"
+import { CustomVideoSizeFields } from "./CustomVideoSizeFields"
 import { ScreenshotDropZone } from "./ScreenshotDropZone"
 import { IMAGE_ACCEPT } from "../image-upload"
 import { useAuth } from "../auth/AuthProvider"
@@ -231,6 +240,7 @@ type InspectorProps = {
   onExportZip: () => void
   onExportAllSizesZip: () => void
   onExportVideo?: () => void
+  onPreviewVideo?: () => void
   canExportClean: boolean
   busy: string | null
   menu: MenuId | null
@@ -256,6 +266,7 @@ export function Inspector({
   onExportZip,
   onExportAllSizesZip,
   onExportVideo,
+  onPreviewVideo,
   canExportClean,
   busy,
   menu,
@@ -320,7 +331,7 @@ export function Inspector({
   const slide = activeSlide
   const frame = activeFrame
   const color2 = slide.background.colors[1] ?? slide.background.colors[0]
-  const target = STORE_TARGETS[project.targetId]
+  const target = getProjectTarget(project)
   const isVideoProject = projectKindOf(project) === "video"
   const edges = frame
     ? frameOverflow(frame, target.width, target.height)
@@ -336,8 +347,8 @@ export function Inspector({
     : null
 
   const [contentTab, setContentTab] = useState<
-    "phone" | "text" | "clipart" | "lens"
-  >("phone")
+    "timeline" | "phone" | "text" | "clipart" | "lens"
+  >(isVideoProject ? "timeline" : "phone")
 
   const selectionKey = selectedIds.join("|")
 
@@ -415,6 +426,8 @@ export function Inspector({
                   <ContentTools
                     tab={contentTab}
                     onTabChange={setContentTab}
+                    isVideoProject={isVideoProject}
+                    project={project}
                     slide={slide}
                     selectedIds={selectedIds}
                     assetUrls={assetUrls}
@@ -431,6 +444,8 @@ export function Inspector({
                     addText={addText}
                     addLens={addLens}
                     addLibraryClipart={addLibraryClipart}
+                    updateSlide={updateSlide}
+                    onPreviewVideo={onPreviewVideo}
                   />
                 ) : null}
                 {menu === "background" ? (
@@ -483,7 +498,6 @@ export function Inspector({
                 {menu === "export" ? (
                   <ExportPanel
                     project={project}
-                    activeSlideId={slide.id}
                     sizeEditMode={project.sizeEditMode ?? "current"}
                     hasComponentSelection={selectedIds.length > 0}
                     targetName={target.name}
@@ -491,8 +505,6 @@ export function Inspector({
                     canExportClean={canExportClean}
                     setTarget={setTarget}
                     setSizeEditMode={setSizeEditMode}
-                    updateSlide={updateSlide}
-                    selectSlide={selectSlide}
                     onExportPng={onExportPng}
                     onExportZip={onExportZip}
                     onExportAllSizesZip={onExportAllSizesZip}
@@ -560,11 +572,12 @@ export function Inspector({
               artboardWidth={target.width}
               artboardHeight={target.height}
               landscapeArtboard={
-                STORE_TARGETS[project.targetId]?.orientation === "landscape"
+                getProjectTarget(project).orientation === "landscape"
               }
               onUploadClick={onUploadClick}
               onScreenshotFiles={onScreenshotFiles}
               updateFrame={updateFrame}
+              updateSlide={updateSlide}
               duplicateFrame={duplicateFrame}
               removeFrame={removeFrame}
               moveFrame={moveFrame}
@@ -632,6 +645,8 @@ export function Inspector({
 function ContentTools({
   tab,
   onTabChange,
+  isVideoProject,
+  project,
   slide,
   selectedIds,
   assetUrls,
@@ -648,9 +663,13 @@ function ContentTools({
   addText,
   addLens,
   addLibraryClipart,
+  updateSlide,
+  onPreviewVideo,
 }: {
-  tab: "phone" | "text" | "clipart" | "lens"
-  onTabChange: (tab: "phone" | "text" | "clipart" | "lens") => void
+  tab: "timeline" | "phone" | "text" | "clipart" | "lens"
+  onTabChange: (tab: "timeline" | "phone" | "text" | "clipart" | "lens") => void
+  isVideoProject: boolean
+  project: Project
   slide: Slide
   selectedIds: string[]
   assetUrls: Record<string, string>
@@ -676,29 +695,33 @@ function ContentTools({
   addText: (slideId: string) => void
   addLens: (slideId: string) => void
   addLibraryClipart: (slideId: string, libraryId: string, url: string) => void
+  updateSlide: ReturnType<typeof useProject>["updateSlide"]
+  onPreviewVideo?: () => void
 }) {
   const { applyProjectScreenshot } = useProject()
   const selectedSet = new Set(
     selectedIds.length > 0 ? selectedIds : getSelectedIds(slide),
   )
   const isRowSelected = (id: string) => selectedSet.has(id)
+  const contentTabs = (
+    [
+      ...(isVideoProject ? ([["timeline", "Timeline"]] as const) : []),
+      ["phone", "Phone"],
+      ["text", "Text"],
+      ["clipart", "Clipart"],
+      ["lens", "Lens"],
+    ] as const
+  )
 
   return (
     <div>
       <div className="mb-3 flex flex-wrap gap-1 rounded-lg bg-zinc-900 p-1">
-        {(
-          [
-            ["phone", "Phone"],
-            ["text", "Text"],
-            ["clipart", "Clipart"],
-            ["lens", "Lens"],
-          ] as const
-        ).map(([id, label]) => (
+        {contentTabs.map(([id, label]) => (
           <button
             key={id}
             type="button"
             onClick={() => onTabChange(id)}
-            className={`flex-1 rounded-md px-2 py-1.5 text-xs ${
+            className={`flex-1 rounded-md px-1.5 py-1.5 text-xs ${
               tab === id ? "bg-white/15 text-white" : "text-zinc-400"
             }`}
           >
@@ -706,6 +729,16 @@ function ContentTools({
           </button>
         ))}
       </div>
+
+      {tab === "timeline" && isVideoProject ? (
+        <VideoTimelinePanel
+          project={project}
+          activeSlideId={slide.id}
+          updateSlide={updateSlide}
+          selectSlide={selectSlide}
+          onPreviewVideo={onPreviewVideo}
+        />
+      ) : null}
 
       {tab === "phone" ? (
         <>
@@ -937,9 +970,216 @@ function ContentTools({
   )
 }
 
-function ExportPanel({
+function withTweenLink(
+  frames: Frame[],
+  fromId: string,
+  tweenToId: string | null,
+): Frame[] {
+  return frames.map((frame) => {
+    if (frame.id === fromId) return createFrame({ ...frame, tweenToId })
+    if (tweenToId && frame.tweenToId === tweenToId) {
+      return createFrame({ ...frame, tweenToId: null })
+    }
+    return frame
+  })
+}
+
+function VideoTimelinePanel({
   project,
   activeSlideId,
+  updateSlide,
+  selectSlide,
+  onPreviewVideo,
+}: {
+  project: Project
+  activeSlideId: string
+  updateSlide: ReturnType<typeof useProject>["updateSlide"]
+  selectSlide: ReturnType<typeof useProject>["selectSlide"]
+  onPreviewVideo?: () => void
+}) {
+  const { setTarget, setCustomVideoSize } = useProject()
+  const target = getProjectTarget(project)
+  const totalDuration = project.slides.reduce(
+    (sum, slide) =>
+      sum +
+      clampVideoDurationSec(slide.durationSec ?? VIDEO_DURATION_DEFAULT),
+    0,
+  )
+  const isCustom = project.targetId === "video-custom"
+
+  return (
+    <div className="space-y-3">
+      <p className="text-[11px] leading-relaxed text-zinc-500">
+        Each slide duration holds the layout, then plays enter/exit and phone
+        tweens into the next slide. Link phones to pose-tween; unlinked layers
+        use Properties → Animation.
+      </p>
+
+      <div>
+        <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+          Resolution
+        </h3>
+        <select
+          value={
+            project.targetId === "video-9x16"
+              ? "video-iphone"
+              : project.targetId
+          }
+          onChange={(event) =>
+            setTarget(event.target.value as StoreTargetId)
+          }
+          className="w-full rounded-lg border border-white/10 bg-[#0a0a0e] px-2.5 py-2 text-sm text-white outline-none"
+        >
+          {storeTargetsForOrientation("portrait", "video").map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.name}
+            </option>
+          ))}
+        </select>
+        {isCustom ? (
+          <CustomVideoSizeFields
+            width={project.customWidth ?? VIDEO_CUSTOM_WIDTH_DEFAULT}
+            height={project.customHeight ?? VIDEO_CUSTOM_HEIGHT_DEFAULT}
+            onApply={setCustomVideoSize}
+          />
+        ) : (
+          <p className="mt-1.5 text-[10px] text-zinc-600">
+            {target.width}×{target.height}
+          </p>
+        )}
+      </div>
+
+      <button
+        type="button"
+        onClick={onPreviewVideo}
+        disabled={!onPreviewVideo}
+        className="w-full rounded-lg bg-[#e8ff47] px-3 py-2 text-sm font-semibold text-[#0a0a0c] hover:bg-[#f0ff7a] disabled:opacity-50"
+      >
+        Play preview
+      </button>
+      <h3 className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+        Timeline · {totalDuration.toFixed(1)}s total
+      </h3>
+      <ul className="space-y-2">
+        {project.slides.map((slide, index) => {
+          const duration = clampVideoDurationSec(
+            slide.durationSec ?? VIDEO_DURATION_DEFAULT,
+          )
+          const active = slide.id === activeSlideId
+          const next = project.slides[index + 1]
+          return (
+            <li
+              key={slide.id}
+              className={`rounded-lg border px-2.5 py-2 ${
+                active
+                  ? "border-[#e8ff47]/40 bg-white/[0.06]"
+                  : "border-white/10 bg-[#0a0a0e]"
+              }`}
+            >
+              <button
+                type="button"
+                onClick={() => selectSlide(slide.id)}
+                className="mb-1.5 w-full text-left text-xs font-medium text-zinc-200"
+              >
+                Slide {index + 1}
+              </button>
+              <label className="flex items-center gap-2 text-[11px] text-zinc-500">
+                {next ? "Duration (s)" : "Hold (s)"}
+                <input
+                  type="number"
+                  min={VIDEO_DURATION_MIN}
+                  max={VIDEO_DURATION_MAX}
+                  step={0.1}
+                  value={duration}
+                  onChange={(event) => {
+                    updateSlide(slide.id, {
+                      durationSec: clampVideoDurationSec(
+                        Number(event.target.value),
+                      ),
+                    })
+                  }}
+                  className="ml-auto w-16 rounded-md border border-white/10 bg-[#07070a] px-2 py-1 text-right text-xs text-white outline-none"
+                />
+              </label>
+              <input
+                type="range"
+                min={VIDEO_DURATION_MIN}
+                max={VIDEO_DURATION_MAX}
+                step={0.1}
+                value={duration}
+                onChange={(event) => {
+                  updateSlide(slide.id, {
+                    durationSec: clampVideoDurationSec(
+                      Number(event.target.value),
+                    ),
+                  })
+                }}
+                className="range-thin mt-2 w-full"
+                aria-label={`Slide ${index + 1} duration`}
+              />
+              {next && slide.frames.length > 0 ? (
+                <div className="mt-2 space-y-1.5 border-t border-white/10 pt-2">
+                  <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                    Link phones
+                  </p>
+                  {slide.frames.map((frame) => (
+                    <label
+                      key={frame.id}
+                      className="flex items-center gap-2 text-[11px] text-zinc-400"
+                    >
+                      <span className="min-w-0 shrink-0">
+                        {frameLinkLabel(slide.frames, frame.id)}
+                      </span>
+                      <select
+                        value={
+                          frame.tweenToId &&
+                          next.frames.some(
+                            (item) => item.id === frame.tweenToId,
+                          )
+                            ? frame.tweenToId
+                            : ""
+                        }
+                        onChange={(event) => {
+                          const tweenToId = event.target.value || null
+                          updateSlide(slide.id, {
+                            frames: withTweenLink(
+                              slide.frames,
+                              frame.id,
+                              tweenToId,
+                            ),
+                          })
+                        }}
+                        className="min-w-0 flex-1 rounded-md border border-white/10 bg-[#07070a] px-1.5 py-1 text-[11px] text-white outline-none"
+                      >
+                        <option value="">Slide out</option>
+                        {next.frames.map((target) => (
+                          <option key={target.id} value={target.id}>
+                            {frameLinkLabel(next.frames, target.id)}
+                            {target.id !== frame.tweenToId &&
+                            slide.frames.some(
+                              (other) =>
+                                other.id !== frame.id &&
+                                other.tweenToId === target.id,
+                            )
+                              ? " (used)"
+                              : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ))}
+                </div>
+              ) : null}
+            </li>
+          )
+        })}
+      </ul>
+    </div>
+  )
+}
+
+function ExportPanel({
+  project,
   sizeEditMode,
   hasComponentSelection,
   targetName,
@@ -947,15 +1187,12 @@ function ExportPanel({
   canExportClean,
   setTarget,
   setSizeEditMode,
-  updateSlide,
-  selectSlide,
   onExportPng,
   onExportZip,
   onExportAllSizesZip,
   onExportVideo,
 }: {
   project: Project
-  activeSlideId: string
   sizeEditMode: SizeEditMode
   hasComponentSelection: boolean
   targetName: string
@@ -963,8 +1200,6 @@ function ExportPanel({
   canExportClean: boolean
   setTarget: (id: StoreTargetId) => void
   setSizeEditMode: (mode: SizeEditMode) => void
-  updateSlide: ReturnType<typeof useProject>["updateSlide"]
-  selectSlide: ReturnType<typeof useProject>["selectSlide"]
   onExportPng: () => void
   onExportZip: () => void
   onExportAllSizesZip: () => void
@@ -972,85 +1207,16 @@ function ExportPanel({
 }) {
   const isVideo = projectKindOf(project) === "video"
   const projectTargetId = project.targetId
-  const totalDuration = project.slides.reduce(
-    (sum, slide) =>
-      sum +
-      clampVideoDurationSec(slide.durationSec ?? VIDEO_DURATION_DEFAULT),
-    0,
-  )
 
   return (
     <div className="space-y-4">
       {isVideo ? (
         <>
           <p className="text-[11px] leading-relaxed text-zinc-500">
-            Video canvas is locked to 886×1920 (App Store portrait preview).
-            Set how long each slide holds, then download an MP4 (hard cuts).
+            Timeline and phone links live under Content → Timeline. Choose
+            resolution in the header or Timeline (iPhone, iPad, Pixel, or
+            custom). This panel downloads the finished MP4.
           </p>
-          <div>
-            <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
-              Timeline · {totalDuration.toFixed(1)}s total
-            </h3>
-            <ul className="space-y-2">
-              {project.slides.map((slide, index) => {
-                const duration = clampVideoDurationSec(
-                  slide.durationSec ?? VIDEO_DURATION_DEFAULT,
-                )
-                const active = slide.id === activeSlideId
-                return (
-                  <li
-                    key={slide.id}
-                    className={`rounded-lg border px-2.5 py-2 ${
-                      active
-                        ? "border-[#e8ff47]/40 bg-white/[0.06]"
-                        : "border-white/10 bg-[#0a0a0e]"
-                    }`}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => selectSlide(slide.id)}
-                      className="mb-1.5 w-full text-left text-xs font-medium text-zinc-200"
-                    >
-                      Slide {index + 1}
-                    </button>
-                    <label className="flex items-center gap-2 text-[11px] text-zinc-500">
-                      Duration (s)
-                      <input
-                        type="number"
-                        min={VIDEO_DURATION_MIN}
-                        max={VIDEO_DURATION_MAX}
-                        step={0.1}
-                        value={duration}
-                        onChange={(event) => {
-                          const next = clampVideoDurationSec(
-                            Number(event.target.value),
-                          )
-                          updateSlide(slide.id, { durationSec: next })
-                        }}
-                        className="ml-auto w-16 rounded-md border border-white/10 bg-[#07070a] px-2 py-1 text-right text-xs text-white outline-none"
-                      />
-                    </label>
-                    <input
-                      type="range"
-                      min={VIDEO_DURATION_MIN}
-                      max={VIDEO_DURATION_MAX}
-                      step={0.1}
-                      value={duration}
-                      onChange={(event) => {
-                        updateSlide(slide.id, {
-                          durationSec: clampVideoDurationSec(
-                            Number(event.target.value),
-                          ),
-                        })
-                      }}
-                      className="range-thin mt-2 w-full"
-                      aria-label={`Slide ${index + 1} duration`}
-                    />
-                  </li>
-                )
-              })}
-            </ul>
-          </div>
           <div>
             <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
               Video
@@ -1228,6 +1394,7 @@ function PhoneProperties({
   onUploadClick,
   onScreenshotFiles,
   updateFrame,
+  updateSlide,
   duplicateFrame,
   removeFrame,
   moveFrame,
@@ -1253,6 +1420,7 @@ function PhoneProperties({
     slot?: FrameScreenSlot,
   ) => void
   updateFrame: ReturnType<typeof useProject>["updateFrame"]
+  updateSlide: ReturnType<typeof useProject>["updateSlide"]
   duplicateFrame: (slideId: string, frameId: string) => void
   removeFrame: (slideId: string, frameId: string) => void
   moveFrame: ReturnType<typeof useProject>["moveFrame"]
@@ -1275,6 +1443,12 @@ function PhoneProperties({
     useProject()
   const { isAdmin } = useAuth()
   const libraryIds = screenshotLibraryIdsForUi(project)
+  const slideIndex = projectSlides.findIndex((item) => item.id === slide.id)
+  const nextSlide =
+    slideIndex >= 0 ? projectSlides[slideIndex + 1] : undefined
+  const showTweenLink =
+    projectKindOf(project) === "video" && Boolean(nextSlide?.frames.length)
+  const isVideoProject = projectKindOf(project) === "video"
 
   return (
     <PropertyCopyProvider kind="frame" layer={frame}>
@@ -1566,7 +1740,42 @@ function PhoneProperties({
           flipV={frame.flipV}
           onChange={(patch) => updateFrame(slide.id, frame.id, patch)}
         />
+        {showTweenLink && nextSlide ? (
+          <label className="mt-2 block text-[11px] text-zinc-500">
+            Tween to next slide
+            <select
+              value={
+                frame.tweenToId &&
+                nextSlide.frames.some((item) => item.id === frame.tweenToId)
+                  ? frame.tweenToId
+                  : ""
+              }
+              onChange={(event) => {
+                const tweenToId = event.target.value || null
+                updateSlide(slide.id, {
+                  frames: withTweenLink(slide.frames, frame.id, tweenToId),
+                })
+              }}
+              className="mt-1 w-full rounded-lg border border-white/10 bg-[#0a0a0e] px-2.5 py-2 text-sm text-white outline-none"
+            >
+              <option value="">Slide out</option>
+              {nextSlide.frames.map((target) => (
+                <option key={target.id} value={target.id}>
+                  {frameLinkLabel(nextSlide.frames, target.id)}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
       </PropertySection>
+
+      {isVideoProject ? (
+        <LayerAnimationSection
+          enterAnim={frame.enterAnim}
+          exitAnim={frame.exitAnim}
+          onChange={(patch) => updateFrame(slide.id, frame.id, patch)}
+        />
+      ) : null}
 
       <ShadowSection
         value={frame}
@@ -1677,6 +1886,9 @@ function TextProperties({
   copyComponentToSlide: ReturnType<typeof useProject>["copyComponentToSlide"]
   setTextOverflow: ReturnType<typeof useProject>["setTextOverflow"]
 }) {
+  const { project } = useProject()
+  const isVideoProject = projectKindOf(project) === "video"
+
   return (
     <PropertyCopyProvider kind="text" layer={activeText}>
       <PropertyAccordion defaultOpen="content">
@@ -1857,6 +2069,14 @@ function TextProperties({
         />
       </PropertySection>
 
+      {isVideoProject ? (
+        <LayerAnimationSection
+          enterAnim={activeText.enterAnim}
+          exitAnim={activeText.exitAnim}
+          onChange={(patch) => updateText(slide.id, activeText.id, patch)}
+        />
+      ) : null}
+
       <PropertySection id="style" title="Style" copySection="style">
         <RangeValueField
           label="Outline"
@@ -1996,6 +2216,8 @@ function ClipartProperties({
   copyComponentToSlide: ReturnType<typeof useProject>["copyComponentToSlide"]
   setClipartOverflow: ReturnType<typeof useProject>["setClipartOverflow"]
 }) {
+  const { project } = useProject()
+  const isVideoProject = projectKindOf(project) === "video"
   const attachFrameId = activeClipart.attachedFrameId
   const applyAttach = (frameId: string | null) => {
     if (!frameId) {
@@ -2148,6 +2370,16 @@ function ClipartProperties({
           }
         />
       </PropertySection>
+
+      {isVideoProject ? (
+        <LayerAnimationSection
+          enterAnim={activeClipart.enterAnim}
+          exitAnim={activeClipart.exitAnim}
+          onChange={(patch) =>
+            updateClipart(slide.id, activeClipart.id, patch)
+          }
+        />
+      ) : null}
 
       <PropertySection id="style" title="Style" copySection="style">
         <RangeValueField
@@ -2341,6 +2573,8 @@ function LensProperties({
   copyComponentToSlide: ReturnType<typeof useProject>["copyComponentToSlide"]
   setLensOverflow: ReturnType<typeof useProject>["setLensOverflow"]
 }) {
+  const { project } = useProject()
+  const isVideoProject = projectKindOf(project) === "video"
   const [locking, setLocking] = useState(false)
   const isLocked =
     activeLens.imageLocked || Boolean(activeLens.lockedImageId)
@@ -2472,6 +2706,14 @@ function LensProperties({
           onChange={(patch) => updateLens(slide.id, activeLens.id, patch)}
         />
       </PropertySection>
+
+      {isVideoProject ? (
+        <LayerAnimationSection
+          enterAnim={activeLens.enterAnim}
+          exitAnim={activeLens.exitAnim}
+          onChange={(patch) => updateLens(slide.id, activeLens.id, patch)}
+        />
+      ) : null}
 
       <PropertySection id="style" title="Style" copySection="style">
         <RangeValueField
@@ -3097,7 +3339,7 @@ function BackgroundImagePanel({
   const [libraryOpen, setLibraryOpen] = useState(false)
   const [library, setLibrary] = useState<LibraryBackgroundRecord[]>([])
   const [libraryLoading, setLibraryLoading] = useState(false)
-  const target = STORE_TARGETS[project.targetId]
+  const target = getProjectTarget(project)
   const artboardAspect = target.width / target.height
   const positionX = slide.background.imagePositionX ?? 50
   const positionY = slide.background.imagePositionY ?? 50
@@ -3343,6 +3585,59 @@ const PropertyAccordionContext = createContext<{
   openId: string | null
   setOpenId: (id: string | null) => void
 } | null>(null)
+
+function LayerAnimationSection({
+  enterAnim,
+  exitAnim,
+  onChange,
+}: {
+  enterAnim: LayerAnimType
+  exitAnim: LayerAnimType
+  onChange: (patch: {
+    enterAnim?: LayerAnimType
+    exitAnim?: LayerAnimType
+  }) => void
+}) {
+  return (
+    <PropertySection id="animation" title="Animation">
+      <label className="block text-[11px] text-zinc-500">
+        Enter
+        <select
+          value={enterAnim}
+          onChange={(event) =>
+            onChange({ enterAnim: event.target.value as LayerAnimType })
+          }
+          className="mt-1 w-full rounded-lg border border-white/10 bg-[#0a0a0e] px-2.5 py-2 text-sm text-white outline-none"
+        >
+          {LAYER_ANIM_TYPES.map((type) => (
+            <option key={type} value={type}>
+              {LAYER_ANIM_LABELS[type]}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="mt-2 block text-[11px] text-zinc-500">
+        Exit
+        <select
+          value={exitAnim}
+          onChange={(event) =>
+            onChange({ exitAnim: event.target.value as LayerAnimType })
+          }
+          className="mt-1 w-full rounded-lg border border-white/10 bg-[#0a0a0e] px-2.5 py-2 text-sm text-white outline-none"
+        >
+          {LAYER_ANIM_TYPES.map((type) => (
+            <option key={type} value={type}>
+              {LAYER_ANIM_LABELS[type]}
+            </option>
+          ))}
+        </select>
+      </label>
+      <p className="mt-2 text-[10px] leading-snug text-zinc-600">
+        Used when this layer is not pose-linked to the next slide
+      </p>
+    </PropertySection>
+  )
+}
 
 function PropertySection({
   id,
@@ -3691,7 +3986,7 @@ function MultiSelectionProperties({
     project.slides[0]
   const showGroup = canGroupSelection(activeSlide, selectedIds)
   const showUngroup = canUngroupSelection(activeSlide, selectedIds)
-  const target = STORE_TARGETS[project.targetId]
+  const target = getProjectTarget(project)
   const landscapeArtboard = target.orientation === "landscape"
   const deviceOptions = (Object.keys(DEVICES) as DeviceId[]).filter((id) =>
     landscapeArtboard ? id.endsWith("-land") : !id.endsWith("-land"),

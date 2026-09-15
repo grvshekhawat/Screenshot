@@ -43,7 +43,13 @@ import {
   sanitizeSlideSelection,
   selectedKind,
   STORE_TARGETS,
+  getProjectTarget,
+  isVideoStoreTarget,
+  clampVideoCustomSize,
+  VIDEO_CUSTOM_WIDTH_DEFAULT,
+  VIDEO_CUSTOM_HEIGHT_DEFAULT,
 } from "./constants"
+import { projectKindOf } from "./orientation"
 import {
   getSelectedIds,
   patchForKind,
@@ -132,6 +138,8 @@ type ProjectContextValue = {
   canvasFocused: boolean
   setName: (name: string) => void
   setTarget: (targetId: StoreTargetId) => void
+  /** Video · Custom artboard size (also switches target to video-custom). */
+  setCustomVideoSize: (width: number, height: number) => void
   setSizeEditMode: (mode: SizeEditMode) => void
   setThumbnailLayout: (layout: ThumbnailLayout) => void
   selectSlide: (id: string) => void
@@ -290,7 +298,7 @@ const ProjectContext = createContext<ProjectContextValue | null>(null)
 function extraIdsFor(project: Project, slideId: string): string[] {
   const index = project.slides.findIndex((slide) => slide.id === slideId)
   if (index < 0) return []
-  const target = STORE_TARGETS[project.targetId]
+  const target = getProjectTarget(project)
   return guestIdsForSlide(
     project.slides,
     index,
@@ -777,11 +785,44 @@ export function ProjectProvider({
 
   const setTarget = useCallback((targetId: StoreTargetId) => {
     setProject((current) => {
+      const fromVideo = isVideoStoreTarget(current.targetId)
+      const toVideo = isVideoStoreTarget(targetId)
+      if (fromVideo || toVideo) {
+        if (!toVideo) return current
+        const withCustom =
+          targetId === "video-custom"
+            ? {
+                ...current,
+                customWidth: clampVideoCustomSize(
+                  current.customWidth,
+                  VIDEO_CUSTOM_WIDTH_DEFAULT,
+                ),
+                customHeight: clampVideoCustomSize(
+                  current.customHeight,
+                  VIDEO_CUSTOM_HEIGHT_DEFAULT,
+                ),
+              }
+            : current
+        return switchProjectTarget(withCustom, targetId)
+      }
       const from = STORE_TARGETS[current.targetId]?.orientation
       const to = STORE_TARGETS[targetId]?.orientation
       // Orientation is fixed per project — only switch sizes within the same orientation.
       if (from && to && from !== to) return current
       return switchProjectTarget(current, targetId)
+    })
+  }, [setProject])
+
+  const setCustomVideoSize = useCallback((width: number, height: number) => {
+    setProject((current) => {
+      if (projectKindOf(current) !== "video") return current
+      return {
+        ...current,
+        targetId: "video-custom",
+        designTargetId: "video-custom",
+        customWidth: clampVideoCustomSize(width, VIDEO_CUSTOM_WIDTH_DEFAULT),
+        customHeight: clampVideoCustomSize(height, VIDEO_CUSTOM_HEIGHT_DEFAULT),
+      }
     })
   }, [setProject])
 
@@ -1070,19 +1111,26 @@ export function ProjectProvider({
       const frames = source.frames.map((frame) =>
         createFrame({ ...frame, id: crypto.randomUUID() }),
       )
+      const frameIdMap = new Map<string, string>()
+      source.frames.forEach((frame, frameIndex) => {
+        frameIdMap.set(frame.id, frames[frameIndex].id)
+      })
       const texts = source.texts.map((text) =>
         createText({ ...text, id: crypto.randomUUID() }),
       )
       const cliparts = source.cliparts.map((clipart) =>
-        createClipart({ ...clipart, id: crypto.randomUUID() }),
+        createClipart({
+          ...clipart,
+          id: crypto.randomUUID(),
+          attachedFrameId: clipart.attachedFrameId
+            ? (frameIdMap.get(clipart.attachedFrameId) ?? null)
+            : null,
+        }),
       )
       const lenses = (source.lenses ?? []).map((lens) =>
         createLens({ ...lens, id: crypto.randomUUID() }),
       )
-      const idMap = new Map<string, string>()
-      source.frames.forEach((frame, frameIndex) => {
-        idMap.set(frame.id, frames[frameIndex].id)
-      })
+      const idMap = new Map<string, string>(frameIdMap)
       source.texts.forEach((text, textIndex) => {
         idMap.set(text.id, texts[textIndex].id)
       })
@@ -1119,6 +1167,15 @@ export function ProjectProvider({
         background: copyBackground(source.background),
       }
       const slides = [...current.slides]
+      slides[index] = {
+        ...source,
+        frames: source.frames.map((frame, frameIndex) =>
+          createFrame({
+            ...frame,
+            tweenToId: frames[frameIndex]?.id ?? null,
+          }),
+        ),
+      }
       slides.splice(index + 1, 0, copy)
       return { ...current, slides, activeSlideId: copy.id }
     })
@@ -2246,7 +2303,7 @@ export function ProjectProvider({
       dyArtboard: number,
     ) => {
       if (!origins.length) return
-      const target = STORE_TARGETS[projectRef.current.targetId]
+      const target = getProjectTarget(projectRef.current)
       const moves = positionsFromArtboardDelta(
         origins,
         dxArtboard,
@@ -2661,6 +2718,7 @@ export function ProjectProvider({
       canvasFocused,
       setName,
       setTarget,
+      setCustomVideoSize,
       setSizeEditMode,
       setThumbnailLayout,
       selectSlide,
@@ -2752,6 +2810,7 @@ export function ProjectProvider({
       canvasFocused,
       setName,
       setTarget,
+      setCustomVideoSize,
       setSizeEditMode,
       setThumbnailLayout,
       selectSlide,

@@ -7,7 +7,7 @@ import {
   type PointerEvent,
 } from "react"
 import { createPortal } from "react-dom"
-import { STORE_TARGETS, deviceSpec, CLIPART_WIDTH_MIN, CLIPART_WIDTH_MAX } from "../constants"
+import { deviceSpec, CLIPART_WIDTH_MIN, CLIPART_WIDTH_MAX, getProjectTarget } from "../constants"
 import { isTypingTarget } from "../platform"
 import {
   clipartOverflow,
@@ -112,7 +112,7 @@ export function DesignCanvas({
     ungroupSelection,
     canvasFocused,
   } = useProject()
-  const target = STORE_TARGETS[project.targetId]
+  const target = getProjectTarget(project)
   const viewportRef = useRef<HTMLDivElement>(null)
   const [fitScale, setFitScale] = useState(0.2)
   /** Fit tracks the viewport; manual zoomPercent is % of 1:1 artboard pixels. */

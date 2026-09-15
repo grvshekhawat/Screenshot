@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useAuth } from "../auth/AuthProvider"
 import { startCheckout } from "../billing/checkout"
 import { PaywallModal } from "../billing/PaywallModal"
@@ -21,8 +21,10 @@ import { useProject } from "../project-store"
 import type { FrameScreenSlot } from "../types"
 import { useEditorHotkeys } from "../useEditorHotkeys"
 import { DesignCanvas } from "./DesignCanvas"
+import { CustomVideoSizeFields } from "./CustomVideoSizeFields"
 import { EditorOnboarding } from "./EditorOnboarding"
 import { Inspector, type MenuId } from "./Inspector"
+import { VideoPreviewOverlay } from "./VideoPreviewOverlay"
 
 type UploadMode = "screenshot" | "clipart" | "background"
 
@@ -38,6 +40,7 @@ export function Editor({ promptUploadFirst = false }: { promptUploadFirst?: bool
     lastSavedAt,
     setName,
     setTarget,
+    setCustomVideoSize,
     setSizeEditMode,
     canvasFocused,
     selectedIds,
@@ -72,6 +75,8 @@ export function Editor({ promptUploadFirst = false }: { promptUploadFirst?: bool
   )
   const [canvasChromeHost, setCanvasChromeHost] =
     useState<HTMLDivElement | null>(null)
+  const [videoPreviewPlaying, setVideoPreviewPlaying] = useState(false)
+  const stopVideoPreview = useCallback(() => setVideoPreviewPlaying(false), [])
   const uploadFirstRef = useRef<HTMLInputElement>(null)
 
   const hasComponentSelection = Boolean(
@@ -383,13 +388,27 @@ export function Editor({ promptUploadFirst = false }: { promptUploadFirst?: bool
         >
           Save draft
         </button>
+        {isVideoProject ? (
+          <button
+            type="button"
+            onClick={() =>
+              setVideoPreviewPlaying((current) => !current)
+            }
+            className="rounded-md border border-white/10 bg-[#0a0a0e] px-2.5 py-1.5 text-xs text-zinc-200 hover:border-white/20 hover:bg-white/[0.06]"
+          >
+            {videoPreviewPlaying ? "Stop" : "Play"}
+          </button>
+        ) : null}
         <select
-          value={project.targetId}
+          value={
+            project.targetId === "video-9x16"
+              ? "video-iphone"
+              : project.targetId
+          }
           onChange={(event) =>
             setTarget(event.target.value as typeof project.targetId)
           }
-          disabled={isVideoProject}
-          className="max-w-[240px] rounded-md border border-white/10 bg-[#0a0a0e] px-2 py-1.5 text-xs text-zinc-200 disabled:opacity-60"
+          className="max-w-[240px] rounded-md border border-white/10 bg-[#0a0a0e] px-2 py-1.5 text-xs text-zinc-200"
         >
           {storeTargetsForOrientation(
             projectOrientation(project),
@@ -400,6 +419,14 @@ export function Editor({ promptUploadFirst = false }: { promptUploadFirst?: bool
             </option>
           ))}
         </select>
+        {isVideoProject && project.targetId === "video-custom" ? (
+          <CustomVideoSizeFields
+            compact
+            width={project.customWidth ?? 1080}
+            height={project.customHeight ?? 1920}
+            onApply={setCustomVideoSize}
+          />
+        ) : null}
         {!isVideoProject ? (
           <div
             className="flex rounded-md border border-white/10 p-0.5"
@@ -452,6 +479,10 @@ export function Editor({ promptUploadFirst = false }: { promptUploadFirst?: bool
           onExportZip={() => void exportZip(false)}
           onExportAllSizesZip={() => void exportZip(true)}
           onExportVideo={() => void exportVideo()}
+          onPreviewVideo={() => {
+            setToolMenu("content")
+            setVideoPreviewPlaying(true)
+          }}
           canExportClean={canExport}
           busy={busy}
           menu={toolMenu}
@@ -463,6 +494,10 @@ export function Editor({ promptUploadFirst = false }: { promptUploadFirst?: bool
               onUploadClick={openUpload}
               onFiles={onFiles}
               chromeHost={canvasChromeHost}
+            />
+            <VideoPreviewOverlay
+              playing={videoPreviewPlaying}
+              onClose={stopVideoPreview}
             />
             {showOnboarding ? (
               <EditorOnboarding

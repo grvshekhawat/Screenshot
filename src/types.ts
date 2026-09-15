@@ -18,6 +18,10 @@ export type StoreTargetId =
   | "play-phone"
   | "apple-watch"
   | "video-9x16"
+  | "video-iphone"
+  | "video-ipad"
+  | "video-pixel"
+  | "video-custom"
   | "iphone-69-landscape"
   | "iphone-65-landscape"
   | "iphone-63-landscape"
@@ -72,6 +76,17 @@ export type SlideBackground = {
 export type FrameScreenMode = "single" | "split"
 export type FrameScreenSlot = "a" | "b"
 
+/** Video enter/exit for unlinked layers (phones without tweenToId, all text/clipart/lens). */
+export type LayerAnimType =
+  | "none"
+  | "fade"
+  | "zoomIn"
+  | "zoomOut"
+  | "slideLeft"
+  | "slideRight"
+  | "slideUp"
+  | "slideDown"
+
 export type Frame = {
   id: string
   deviceId: DeviceId
@@ -110,6 +125,15 @@ export type Frame = {
    */
   showBand: boolean
   overflow: "cut" | "continue"
+  /**
+   * Video: frame id on the *next* slide this phone tweens toward.
+   * Null = unlinked (enter/exit anims apply instead).
+   */
+  tweenToId: string | null
+  /** 0–1 overall transparency (video fade + optional editor use). */
+  opacity: number
+  enterAnim: LayerAnimType
+  exitAnim: LayerAnimType
 }
 
 export type TextLayer = {
@@ -144,6 +168,10 @@ export type TextLayer = {
   /** Outline width in design px (0 = none) */
   strokeWidth: number
   strokeColor: string
+  /** 0–1 overall transparency (video fade). */
+  opacity: number
+  enterAnim: LayerAnimType
+  exitAnim: LayerAnimType
 }
 
 export type ClipartRecolor = "off" | "solid" | "gradient"
@@ -186,6 +214,8 @@ export type ClipartLayer = {
   colorAngle: number
   /** When set, x/y/width are relative to this phone frame. */
   attachedFrameId: string | null
+  enterAnim: LayerAnimType
+  exitAnim: LayerAnimType
 }
 
 /** Magnifier that zooms a region of the slide (free-form rounded rect). */
@@ -233,6 +263,10 @@ export type LensLayer = {
   /** Raster snapshot of the slide when locked (survives slide edits). */
   lockedImageId: string | null
   overflow: "cut" | "continue"
+  /** 0–1 overall transparency (video fade). */
+  opacity: number
+  enterAnim: LayerAnimType
+  exitAnim: LayerAnimType
 }
 
 export type LayerGroup = {
@@ -258,7 +292,9 @@ export type Slide = {
   background: SlideBackground
   templateId: TemplateId
   /**
-   * How long this slide stays on screen in a video export (seconds).
+   * How long this slide owns on the video timeline (seconds).
+   * Most of the time holds the rest pose; the remainder plays exit→enter
+   * (and linked phone tweens) into the next slide. Last slide holds fully.
    * Used only for `projectKind: "video"` projects.
    */
   durationSec: number
@@ -276,10 +312,20 @@ export type SizeLayout = {
 
 export type Project = {
   name: string
-  /** screenshots = App Store / Play stills; video = 9:16 timeline MP4. */
+  /** screenshots = App Store / Play stills; video = timeline MP4. */
   projectKind: ProjectKind
   /** Canvas size currently shown / edited. */
   targetId: StoreTargetId
+  /**
+   * Video · Custom only: artboard width in px (clamped on read).
+   * Ignored for other targets.
+   */
+  customWidth?: number
+  /**
+   * Video · Custom only: artboard height in px (clamped on read).
+   * Ignored for other targets.
+   */
+  customHeight?: number
   /**
    * current = each store size has its own saved layout.
    * all = selected component syncs across sizes (adapted).

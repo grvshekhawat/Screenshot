@@ -16,7 +16,11 @@ export function deviceForExportTarget(
   _fromTargetId: StoreTargetId,
   toTargetId: StoreTargetId,
 ): DeviceId {
-  if (toTargetId === "video-9x16") return "iphone-69"
+  if (toTargetId === "video-9x16" || toTargetId === "video-iphone")
+    return "iphone-69"
+  if (toTargetId === "video-ipad") return "ipad-13"
+  if (toTargetId === "video-pixel" || toTargetId === "video-custom")
+    return "pixel"
   if (toTargetId === "apple-watch") return "apple-watch"
   if (toTargetId === "play-phone") return "pixel"
   if (toTargetId === "play-phone-landscape") return "pixel-land"

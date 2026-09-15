@@ -70,6 +70,7 @@ export function PlacedDevice({
         transformStyle: "flat",
         isolation: "isolate",
         overflow: "visible",
+        opacity: frame.opacity ?? 1,
         zIndex,
         cursor: interactive ? "grab" : "default",
         touchAction: interactive ? "none" : undefined,

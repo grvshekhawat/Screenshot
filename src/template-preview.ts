@@ -1,8 +1,8 @@
 import {
   FONTS,
-  STORE_TARGETS,
   clipartDropShadowCss,
   deviceSpec,
+  getProjectTarget,
   normalizeLayerOrder,
   templateSplit,
 } from "./constants"
@@ -127,7 +127,7 @@ export function resolveThumbnailLayout(
 ): ThumbnailLayout {
   if (override === "portrait" || override === "landscape") return override
   // Landscape artboards use a 2-row grid; portrait artboards use a 1-row strip.
-  if (STORE_TARGETS[project.targetId]?.orientation === "landscape") {
+  if (getProjectTarget(project).orientation === "landscape") {
     return "landscape"
   }
   return project.thumbnailLayout === "portrait" ? "portrait" : "landscape"
@@ -139,7 +139,7 @@ export function thumbnailAspectClass(
   project?: Project,
 ): string {
   const target =
-    project != null ? STORE_TARGETS[project.targetId] : undefined
+    project != null ? getProjectTarget(project) : undefined
   const landscapeBoard = target?.orientation === "landscape"
 
   // Watch artboards are nearly square (416×496). Phone strip/stack ratios
@@ -184,8 +184,7 @@ export function screenshotPickerAspectClass(
 }
 
 function artboardSize(project: Project): { width: number; height: number } {
-  const target =
-    STORE_TARGETS[project.targetId] ?? STORE_TARGETS["iphone-69"]
+  const target = getProjectTarget(project)
   return { width: target.width, height: target.height }
 }
 
@@ -1026,7 +1025,7 @@ function paintSlideFallback(
 
 function previewSlides(project: Project): Slide[] {
   const landscapeBoard =
-    STORE_TARGETS[project.targetId]?.orientation === "landscape"
+    getProjectTarget(project).orientation === "landscape"
   // Landscape gallery uses a 2-row grid — 4 slides (2×2) matches App Store sets.
   const max = landscapeBoard ? 4 : MAX_PREVIEW_SLIDES
   const count = Math.min(max, Math.max(1, project.slides.length))
@@ -1045,7 +1044,7 @@ export async function renderProjectPreviewCanvas(
   await ensurePreviewFonts()
   const layout = resolveThumbnailLayout(project, options.layout)
   const landscapeBoard =
-    STORE_TARGETS[project.targetId]?.orientation === "landscape"
+    getProjectTarget(project).orientation === "landscape"
   const slideWidth =
     options.slideWidth ??
     (landscapeBoard ? Math.round(DEFAULT_SLIDE_WIDTH * 1.55) : DEFAULT_SLIDE_WIDTH)

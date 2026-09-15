@@ -1,4 +1,4 @@
-import { createRoot } from "react-dom/client"
+import { createRoot, type Root } from "react-dom/client"
 import { Artboard } from "./components/Artboard"
 import { canvasToOpaquePng, captureArtboardDom } from "./export-canvas"
 import {
@@ -90,6 +90,136 @@ function withCaptureLock<T>(fn: () => Promise<T>): Promise<T> {
   return run
 }
 
+type OffscreenCaptureSession = {
+  host: HTMLDivElement
+  root: Root
+  width: number
+  height: number
+}
+
+function createExportHost(width: number, height: number): HTMLDivElement {
+  const host = document.createElement("div")
+  host.setAttribute("data-export-host", "true")
+  host.style.cssText = [
+    "position:fixed",
+    "left:-10000px",
+    "top:0",
+    `width:${width}px`,
+    `height:${height}px`,
+    "overflow:hidden",
+    "pointer-events:none",
+    "z-index:-1",
+  ].join(";")
+  document.body.appendChild(host)
+  return host
+}
+
+async function renderExportSlide(
+  root: Root,
+  host: HTMLDivElement,
+  props: Omit<ExportSlideProps, "onReady">,
+  waitForAssets: boolean,
+): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const timeout = window.setTimeout(
+      () => reject(new Error("Timed out rendering artboard")),
+      20000,
+    )
+    const onReady = () => {
+      window.clearTimeout(timeout)
+      resolve()
+    }
+    root.render(<ExportSlide {...props} onReady={onReady} />)
+  })
+
+  await new Promise((resolve) => requestAnimationFrame(resolve))
+  await new Promise((resolve) => requestAnimationFrame(resolve))
+
+  if (waitForAssets) {
+    const bakeDeadline = Date.now() + 4000
+    while (Date.now() < bakeDeadline) {
+      if (!host.querySelector("[data-clipart-baking]")) break
+      await new Promise((resolve) => setTimeout(resolve, 32))
+    }
+    await Promise.all(
+      [...host.querySelectorAll("img")].map((img) =>
+        img.decode().catch(() => undefined),
+      ),
+    )
+  }
+}
+
+function pinArtboardSize(
+  host: HTMLDivElement,
+  width: number,
+  height: number,
+): HTMLElement {
+  const artboard = host.querySelector("[data-artboard]")
+  if (!(artboard instanceof HTMLElement)) {
+    throw new Error("Artboard element missing")
+  }
+  artboard.style.width = `${width}px`
+  artboard.style.height = `${height}px`
+  artboard.style.maxWidth = `${width}px`
+  artboard.style.maxHeight = `${height}px`
+  artboard.style.transform = "none"
+  artboard.style.zoom = "1"
+  return artboard
+}
+
+export function createOffscreenCaptureSession(
+  width: number,
+  height: number,
+): OffscreenCaptureSession {
+  const host = createExportHost(width, height)
+  return { host, root: createRoot(host), width, height }
+}
+
+export function destroyOffscreenCaptureSession(
+  session: OffscreenCaptureSession,
+): void {
+  session.root.unmount()
+  session.host.remove()
+}
+
+/**
+ * Render a pose into an existing offscreen session. First call waits for
+ * images; later pose updates skip the long bake so video preview stays live.
+ */
+export async function captureSlideInSession(
+  session: OffscreenCaptureSession,
+  slide: Slide,
+  slideIndex: number,
+  slides: Slide[],
+  assetUrls: Record<string, string>,
+  options?: { waitForAssets?: boolean; showLenses?: boolean; isolate?: boolean },
+): Promise<HTMLCanvasElement> {
+  const waitForAssets = options?.waitForAssets ?? false
+  const poseSlides = options?.isolate ? [slide] : slides
+  const poseIndex = options?.isolate ? 0 : slideIndex
+  await renderExportSlide(
+    session.root,
+    session.host,
+    {
+      slide,
+      slideIndex: poseIndex,
+      slides: poseSlides,
+      width: session.width,
+      height: session.height,
+      assetUrls,
+      showLenses: options?.showLenses ?? true,
+      stridePercent: 100,
+    },
+    waitForAssets,
+  )
+  const artboard = pinArtboardSize(session.host, session.width, session.height)
+  const needsPrep =
+    waitForAssets || Boolean(session.host.querySelector("[data-screen-fit]"))
+  return captureArtboardDom(artboard, session.width, session.height, {
+    prepareAssets: needsPrep,
+  })
+}
+
 /** Rasterize one slide exactly as the editor/export artboard (all devices, clipart, lenses). */
 export async function captureSlideToCanvas(
   slide: Slide,
@@ -102,80 +232,27 @@ export async function captureSlideToCanvas(
   stridePercent = 100,
 ): Promise<HTMLCanvasElement> {
   return withCaptureLock(async () => {
-    const host = document.createElement("div")
-    host.setAttribute("data-export-host", "true")
-    host.style.cssText = [
-      "position:fixed",
-      "left:-10000px",
-      "top:0",
-      `width:${width}px`,
-      `height:${height}px`,
-      "overflow:hidden",
-      "pointer-events:none",
-      "z-index:-1",
-    ].join(";")
-    document.body.appendChild(host)
-    const root = createRoot(host)
-
+    const session = createOffscreenCaptureSession(width, height)
     try {
-      await new Promise<void>((resolve, reject) => {
-        const timeout = window.setTimeout(
-          () => reject(new Error("Timed out rendering artboard")),
-          20000,
-        )
-        const onReady = () => {
-          window.clearTimeout(timeout)
-          resolve()
-        }
-
-        root.render(
-          <ExportSlide
-            slide={slide}
-            slideIndex={slideIndex}
-            slides={slides}
-            width={width}
-            height={height}
-            assetUrls={assetUrls}
-            showLenses={showLenses}
-            stridePercent={stridePercent}
-            onReady={onReady}
-          />,
-        )
-      })
-
-      await new Promise((resolve) => requestAnimationFrame(resolve))
-      await new Promise((resolve) => requestAnimationFrame(resolve))
-
-      // Recolored cliparts bake to <img> asynchronously — wait so thumbnails
-      // don't capture empty placeholders.
-      const bakeDeadline = Date.now() + 4000
-      while (Date.now() < bakeDeadline) {
-        if (!host.querySelector("[data-clipart-baking]")) break
-        await new Promise((resolve) => setTimeout(resolve, 32))
-      }
-
-      await Promise.all(
-        [...host.querySelectorAll("img")].map((img) =>
-          img.decode().catch(() => undefined),
-        ),
+      await renderExportSlide(
+        session.root,
+        session.host,
+        {
+          slide,
+          slideIndex,
+          slides,
+          width,
+          height,
+          assetUrls,
+          showLenses,
+          stridePercent,
+        },
+        true,
       )
-
-      const artboard = host.querySelector("[data-artboard]")
-      if (!(artboard instanceof HTMLElement)) {
-        throw new Error("Artboard element missing")
-      }
-      // Pin layout size so capture never inherits a scaled on-screen rect.
-      artboard.style.width = `${width}px`
-      artboard.style.height = `${height}px`
-      artboard.style.maxWidth = `${width}px`
-      artboard.style.maxHeight = `${height}px`
-      artboard.style.transform = "none"
-      artboard.style.zoom = "1"
-
+      const artboard = pinArtboardSize(session.host, width, height)
       return await captureArtboardDom(artboard, width, height)
     } finally {
-      root.unmount()
-      host.remove()
+      destroyOffscreenCaptureSession(session)
     }
   })
 }

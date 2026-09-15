@@ -2,6 +2,7 @@ import type {
   ClipartLayer,
   DeviceId,
   Frame,
+  LayerAnimType,
   LensLayer,
   Project,
   ProjectKind,
@@ -33,6 +34,43 @@ export const VIDEO_DURATION_MAX = 15
 export const VIDEO_DURATION_DEFAULT = 3
 export const VIDEO_FPS = 30
 
+export const LAYER_ANIM_TYPES: LayerAnimType[] = [
+  "none",
+  "fade",
+  "zoomIn",
+  "zoomOut",
+  "slideLeft",
+  "slideRight",
+  "slideUp",
+  "slideDown",
+]
+
+export const LAYER_ANIM_LABELS: Record<LayerAnimType, string> = {
+  none: "None",
+  fade: "Fade",
+  zoomIn: "Zoom in",
+  zoomOut: "Zoom out",
+  slideLeft: "Slide left",
+  slideRight: "Slide right",
+  slideUp: "Slide up",
+  slideDown: "Slide down",
+}
+
+export function normalizeLayerAnim(
+  value: unknown,
+  fallback: LayerAnimType,
+): LayerAnimType {
+  return typeof value === "string" &&
+    (LAYER_ANIM_TYPES as string[]).includes(value)
+    ? (value as LayerAnimType)
+    : fallback
+}
+
+export function normalizeLayerOpacity(value: unknown, fallback = 1): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback
+  return Math.min(1, Math.max(0, value))
+}
+
 export function clampVideoDurationSec(value: unknown): number {
   const n = typeof value === "number" ? value : Number(value)
   if (!Number.isFinite(n)) return VIDEO_DURATION_DEFAULT
@@ -43,7 +81,56 @@ export function clampVideoDurationSec(value: unknown): number {
 }
 
 export function isVideoStoreTarget(targetId: StoreTargetId): boolean {
-  return targetId === "video-9x16"
+  return (
+    targetId === "video-9x16" ||
+    targetId === "video-iphone" ||
+    targetId === "video-ipad" ||
+    targetId === "video-pixel" ||
+    targetId === "video-custom"
+  )
+}
+
+/** Custom video artboard bounds (px). */
+export const VIDEO_CUSTOM_SIZE_MIN = 320
+export const VIDEO_CUSTOM_SIZE_MAX = 4096
+export const VIDEO_CUSTOM_WIDTH_DEFAULT = 1080
+export const VIDEO_CUSTOM_HEIGHT_DEFAULT = 1920
+
+export function clampVideoCustomSize(value: unknown, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback
+  return Math.min(
+    VIDEO_CUSTOM_SIZE_MAX,
+    Math.max(VIDEO_CUSTOM_SIZE_MIN, Math.round(value)),
+  )
+}
+
+/**
+ * Effective artboard for the project (applies custom W×H for video-custom).
+ * Prefer this over `STORE_TARGETS[project.targetId]` for render/export.
+ */
+export function getProjectTarget(
+  project: Pick<Project, "targetId" | "customWidth" | "customHeight">,
+): StoreTarget {
+  const base =
+    project.targetId in STORE_TARGETS
+      ? STORE_TARGETS[project.targetId]
+      : STORE_TARGETS["video-9x16"]
+  if (project.targetId !== "video-custom") return base
+  const width = clampVideoCustomSize(
+    project.customWidth,
+    VIDEO_CUSTOM_WIDTH_DEFAULT,
+  )
+  const height = clampVideoCustomSize(
+    project.customHeight,
+    VIDEO_CUSTOM_HEIGHT_DEFAULT,
+  )
+  return {
+    ...base,
+    width,
+    height,
+    orientation: width >= height ? "landscape" : "portrait",
+    name: `Video · Custom (${width}×${height})`,
+  }
 }
 
 export type DeviceSpec = {
@@ -224,6 +311,38 @@ export const STORE_TARGETS: Record<StoreTargetId, StoreTarget> = {
     width: 886,
     height: 1920,
     folder: "video/9x16",
+    orientation: "portrait",
+  },
+  "video-iphone": {
+    id: "video-iphone",
+    name: "Video · iPhone Preview (886×1920)",
+    width: 886,
+    height: 1920,
+    folder: "video/iphone",
+    orientation: "portrait",
+  },
+  "video-ipad": {
+    id: "video-ipad",
+    name: "Video · iPad Preview (1200×1600)",
+    width: 1200,
+    height: 1600,
+    folder: "video/ipad",
+    orientation: "portrait",
+  },
+  "video-pixel": {
+    id: "video-pixel",
+    name: "Video · Pixel (1080×1920)",
+    width: 1080,
+    height: 1920,
+    folder: "video/pixel",
+    orientation: "portrait",
+  },
+  "video-custom": {
+    id: "video-custom",
+    name: "Video · Custom",
+    width: 1080,
+    height: 1920,
+    folder: "video/custom",
     orientation: "portrait",
   },
   "iphone-69-landscape": {
@@ -696,6 +815,13 @@ export function createFrame(
     flipH: normalizeFlipFlag(rest.flipH),
     flipV: normalizeFlipFlag(rest.flipV),
     showBand: rest.showBand !== false,
+    tweenToId:
+      typeof rest.tweenToId === "string" && rest.tweenToId
+        ? rest.tweenToId
+        : null,
+    opacity: normalizeLayerOpacity(rest.opacity, 1),
+    enterAnim: normalizeLayerAnim(rest.enterAnim, "slideUp"),
+    exitAnim: normalizeLayerAnim(rest.exitAnim, "slideDown"),
     id: id ?? crypto.randomUUID(),
   }
 }
@@ -946,6 +1072,9 @@ export function createLens(overrides: Partial<LensLayer> & { shape?: string } = 
     flipV: normalizeFlipFlag(rest.flipV),
     rotationX: normalizeTilt(rest.rotationX),
     rotationY: normalizeTilt(rest.rotationY),
+    opacity: normalizeLayerOpacity(rest.opacity, 1),
+    enterAnim: normalizeLayerAnim(rest.enterAnim, "fade"),
+    exitAnim: normalizeLayerAnim(rest.exitAnim, "fade"),
     id: rest.id ?? crypto.randomUUID(),
   }
 }
@@ -1021,6 +1150,8 @@ export function createClipart(overrides: Partial<ClipartLayer> = {}): ClipartLay
     flipV: normalizeFlipFlag(overrides.flipV),
     rotationX: normalizeTilt(overrides.rotationX),
     rotationY: normalizeTilt(overrides.rotationY),
+    enterAnim: normalizeLayerAnim(overrides.enterAnim, "fade"),
+    exitAnim: normalizeLayerAnim(overrides.exitAnim, "fade"),
     id: overrides.id ?? crypto.randomUUID(),
   }
 }
@@ -1094,6 +1225,9 @@ export function createText(overrides: Partial<TextLayer> = {}): TextLayer {
     flipV: normalizeFlipFlag(overrides.flipV),
     rotationX: normalizeTilt(overrides.rotationX),
     rotationY: normalizeTilt(overrides.rotationY),
+    opacity: normalizeLayerOpacity(overrides.opacity, 1),
+    enterAnim: normalizeLayerAnim(overrides.enterAnim, "fade"),
+    exitAnim: normalizeLayerAnim(overrides.exitAnim, "fade"),
     id: overrides.id ?? crypto.randomUUID(),
   }
 }
@@ -1582,14 +1716,27 @@ export function normalizeProject(project: ProjectInput): Project {
   const slides = project.slides.map((slide) =>
     sanitizeSlideSelection(normalizeSlide(slide as LegacySlide)),
   )
-  const targetId =
+  const rawTargetId =
     project.targetId in STORE_TARGETS
       ? project.targetId
       : ("iphone-69" as const)
+  // Legacy video target → iPhone Preview preset.
+  const targetId =
+    rawTargetId === "video-9x16" ? ("video-iphone" as const) : rawTargetId
   const designTargetId =
     project.designTargetId && project.designTargetId in STORE_TARGETS
-      ? project.designTargetId
+      ? project.designTargetId === "video-9x16"
+        ? ("video-iphone" as const)
+        : project.designTargetId
       : targetId
+  const customWidth = clampVideoCustomSize(
+    project.customWidth,
+    VIDEO_CUSTOM_WIDTH_DEFAULT,
+  )
+  const customHeight = clampVideoCustomSize(
+    project.customHeight,
+    VIDEO_CUSTOM_HEIGHT_DEFAULT,
+  )
   const activeSlideId = slides.some((slide) => slide.id === project.activeSlideId)
     ? project.activeSlideId
     : slides[0].id
@@ -1629,11 +1776,13 @@ export function normalizeProject(project: ProjectInput): Project {
   return {
     ...project,
     projectKind:
-      project.projectKind === "video" || targetId === "video-9x16"
+      project.projectKind === "video" || isVideoStoreTarget(targetId)
         ? ("video" as const)
         : ("screenshots" as const),
     targetId,
     designTargetId,
+    customWidth,
+    customHeight,
     sizeEditMode,
     thumbnailLayout,
     sizeLayouts,
@@ -1706,7 +1855,7 @@ export function createSampleProject(
 }
 
 export function createSampleVideoProject() {
-  const targetId = "video-9x16" as const
+  const targetId = "video-iphone" as const
   const deviceId = "iphone-69" as const
   const first = applyTemplate(
     createSlide({
@@ -1735,7 +1884,19 @@ export function createSampleVideoProject() {
     }),
     "dark-glow",
   )
-  const slides = [first, second, third]
+  const slides = [first, second, third].map((slide, index, all) => {
+    const next = all[index + 1]
+    if (!next) return slide
+    return {
+      ...slide,
+      frames: slide.frames.map((frame, frameIndex) =>
+        createFrame({
+          ...frame,
+          tweenToId: next.frames[frameIndex]?.id ?? null,
+        }),
+      ),
+    }
+  })
   return {
     name: "My App Video",
     projectKind: "video" as const,

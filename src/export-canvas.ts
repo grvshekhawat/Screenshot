@@ -235,16 +235,20 @@ export async function captureArtboardDom(
   artboard: HTMLElement,
   width: number,
   height: number,
+  options?: { prepareAssets?: boolean },
 ): Promise<HTMLCanvasElement> {
+  const prepareAssets = options?.prepareAssets ?? true
   for (const el of [artboard, ...artboard.querySelectorAll("*")]) {
     if (el instanceof HTMLElement) el.style.outline = "none"
   }
 
-  await inlineImages(artboard)
-  await bakeObjectFitImages(artboard)
-  await document.fonts.ready.catch(() => undefined)
-  await new Promise((resolve) => requestAnimationFrame(resolve))
-  await new Promise((resolve) => requestAnimationFrame(resolve))
+  if (prepareAssets) {
+    await inlineImages(artboard)
+    await bakeObjectFitImages(artboard)
+    await document.fonts.ready.catch(() => undefined)
+    await new Promise((resolve) => requestAnimationFrame(resolve))
+    await new Promise((resolve) => requestAnimationFrame(resolve))
+  }
 
   const cssText = await editorFontCssText()
   let injected: HTMLStyleElement | null = null

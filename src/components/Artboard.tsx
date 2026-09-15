@@ -553,6 +553,7 @@ function PlacedText({
             )}${layerFlipCss(text.flipH, text.flipV)}`,
         textAlign: text.align,
         color: text.color,
+        opacity: text.opacity ?? 1,
         fontFamily: cssFontFamily(text.font),
         fontSize,
         fontWeight: text.weight,

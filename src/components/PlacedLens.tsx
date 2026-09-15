@@ -109,6 +109,7 @@ export function PlacedLens({
         )}${layerFlipCss(lens.flipH, lens.flipV)}`,
         transformOrigin: "center center",
         transformStyle: "flat",
+        opacity: lens.opacity ?? 1,
         zIndex,
         cursor: interactive ? "grab" : "default",
         touchAction: interactive ? "none" : undefined,

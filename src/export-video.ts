@@ -8,22 +8,25 @@ import {
   canEncodeVideo,
   getFirstEncodableVideoCodec,
 } from "mediabunny"
+import { VIDEO_FPS, getProjectTarget } from "./constants"
 import {
-  STORE_TARGETS,
-  VIDEO_DURATION_DEFAULT,
-  clampVideoDurationSec,
-} from "./constants"
-import { captureSlideToCanvas } from "./export-slide"
+  captureSlideInSession,
+  createOffscreenCaptureSession,
+  destroyOffscreenCaptureSession,
+} from "./export-slide"
 import { projectKindOf } from "./orientation"
 import type { Project } from "./types"
+import { slideAtVideoTime, videoFrameTimes } from "./video-tween"
 
 export function canExportVideoInBrowser(): boolean {
   return typeof VideoEncoder !== "undefined" && typeof VideoFrame !== "undefined"
 }
 
+const FRAME_DURATION = 1 / VIDEO_FPS
+
 /**
- * Render each slide once, then encode an MP4 where each slide holds for
- * `durationSec` (hard cuts). Requires WebCodecs H.264 (Chrome/Edge/Firefox).
+ * Interpolate matching phones (position, scale, rotation / tilt) between
+ * slides, capture each 30fps pose, encode H.264 MP4.
  */
 export async function downloadProjectVideo(
   project: Project,
@@ -39,7 +42,7 @@ export async function downloadProjectVideo(
     )
   }
 
-  const target = STORE_TARGETS[project.targetId] ?? STORE_TARGETS["video-9x16"]
+  const target = getProjectTarget(project)
   const width = target.width
   const height = target.height
   const slides = project.slides
@@ -71,33 +74,34 @@ export async function downloadProjectVideo(
   output.addVideoTrack(videoSource)
   await output.start()
 
-  let timestamp = 0
-  for (const [index, slide] of slides.entries()) {
-    onProgress?.(
-      `Rendering slide ${index + 1}/${slides.length}…`,
-    )
-    const captured = await captureSlideToCanvas(
-      slide,
-      index,
-      slides,
-      width,
-      height,
-      assetUrls,
-      true,
-      100,
-    )
-    ctx.fillStyle = "#000000"
-    ctx.fillRect(0, 0, width, height)
-    ctx.drawImage(captured, 0, 0, width, height)
-
-    const duration = clampVideoDurationSec(
-      slide.durationSec ?? VIDEO_DURATION_DEFAULT,
-    )
-    onProgress?.(
-      `Encoding slide ${index + 1}/${slides.length} (${duration}s)…`,
-    )
-    await videoSource.add(timestamp, duration)
-    timestamp += duration
+  const times = videoFrameTimes(slides)
+  const session = createOffscreenCaptureSession(width, height)
+  try {
+    for (const [index, timeSec] of times.entries()) {
+      if (index === 0 || index % 8 === 0) {
+        onProgress?.(
+          `Rendering frame ${index + 1}/${times.length}…`,
+        )
+      }
+      const pose = slideAtVideoTime(slides, timeSec)
+      const captured = await captureSlideInSession(
+        session,
+        pose,
+        0,
+        [pose],
+        assetUrls,
+        {
+          waitForAssets: index === 0,
+          isolate: true,
+        },
+      )
+      ctx.fillStyle = "#000000"
+      ctx.fillRect(0, 0, width, height)
+      ctx.drawImage(captured, 0, 0, width, height)
+      await videoSource.add(timeSec, FRAME_DURATION)
+    }
+  } finally {
+    destroyOffscreenCaptureSession(session)
   }
 
   onProgress?.("Finalizing MP4…")

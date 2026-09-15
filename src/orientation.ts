@@ -47,7 +47,10 @@ export function storeTargetsForOrientation(
 ): (typeof STORE_TARGETS)[StoreTargetId][] {
   return Object.values(STORE_TARGETS).filter((target) => {
     const isVideo = isVideoStoreTarget(target.id)
-    if (kind === "video") return isVideo
+    if (kind === "video") {
+      // Hide legacy video-9x16 alias from the picker (normalized to video-iphone).
+      return isVideo && target.id !== "video-9x16"
+    }
     return !isVideo && target.orientation === orientation
   })
 }
