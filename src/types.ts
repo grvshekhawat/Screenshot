@@ -4,10 +4,13 @@ export type DeviceId =
   | "ipad-13"
   | "ipad-11"
   | "apple-watch"
+  | "iphone-duo"
+  | "iphone-duo-closed"
   | "iphone-69-land"
   | "pixel-land"
   | "ipad-13-land"
   | "ipad-11-land"
+  | "iphone-duo-land"
 
 export type StoreTargetId =
   | "iphone-69"

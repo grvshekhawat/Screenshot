@@ -45,7 +45,8 @@ Ship order: **Supabase → billing → front-end → verify → announce**.
   - [x] `STRIPE_PRICE_ID`
   - [x] `STRIPE_WEBHOOK_SECRET`
   - [x] `SUPABASE_SERVICE_ROLE_KEY`
-  - [ ] `OPENAI_API_KEY` (for `generate-clipart` + `analyze-store-layout`)
+  - [ ] `OPENAI_API_KEY` (for `generate-clipart`, `generate-media`, `generate-blog`, `analyze-store-layout`)
+  - [ ] `GITHUB_TOKEN` + `GITHUB_REPO` (for `generate-blog` publish to `content/blog/`)
   - [ ] PayPal: `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_PLAN_ID`, `PAYPAL_API_BASE` (live)
 - [ ] Stripe webhook endpoint → `https://<project>.supabase.co/functions/v1/stripe-webhook` (events for Checkout + subscription lifecycle)
 - [ ] Billing Portal enabled in Stripe (for cancel / manage)
@@ -85,6 +86,20 @@ npx supabase functions deploy generate-media
 - **Demos:** prompt + iPhone/iPad aspect → **5** portrait mockups → `library_demo_screens` (admin-only RLS). Editor: Phone → Screen → Admin demos.
 - **Backgrounds:** prompt → 1 image → `library_backgrounds` published for everyone. Editor: Background → Image → Library.
 - Same `OPENAI_API_KEY`; model `gpt-image-1.5`, size `1024x1536`, low quality WebP.
+
+### Admin AI blog (`generate-blog`)
+
+```bash
+supabase secrets set OPENAI_API_KEY=sk-...          # shared
+supabase secrets set GITHUB_TOKEN=ghp_...           # contents:write on the repo
+supabase secrets set GITHUB_REPO=owner/screenshot-studio
+# optional: supabase secrets set GITHUB_BRANCH=main
+npx supabase functions deploy generate-blog
+```
+
+- Admin-only. `/admin` → **Blog** tab → topic (+ optional notes) → preview/edit → **Publish to GitHub** writes `content/blog/{slug}.mdx`.
+- Goes live after the next Vercel deploy (existing SSG blog / sitemap / RSS). Keep slugs stable; use Search Console URL Inspection after deploy.
+- Generate uses `gpt-4o` JSON; publish uses GitHub Contents API. Not available in local demo mode.
 
 ### Admin store import (`import-store-app` + `analyze-store-layout`)
 

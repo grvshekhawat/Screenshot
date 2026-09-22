@@ -196,6 +196,28 @@ export const DEVICES: Record<DeviceId, DeviceSpec> = {
     chrome: "watch",
     color: "#2c2c2e",
   },
+  "iphone-duo": {
+    id: "iphone-duo",
+    name: "iPhone Duo · Open",
+    // Unfolded inner display is landscape: two cover-width panes side by side.
+    aspect: 1.4,
+    bezel: 0.016,
+    outerRadius: 0.08,
+    screenRadius: 0.068,
+    chrome: "island",
+    color: "#1c1c1e",
+  },
+  "iphone-duo-closed": {
+    id: "iphone-duo-closed",
+    name: "iPhone Duo · Closed",
+    // Cover: hinge on the left edge, rounded free edge on the right.
+    aspect: 0.72,
+    bezel: 0.022,
+    outerRadius: 0.15,
+    screenRadius: 0.125,
+    chrome: "island",
+    color: "#1c1c1e",
+  },
   "iphone-69-land": {
     id: "iphone-69-land",
     name: "iPhone 16/17 Pro Max",
@@ -236,6 +258,39 @@ export const DEVICES: Record<DeviceId, DeviceSpec> = {
     chrome: "tablet",
     color: "#3a3a3c",
   },
+  "iphone-duo-land": {
+    id: "iphone-duo-land",
+    name: "iPhone Duo · Open landscape",
+    aspect: 1.4,
+    bezel: 0.016,
+    outerRadius: 0.08,
+    screenRadius: 0.068,
+    chrome: "island",
+    color: "#1c1c1e",
+  },
+}
+
+export function isIphoneDuoId(deviceId: string): boolean {
+  return deviceId.startsWith("iphone-duo")
+}
+
+/** Unfolded open poses (portrait or landscape artboard ids). */
+export function isIphoneDuoOpen(deviceId: string): boolean {
+  return deviceId === "iphone-duo" || deviceId === "iphone-duo-land"
+}
+
+/** Devices shown in Properties for this artboard (Duo closed on both). */
+export function deviceIdsForArtboard(
+  landscapeArtboard: boolean,
+  options?: { video?: boolean },
+): DeviceId[] {
+  const video = options?.video === true
+  return (Object.keys(DEVICES) as DeviceId[]).filter((id) => {
+    if (id === "iphone-duo-closed") return true
+    if (video && (id === "iphone-duo" || id === "iphone-duo-land")) return true
+    if (landscapeArtboard) return id.endsWith("-land")
+    return !id.endsWith("-land")
+  })
 }
 
 export type StoreTarget = {
@@ -711,6 +766,10 @@ export const TEXT_PLACEMENT: Record<TemplateId, "top" | "bottom"> = {
 }
 
 export function resolveDeviceId(deviceId: unknown): DeviceId {
+  // Legacy half/seated poses → closed cover.
+  if (deviceId === "iphone-duo-half" || deviceId === "iphone-duo-seated") {
+    return "iphone-duo-closed"
+  }
   if (typeof deviceId === "string" && deviceId in DEVICES) {
     return deviceId as DeviceId
   }
@@ -724,6 +783,9 @@ export function deviceSpec(deviceId: unknown): DeviceSpec {
 /**
  * Largest frame.scale where the device still fits inside the artboard
  * (width and height). UI Scale 100% maps to this value.
+ *
+ * Open Duo is wider than tall — fit by height (width may overflow) so the
+ * unfolded device reads larger than a portrait phone on the same board.
  */
 export function maxFittingDeviceScale(
   deviceId: DeviceId,
@@ -732,6 +794,14 @@ export function maxFittingDeviceScale(
 ): number {
   const aspect = deviceSpec(deviceId).aspect
   if (!(artboardWidth > 0) || !(artboardHeight > 0) || !(aspect > 0)) return 1
+
+  if (isIphoneDuoOpen(deviceId)) {
+    // ~72% of artboard height at 100% — bigger presence than width-matched phones.
+    const heightFill = 0.72
+    const byHeight = (artboardHeight * heightFill * aspect) / artboardWidth
+    return Math.min(2.35, Math.max(0.35, byHeight))
+  }
+
   const byWidth = 1
   const byHeight = (artboardHeight * aspect) / artboardWidth
   let max = Math.min(byWidth, byHeight)
@@ -744,6 +814,27 @@ export function maxFittingDeviceScale(
     max = Math.min(max, byBandHeight)
   }
   return Math.min(1.15, Math.max(0.15, max))
+}
+
+/** Keep relative Scale % when switching device models (e.g. phone → Duo open). */
+export function scalePreservingFitPercent(
+  fromDeviceId: DeviceId,
+  toDeviceId: DeviceId,
+  currentScale: number,
+  artboardWidth: number,
+  artboardHeight: number,
+): number {
+  if (fromDeviceId === toDeviceId) return currentScale
+  const fromFit = maxFittingDeviceScale(
+    fromDeviceId,
+    artboardWidth,
+    artboardHeight,
+  )
+  const toFit = maxFittingDeviceScale(toDeviceId, artboardWidth, artboardHeight)
+  if (!(fromFit > 0) || !(toFit > 0)) return currentScale
+  const pct = currentScale / fromFit
+  const next = pct * toFit
+  return Math.min(toFit * 1.1, Math.max(toFit * 0.4, next))
 }
 
 export function createFrame(
@@ -789,16 +880,20 @@ export function createFrame(
         : 0
   const resolvedDeviceId = resolveDeviceId(deviceId)
   const defaultColor = deviceSpec(resolvedDeviceId).color
+  const defaultScale = isIphoneDuoOpen(resolvedDeviceId) ? 1.55 : 0.86
   return {
     x: 50,
     y: 62,
-    scale: 0.86,
     rotation: 0,
     rotationX: 0,
     rotationY: 0,
     overflow: "cut",
     ...rest,
     deviceId: resolvedDeviceId,
+    scale:
+      typeof rest.scale === "number" && Number.isFinite(rest.scale)
+        ? rest.scale
+        : defaultScale,
     color: normalizeFrameColor(rest.color, defaultColor),
     thickness: normalizeChassisThickness(rest.thickness),
     screenshotId,

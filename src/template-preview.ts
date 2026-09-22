@@ -3,6 +3,7 @@ import {
   clipartDropShadowCss,
   deviceSpec,
   getProjectTarget,
+  isIphoneDuoId,
   normalizeLayerOrder,
   templateSplit,
 } from "./constants"
@@ -521,8 +522,24 @@ function paintFrame(
     images,
   )
 
-  // Camera cutout: portrait = top edge; landscape phone = left edge (rotated chrome).
-  if (spec.chrome === "island") {
+  // Duo closed cover camera; other Duo poses have no punch cutout.
+  if (frame.deviceId === "iphone-duo-closed") {
+    const hole = deviceW * 0.068
+    ctx.beginPath()
+    ctx.arc(
+      screenX + screenW - hole * 1.55,
+      screenY + hole * 1.55,
+      hole / 2,
+      0,
+      Math.PI * 2,
+    )
+    ctx.fillStyle = "#0b0f14"
+    ctx.fill()
+    ctx.fillStyle = spec.color
+    const hingeW = deviceW * 0.034
+    roundRect(ctx, x, y, hingeW, deviceH, deviceW * 0.01)
+    ctx.fill()
+  } else if (!isIphoneDuoId(frame.deviceId) && spec.chrome === "island") {
     const islandLong = ref * 0.264
     const islandShort = ref * 0.078
     const inset = ref * 0.02

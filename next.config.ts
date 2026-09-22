@@ -16,6 +16,17 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  // Keep a single canonical host (matches siteOrigin / sitemap).
+  async redirects() {
+    return [
+      {
+        source: "/:path*",
+        has: [{ type: "host", value: "www.screenshot.design" }],
+        destination: "https://screenshot.design/:path*",
+        permanent: true,
+      },
+    ]
+  },
 }
 
 export default nextConfig

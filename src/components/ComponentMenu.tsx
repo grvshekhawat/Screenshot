@@ -397,8 +397,8 @@ function IconButton({
         active
           ? "bg-[#e8ff47] text-[#0a0a0c]"
           : danger
-            ? "text-red-400 hover:bg-red-500/15 hover:text-red-300"
-            : "text-zinc-300 hover:bg-zinc-800 hover:text-white"
+            ? "bg-transparent text-red-400 hover:bg-red-500/15 hover:text-red-300"
+            : "bg-transparent text-zinc-300 hover:bg-white/[0.08] hover:text-white"
       }`}
     >
       {children}

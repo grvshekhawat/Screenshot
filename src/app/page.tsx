@@ -13,7 +13,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Screenshot Studio — App Store & Play screenshots",
     description:
-      "Design store-ready screenshots once, export every size. Templates for iPhone, iPad, and Google Play.",
+      "Design store-ready screenshots once, export every size. Templates and frames for iPhone, iPhone Duo, iPad, and Google Play.",
     url: origin,
   },
 }

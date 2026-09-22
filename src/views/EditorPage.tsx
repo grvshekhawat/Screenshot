@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { useAuth } from "../auth/AuthProvider"
 import { Editor } from "../components/Editor"
@@ -10,37 +10,60 @@ function EditorChrome({ promptUploadFirst }: { promptUploadFirst: boolean }) {
   const router = useRouter()
   const { flushSave, saveState, hasUnsavedChanges } = useProject()
   const [leaving, setLeaving] = useState(false)
+  const [leaveOpen, setLeaveOpen] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const pendingPath = useRef<string | null>(null)
 
-  const confirmBeforeLeave = async (): Promise<"stay" | "saved" | "discarded"> => {
-    if (!hasUnsavedChanges()) return "saved"
-    const save = window.confirm(
-      "You have unsaved changes.\n\nOK — Save and leave\nCancel — More options",
-    )
-    if (save) {
-      setLeaving(true)
-      try {
-        await flushSave()
-        return "saved"
-      } catch (err) {
-        console.error(err)
-        window.alert("Could not save. Use Save draft, then try leaving again.")
-        return "stay"
-      } finally {
-        setLeaving(false)
-      }
-    }
-    const discard = window.confirm(
-      "Leave without saving? Your recent changes will be lost.",
-    )
-    return discard ? "discarded" : "stay"
+  const closeLeaveDialog = () => {
+    if (leaving) return
+    setLeaveOpen(false)
+    setSaveError(null)
+    pendingPath.current = null
   }
 
-  const goTo = async (path: string) => {
+  const goTo = (path: string) => {
     if (leaving || saveState === "saving") return
-    const outcome = await confirmBeforeLeave()
-    if (outcome === "stay") return
-    router.push(path)
+    if (!hasUnsavedChanges()) {
+      router.push(path)
+      return
+    }
+    pendingPath.current = path
+    setSaveError(null)
+    setLeaveOpen(true)
   }
+
+  const saveAndLeave = async () => {
+    setLeaving(true)
+    setSaveError(null)
+    try {
+      await flushSave()
+      const path = pendingPath.current
+      setLeaveOpen(false)
+      pendingPath.current = null
+      if (path) router.push(path)
+    } catch (err) {
+      console.error(err)
+      setSaveError("Could not save. Use Save draft, then try leaving again.")
+    } finally {
+      setLeaving(false)
+    }
+  }
+
+  const discardAndLeave = () => {
+    const path = pendingPath.current
+    setLeaveOpen(false)
+    pendingPath.current = null
+    if (path) router.push(path)
+  }
+
+  useEffect(() => {
+    if (!leaveOpen) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeLeaveDialog()
+    }
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [leaveOpen, leaving])
 
   return (
     <div className="flex h-full flex-col">
@@ -48,7 +71,7 @@ function EditorChrome({ promptUploadFirst }: { promptUploadFirst: boolean }) {
         <button
           type="button"
           disabled={leaving || saveState === "saving"}
-          onClick={() => void goTo("/app")}
+          onClick={() => goTo("/app")}
           className="hover:text-white disabled:opacity-50"
         >
           {leaving ? "Saving…" : "← Projects"}
@@ -56,7 +79,7 @@ function EditorChrome({ promptUploadFirst }: { promptUploadFirst: boolean }) {
         <button
           type="button"
           disabled={leaving || saveState === "saving"}
-          onClick={() => void goTo("/pricing")}
+          onClick={() => goTo("/pricing")}
           className="hover:text-white disabled:opacity-50"
         >
           Pricing
@@ -65,6 +88,60 @@ function EditorChrome({ promptUploadFirst }: { promptUploadFirst: boolean }) {
       <div className="min-h-0 flex-1">
         <Editor promptUploadFirst={promptUploadFirst} />
       </div>
+      {leaveOpen ? (
+        <div
+          className="fixed inset-0 z-[500] flex items-center justify-center bg-black/70 p-4"
+          role="presentation"
+          onClick={closeLeaveDialog}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="leave-dialog-title"
+            className="w-full max-w-sm rounded-xl border border-white/10 bg-[#0a0a0e] p-4 shadow-[0_24px_80px_rgba(0,0,0,0.65)]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h2
+              id="leave-dialog-title"
+              className="text-sm font-semibold text-zinc-100"
+            >
+              Unsaved changes
+            </h2>
+            <p className="mt-1.5 text-xs leading-relaxed text-zinc-400">
+              Save before leaving, or discard recent edits.
+            </p>
+            {saveError ? (
+              <p className="mt-2 text-xs text-red-400">{saveError}</p>
+            ) : null}
+            <div className="mt-4 flex flex-col gap-1.5">
+              <button
+                type="button"
+                disabled={leaving}
+                onClick={() => void saveAndLeave()}
+                className="rounded-md bg-[#e8ff47] px-3 py-2 text-xs font-semibold text-[#0a0a0c] hover:bg-[#f1ff7a] disabled:opacity-50"
+              >
+                {leaving ? "Saving…" : "Save and leave"}
+              </button>
+              <button
+                type="button"
+                disabled={leaving}
+                onClick={discardAndLeave}
+                className="rounded-md border border-white/10 bg-[#121218] px-3 py-2 text-xs text-zinc-200 hover:border-white/20 hover:bg-white/[0.06] disabled:opacity-50"
+              >
+                Leave without saving
+              </button>
+              <button
+                type="button"
+                disabled={leaving}
+                onClick={closeLeaveDialog}
+                className="rounded-md px-3 py-2 text-xs text-zinc-500 hover:bg-white/[0.05] hover:text-zinc-200 disabled:opacity-50"
+              >
+                Stay
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

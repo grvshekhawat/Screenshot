@@ -114,7 +114,25 @@ export function DeviceFrame({
   const tilt = { rotationX, rotationY, thickness }
 
   const frame =
-    chromeId === "iphone-69" ? (
+    deviceId === "iphone-duo-closed" ? (
+      <IPhoneDuoClosedFrame
+        width={width}
+        color={finish}
+        dropShadow={dropShadow}
+        {...tilt}
+      >
+        {screen}
+      </IPhoneDuoClosedFrame>
+    ) : deviceId === "iphone-duo" || deviceId === "iphone-duo-land" ? (
+      <IPhoneDuoOpenFrame
+        width={width}
+        color={finish}
+        dropShadow={dropShadow}
+        {...tilt}
+      >
+        {screen}
+      </IPhoneDuoOpenFrame>
+    ) : chromeId === "iphone-69" ? (
       <IPhoneFrame
         width={frameWidth}
         color={finish}
@@ -401,6 +419,384 @@ function IPhoneFrame({
           boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08)",
         }}
       />
+    </div>
+  )
+}
+
+function DuoPunch({
+  size,
+  top,
+  right,
+}: {
+  size: number
+  top: number | string
+  right: number | string
+}) {
+  // Keep ring + lens inside the box so overflow:hidden on the screen
+  // doesn’t clip an outer box-shadow and leave the lens looking off-center.
+  const ring = Math.max(1.2, size * 0.1)
+  const lens = Math.max(4, size - ring * 2)
+  return (
+    <div
+      style={{
+        position: "absolute",
+        top,
+        right,
+        width: size,
+        height: size,
+        borderRadius: "50%",
+        zIndex: 4,
+        pointerEvents: "none",
+        background: "#070708",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      <div
+        style={{
+          width: lens,
+          height: lens,
+          borderRadius: "50%",
+          background:
+            "radial-gradient(circle at 50% 42%, #4a5560 0%, #1c2228 40%, #050506 78%)",
+          boxShadow: "inset 0 1px 1px rgba(255,255,255,0.22)",
+        }}
+      />
+    </div>
+  )
+}
+
+function duoRadii(round: number, sharp: number, hinge: "top" | "left" | "right") {
+  if (hinge === "top") return `${sharp}px ${sharp}px ${round}px ${round}px`
+  if (hinge === "left") return `${sharp}px ${round}px ${round}px ${sharp}px`
+  return `${round}px ${sharp}px ${sharp}px ${round}px`
+}
+
+/**
+ * Physical nub on the outer edge of the Duo cover (not the front bezel).
+ * Rendered outside the chassis `filter` wrapper so the protrusion isn’t clipped.
+ */
+function DuoEdgeButton({
+  side,
+  along,
+  length,
+  color,
+  width,
+}: {
+  side: "top" | "right"
+  along: string
+  length: number
+  color: string
+  width: number
+}) {
+  const protrude = Math.max(2.5, width * 0.012)
+  const thick = Math.max(3.5, width * 0.016)
+  const radius = Math.max(1, thick * 0.35)
+  const hi = tintFrameColor(color, 0.45)
+  const mid = color
+  const lo = shadeFrameColor(color, 0.4)
+
+  return (
+    <div
+      aria-hidden
+      style={{
+        position: "absolute",
+        zIndex: 6,
+        pointerEvents: "none",
+        borderRadius: radius,
+        background:
+          side === "right"
+            ? `linear-gradient(90deg, ${lo} 0%, ${mid} 55%, ${hi} 100%)`
+            : `linear-gradient(180deg, ${hi} 0%, ${mid} 55%, ${lo} 100%)`,
+        boxShadow:
+          "inset 0 0 0 1px rgba(0,0,0,0.4), 0 0 2px rgba(0,0,0,0.35)",
+        ...(side === "right"
+          ? {
+              top: along,
+              right: -protrude,
+              width: protrude + thick * 0.35,
+              height: length,
+            }
+          : {
+              left: along,
+              top: -protrude,
+              width: length,
+              height: protrude + thick * 0.35,
+            }),
+      }}
+    />
+  )
+}
+
+function IPhoneDuoClosedFrame({
+  width,
+  color,
+  dropShadow,
+  rotationX = 0,
+  rotationY = 0,
+  thickness,
+  children,
+}: {
+  width: number
+  color: string
+  dropShadow?: string
+  rotationX?: number
+  rotationY?: number
+  thickness?: number
+  children: ReactNode
+}) {
+  // Cover: hinge on the LEFT (sharp), free edge on the RIGHT (rounded).
+  const hingeW = width * 0.038
+  const shell = width * 0.006
+  const bezel = width * 0.022
+  const round = width * 0.15
+  const sharp = width * 0.01
+  const bodyR = duoRadii(round, sharp, "left")
+  const blackR = duoRadii(width * 0.138, width * 0.008, "left")
+  const screenR = duoRadii(width * 0.125, width * 0.006, "left")
+  const punch = width * 0.068
+  const chrome = deviceChromeStyles(color, width, "island")
+  const depth = chassisDepth(width, "island", thickness)
+
+  return (
+    <div
+      style={{
+        position: "relative",
+        width: "100%",
+        height: "100%",
+      }}
+    >
+      {/* Shadow on an inner wrapper so edge buttons are not clipped by `filter`. */}
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          filter: dropShadow,
+        }}
+      >
+        <ChassisDepth
+          color={color}
+          depth={depth}
+          borderRadius={bodyR}
+          rotationX={rotationX}
+          rotationY={rotationY}
+        />
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            zIndex: 1,
+            borderRadius: bodyR,
+            background: chrome.bodyBackground,
+            boxShadow: chrome.bodyBoxShadow,
+          }}
+        />
+        <FrameEdgeShading
+          rotationX={rotationX}
+          rotationY={rotationY}
+          color={color}
+          borderRadius={bodyR}
+          width={width}
+        />
+        {/* Vertical hinge barrel on the left edge. */}
+        <div
+          style={{
+            position: "absolute",
+            top: 0,
+            bottom: 0,
+            left: 0,
+            width: hingeW,
+            zIndex: 2,
+            borderRadius: `${sharp}px 0 0 ${sharp}px`,
+            background: `linear-gradient(90deg, ${tintFrameColor(color, 0.08)}, ${shadeFrameColor(color, 0.42)})`,
+            boxShadow: "inset 1px 0 0 rgba(255,255,255,0.12)",
+            pointerEvents: "none",
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            top: "5%",
+            bottom: "5%",
+            left: hingeW * 0.45,
+            width: 1,
+            zIndex: 3,
+            background: "rgba(0,0,0,0.4)",
+            pointerEvents: "none",
+          }}
+        />
+        {/* Black glass bezel — stays black regardless of chassis finish. */}
+        <div
+          style={{
+            position: "absolute",
+            top: shell,
+            right: shell,
+            bottom: shell,
+            left: hingeW + shell * 0.4,
+            zIndex: 1,
+            borderRadius: blackR,
+            background: "#050506",
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            top: bezel,
+            right: bezel,
+            bottom: bezel,
+            left: hingeW + bezel * 0.35,
+            zIndex: 1,
+            overflow: "hidden",
+            borderRadius: screenR,
+            background: "#000",
+            boxShadow:
+              "inset 0 0 0 1px rgba(255,255,255,0.05), 0 0 0 1px rgba(0,0,0,0.55)",
+          }}
+        >
+          {children}
+          <DuoPunch size={punch} top="3.8%" right="6.5%" />
+        </div>
+      </div>
+      {/* Physical edge nubs — outside the filter wrapper so they can protrude. */}
+      <DuoEdgeButton
+        side="top"
+        along="62%"
+        length={Math.max(11, width * 0.05)}
+        color={color}
+        width={width}
+      />
+      <DuoEdgeButton
+        side="top"
+        along="73%"
+        length={Math.max(11, width * 0.05)}
+        color={color}
+        width={width}
+      />
+      <DuoEdgeButton
+        side="right"
+        along="24%"
+        length={Math.max(28, width * 0.16)}
+        color={color}
+        width={width}
+      />
+    </div>
+  )
+}
+
+function IPhoneDuoOpenFrame({
+  width,
+  color,
+  dropShadow,
+  rotationX = 0,
+  rotationY = 0,
+  thickness,
+  children,
+}: {
+  width: number
+  color: string
+  dropShadow?: string
+  rotationX?: number
+  rotationY?: number
+  thickness?: number
+  children: ReactNode
+}) {
+  const paneW = width * 0.5
+  const shell = paneW * 0.008
+  const bezel = paneW * 0.038
+  const round = paneW * 0.16
+  const buttonT = Math.max(2.5, paneW * 0.016)
+  const chrome = deviceChromeStyles(color, paneW, "island")
+  const depth = chassisDepth(paneW, "island", thickness)
+  const bodyR = `${round}px`
+  const blackR = `${round * 0.9}px`
+  const screenR = `${round * 0.82}px`
+
+  return (
+    <div
+      style={{
+        position: "relative",
+        width: "100%",
+        height: "100%",
+        filter: dropShadow,
+      }}
+    >
+      <ChassisDepth
+        color={color}
+        depth={depth}
+        borderRadius={bodyR}
+        rotationX={rotationX}
+        rotationY={rotationY}
+      />
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          zIndex: 1,
+          borderRadius: bodyR,
+          background: chrome.bodyBackground,
+          boxShadow: chrome.bodyBoxShadow,
+        }}
+      />
+      <SideButton
+        side="right"
+        top="14%"
+        length={paneW * 0.055}
+        thickness={buttonT}
+        color={color}
+        width={width}
+        depth={depth}
+        rotationX={rotationX}
+        rotationY={rotationY}
+      />
+      <SideButton
+        side="right"
+        top="21%"
+        length={paneW * 0.095}
+        thickness={buttonT}
+        color={color}
+        width={width}
+        depth={depth}
+        rotationX={rotationX}
+        rotationY={rotationY}
+      />
+      <FrameEdgeShading
+        rotationX={rotationX}
+        rotationY={rotationY}
+        color={color}
+        borderRadius={bodyR}
+        width={width}
+      />
+      {/* Black glass bezel — stays black regardless of chassis finish. */}
+      <div
+        style={{
+          position: "absolute",
+          top: shell,
+          right: shell,
+          bottom: shell,
+          left: shell,
+          zIndex: 1,
+          borderRadius: blackR,
+          background: "#050506",
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          top: bezel,
+          right: bezel,
+          bottom: bezel,
+          left: bezel,
+          zIndex: 1,
+          overflow: "hidden",
+          background: "#000",
+          boxShadow:
+            "inset 0 0 0 1px rgba(255,255,255,0.05), 0 0 0 1px rgba(0,0,0,0.55)",
+          borderRadius: screenR,
+        }}
+      >
+        {children}
+      </div>
     </div>
   )
 }
@@ -965,7 +1361,7 @@ function ChassisDepth({
 }: {
   color: string
   depth: number
-  borderRadius: number
+  borderRadius: number | string
   rotationX: number
   rotationY: number
 }) {
@@ -1012,7 +1408,7 @@ function FrameEdgeShading({
   rotationX: number
   rotationY: number
   color: string
-  borderRadius: number
+  borderRadius: number | string
   width: number
 }) {
   const absX = Math.abs(rotationX)
@@ -1060,6 +1456,8 @@ function SideButton({
   depth,
   rotationX = 0,
   rotationY = 0,
+  /** 0 = front half of the edge thickness, 1 = back half. */
+  depthBias = 0.25,
 }: {
   side: "left" | "right" | "top" | "bottom"
   /** Offset along the long axis (top% for left/right, left% for top/bottom). */
@@ -1071,6 +1469,7 @@ function SideButton({
   depth: number
   rotationX?: number
   rotationY?: number
+  depthBias?: number
 }) {
   const facingAway =
     (side === "left" && rotationY < -4) ||
@@ -1080,16 +1479,19 @@ function SideButton({
   if (facingAway) return null
 
   const vertical = side === "top" || side === "bottom"
+  const bias = Math.min(1, Math.max(0, depthBias))
   // Only a sliver stands proud of the chassis; the rest hides under the body.
-  const protrude = Math.max(1, thickness * 0.3)
-  const buried = Math.max(2, thickness * 0.9)
+  const protrude = Math.max(2, thickness * 0.45)
+  const buried = Math.max(2, thickness * 0.85)
   const across = protrude + buried
+  // Slide along the edge thickness: 0 = flush to the outer lip, 1 = back half.
+  const recess = bias * (protrude + buried * 0.5)
   const radius = Math.max(1, width * 0.0035)
 
   const offset = chassisDepthOffset(rotationX, rotationY, depth)
   // Button sits inside the thickness, not flush with either face.
-  const near = 0.24
-  const far = 0.72
+  const near = 0.15 + bias * 0.55
+  const far = Math.min(0.92, near + 0.32)
   const steps = offset ? 8 : 0
   // Follow the wall's taper inward so the nub never overhangs its edge.
   const inward = side === "left" || side === "top" ? 1 : -1
@@ -1114,15 +1516,16 @@ function SideButton({
     ? "inset 1px 0 1.5px rgba(0,0,0,0.35), inset -1px 0 1.5px rgba(0,0,0,0.35)"
     : "inset 0 1px 1.5px rgba(0,0,0,0.35), inset 0 -1px 1.5px rgba(0,0,0,0.35)"
 
+  const edgeOffset = -protrude + recess
   const box = vertical
     ? {
-        [side]: -protrude,
+        [side]: edgeOffset,
         left: top,
         width: length,
         height: across,
       }
     : {
-        [side]: -protrude,
+        [side]: edgeOffset,
         top,
         width: across,
         height: length,
@@ -1134,7 +1537,7 @@ function SideButton({
       aria-hidden
       style={{
         position: "absolute",
-        zIndex: 0,
+        zIndex: 4,
         pointerEvents: "none",
         ...box,
         borderRadius: radius,

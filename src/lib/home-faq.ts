@@ -21,6 +21,11 @@ export const HOME_FAQS = [
       "Portrait and landscape projects cover matching iPhone, iPad, and Google Play phone sizes. Orientation is chosen when you create the project and cannot be switched later.",
   },
   {
+    question: "Which device frames are included?",
+    answer:
+      "iPhone, iPhone Duo (open and closed poses), Pixel, iPad, and Apple Watch. Pick a frame in Properties → Device and swap screenshots without leaving the artboard. For foldable listing tips, see our iPhone Duo & ASO guide on the blog.",
+  },
+  {
     question: "Can I design without Figma?",
     answer:
       "Yes. Start from a template, drop in your app screens, edit text and frames in the browser, then export. No separate design tool required.",

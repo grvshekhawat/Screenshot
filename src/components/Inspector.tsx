@@ -36,6 +36,8 @@ import {
   getProjectTarget,
   VIDEO_CUSTOM_WIDTH_DEFAULT,
   VIDEO_CUSTOM_HEIGHT_DEFAULT,
+  deviceIdsForArtboard,
+  scalePreservingFitPercent,
 } from "../constants"
 import {
   MAX_CHASSIS_THICKNESS,
@@ -1028,7 +1030,7 @@ function VideoTimelinePanel({
           onChange={(event) =>
             setTarget(event.target.value as StoreTargetId)
           }
-          className="w-full rounded-lg border border-white/10 bg-[#0a0a0e] px-2.5 py-2 text-sm text-white outline-none"
+          className="w-full rounded-lg border border-white/10 bg-[#0a0a0e] px-2.5 py-2 text-sm text-white outline-none [color-scheme:dark]"
         >
           {storeTargetsForOrientation("portrait", "video").map((item) => (
             <option key={item.id} value={item.id}>
@@ -1427,10 +1429,11 @@ function PhoneProperties({
   copyComponentToSlide: ReturnType<typeof useProject>["copyComponentToSlide"]
   setFrameOverflow: ReturnType<typeof useProject>["setFrameOverflow"]
 }) {
-  // Same named models; landscape artboards use rotated *-land chrome.
-  const deviceOptions = (Object.keys(DEVICES) as DeviceId[]).filter((id) =>
-    landscapeArtboard ? id.endsWith("-land") : !id.endsWith("-land"),
-  )
+  const { applyDemoScreenshot, applyProjectScreenshot, assetUrls, project } =
+    useProject()
+  const deviceOptions = deviceIdsForArtboard(landscapeArtboard, {
+    video: projectKindOf(project) === "video",
+  })
   const isSplit = frame.screenMode === "split"
   // 100% = largest size that still fits on the artboard (no overflow crop).
   const fitScale = maxFittingDeviceScale(
@@ -1439,8 +1442,6 @@ function PhoneProperties({
     artboardHeight,
   )
   const scalePercent = Math.round((frame.scale / fitScale) * 100)
-  const { applyDemoScreenshot, applyProjectScreenshot, assetUrls, project } =
-    useProject()
   const { isAdmin } = useAuth()
   const libraryIds = screenshotLibraryIdsForUi(project)
   const slideIndex = projectSlides.findIndex((item) => item.id === slide.id)
@@ -1547,7 +1548,9 @@ function PhoneProperties({
                 Side A
               </p>
               <ScreenshotDropZone
-                label={frame.screenshotId ? "Replace side A" : "Add side A"}
+                label={
+                  frame.screenshotId ? "Replace side A" : "Add side A"
+                }
                 className="py-2.5"
                 onClick={() => onUploadClick(frame.id, slide.id, "a")}
                 onDropFiles={(files) =>
@@ -1581,7 +1584,9 @@ function PhoneProperties({
                 Side B
               </p>
               <ScreenshotDropZone
-                label={frame.screenshotIdB ? "Replace side B" : "Add side B"}
+                label={
+                  frame.screenshotIdB ? "Replace side B" : "Add side B"
+                }
                 className="py-2.5"
                 onClick={() => onUploadClick(frame.id, slide.id, "b")}
                 onDropFiles={(files) =>
@@ -1620,7 +1625,16 @@ function PhoneProperties({
                 key={id}
                 type="button"
                 onClick={() =>
-                  updateFrame(slide.id, frame.id, { deviceId: id })
+                  updateFrame(slide.id, frame.id, {
+                    deviceId: id,
+                    scale: scalePreservingFitPercent(
+                      frame.deviceId,
+                      id,
+                      frame.scale,
+                      artboardWidth,
+                      artboardHeight,
+                    ),
+                  })
                 }
                 className={`rounded-lg px-3 py-2 text-left text-sm ${
                   frame.deviceId === id
@@ -3988,9 +4002,9 @@ function MultiSelectionProperties({
   const showUngroup = canUngroupSelection(activeSlide, selectedIds)
   const target = getProjectTarget(project)
   const landscapeArtboard = target.orientation === "landscape"
-  const deviceOptions = (Object.keys(DEVICES) as DeviceId[]).filter((id) =>
-    landscapeArtboard ? id.endsWith("-land") : !id.endsWith("-land"),
-  )
+  const deviceOptions = deviceIdsForArtboard(landscapeArtboard, {
+    video: projectKindOf(project) === "video",
+  })
 
   const framePrimary =
     uniform === "frame" && primary && "scale" in primary
@@ -4105,7 +4119,22 @@ function MultiSelectionProperties({
                 <button
                   key={id}
                   type="button"
-                  onClick={() => patchSelectionCommon({ deviceId: id })}
+                  onClick={() => {
+                    if (!framePrimary) {
+                      patchSelectionCommon({ deviceId: id })
+                      return
+                    }
+                    patchSelectionCommon({
+                      deviceId: id,
+                      scale: scalePreservingFitPercent(
+                        framePrimary.deviceId,
+                        id,
+                        framePrimary.scale,
+                        target.width,
+                        target.height,
+                      ),
+                    })
+                  }}
                   className={`rounded-md px-2 py-1.5 text-left text-xs ${
                     framePrimary.deviceId === id
                       ? "bg-[#e8ff47] text-[#0a0a0c]"

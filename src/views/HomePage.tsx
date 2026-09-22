@@ -51,7 +51,7 @@ const STEPS = [
   {
     n: "02",
     title: "Drop in your screens",
-    body: "Frame devices, write headlines, add clipart and lenses. Edit everything on one artboard.",
+    body: "Frame iPhone, Duo, Pixel, iPad, and Watch, write headlines, add clipart and lenses. Edit everything on one artboard.",
   },
   {
     n: "03",
@@ -149,8 +149,9 @@ export function HomePage() {
             App Store screenshots that look shipped—not drafted
           </h1>
           <p className="ss-fade-up ss-fade-up-delay-2 mx-auto mt-5 max-w-xl text-center text-[15px] leading-relaxed text-zinc-400 sm:text-base">
-            Design once for iPhone, iPad, and Google Play. Templates, device
-            frames, and multi-size exports—built for listings that convert.
+            Design once for iPhone, iPhone Duo, iPad, and Google Play. Templates,
+            device frames, and multi-size exports—built for listings that
+            convert.
           </p>
           <div className="ss-fade-up ss-fade-up-delay-3 mt-8 flex flex-wrap items-center justify-center gap-3">
             <Link
@@ -342,8 +343,15 @@ export function HomePage() {
               Store screenshot guides
             </h2>
             <p className="mt-3 text-[15px] leading-relaxed text-zinc-400">
-              Size charts, iPhone class differences, and export tips—written for
-              App Store and Play listings.
+              Size charts, iPhone Duo and ASO tips, and export guides—written for
+              App Store and Play listings. Start with{" "}
+              <Link
+                href="/blog/iphone-duo-aso-screenshots"
+                className="text-zinc-200 underline decoration-white/20 underline-offset-4 hover:decoration-white/50"
+              >
+                iPhone Duo screenshots &amp; ASO
+              </Link>
+              .
             </p>
           </div>
           <Link

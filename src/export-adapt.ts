@@ -1,4 +1,4 @@
-import { DEVICES, STORE_TARGETS, deviceSpec, CLIPART_WIDTH_MIN, CLIPART_WIDTH_MAX } from "./constants"
+import { DEVICES, STORE_TARGETS, deviceSpec, CLIPART_WIDTH_MIN, CLIPART_WIDTH_MAX, isIphoneDuoId } from "./constants"
 import type {
   ClipartLayer,
   DeviceId,
@@ -10,12 +10,18 @@ import type {
   TextLayer,
 } from "./types"
 
-/** Native chrome for each store size. */
+/** Native chrome for each store size. Duo poses stay Duo when adapting sizes. */
 export function deviceForExportTarget(
-  _sourceDeviceId: DeviceId,
+  sourceDeviceId: DeviceId,
   _fromTargetId: StoreTargetId,
   toTargetId: StoreTargetId,
 ): DeviceId {
+  if (isIphoneDuoId(sourceDeviceId) && toTargetId !== "apple-watch") {
+    const land = isLandscapeStoreTarget(toTargetId)
+    if (sourceDeviceId === "iphone-duo" && land) return "iphone-duo-land"
+    if (sourceDeviceId === "iphone-duo-land" && !land) return "iphone-duo"
+    return sourceDeviceId
+  }
   if (toTargetId === "video-9x16" || toTargetId === "video-iphone")
     return "iphone-69"
   if (toTargetId === "video-ipad") return "ipad-13"

@@ -28,11 +28,17 @@ import {
   generateMediaPreview,
   type DemoAspect,
 } from "../api/generate-media"
+import {
+  generateBlogPreview,
+  publishBlogPost,
+  type BlogDraft,
+} from "../api/generate-blog"
 import { analyzeStoreLayout } from "../api/analyze-store-layout"
 import { importStoreApp } from "../api/import-store-app"
 import { buildProjectFromStoreAnalysis } from "../import-store-project"
 import { useAuth } from "../auth/AuthProvider"
 import { createSampleProject } from "../constants"
+import { appOrigin } from "../config"
 import { IMAGE_ACCEPT, isImageFile, normalizeImageFile } from "../image-upload"
 import { renderTemplatePreviewDataUrl } from "../template-preview"
 import type {
@@ -44,7 +50,7 @@ import type {
 } from "../types/cloud"
 import { TemplateThumbnail } from "../components/TemplateThumbnail"
 
-type AdminTab = "templates" | "clipart" | "demos" | "backgrounds"
+type AdminTab = "templates" | "clipart" | "demos" | "backgrounds" | "blog"
 
 export function AdminPage() {
   const { ready, userId, isAdmin, usingLocalBackend } = useAuth()
@@ -76,6 +82,11 @@ export function AdminPage() {
   const [bgPreviewBase64, setBgPreviewBase64] = useState<string | null>(null)
   const [bgPreviewMime, setBgPreviewMime] = useState("image/webp")
   const [bgBusy, setBgBusy] = useState(false)
+  const [blogTopic, setBlogTopic] = useState("")
+  const [blogNotes, setBlogNotes] = useState("")
+  const [blogDraft, setBlogDraft] = useState<BlogDraft | null>(null)
+  const [blogOverwrite, setBlogOverwrite] = useState(false)
+  const [blogBusy, setBlogBusy] = useState(false)
   const [storeQuery, setStoreQuery] = useState("")
   const [storeBusy, setStoreBusy] = useState(false)
   const [storeImport, setStoreImport] = useState<{
@@ -460,6 +471,47 @@ export function AdminPage() {
     }
   }
 
+  const onGenerateBlog = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setError(null)
+    setMessage(null)
+    setBlogBusy(true)
+    try {
+      const draft = await generateBlogPreview({
+        topic: blogTopic,
+        notes: blogNotes,
+      })
+      setBlogDraft(draft)
+      setMessage("Draft ready — edit if needed, then Publish to GitHub.")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Blog generation failed")
+    } finally {
+      setBlogBusy(false)
+    }
+  }
+
+  const onPublishBlog = async () => {
+    if (!blogDraft) return
+    setError(null)
+    setMessage(null)
+    setBusy(true)
+    try {
+      const result = await publishBlogPost({
+        ...blogDraft,
+        overwrite: blogOverwrite,
+      })
+      const origin = appOrigin() || "https://screenshot.design"
+      const liveUrl = `${origin}/blog/${result.slug}`
+      setMessage(
+        `Committed ${result.path}${result.commitSha ? ` (${result.commitSha.slice(0, 7)})` : ""}. Live after Vercel deploy: ${liveUrl}. Use Search Console URL Inspection when the deploy finishes.`,
+      )
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Blog publish failed")
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const switchTab = (next: AdminTab) => {
     setTab(next)
     setError(null)
@@ -490,6 +542,7 @@ export function AdminPage() {
                 { id: "clipart", label: "Clipart" },
                 { id: "demos", label: "Demos" },
                 { id: "backgrounds", label: "Backgrounds" },
+                { id: "blog", label: "Blog" },
               ] as const
             ).map((item) => {
               const active = tab === item.id
@@ -1148,6 +1201,178 @@ export function AdminPage() {
                 </p>
               ) : null}
             </div>
+          </section>
+        ) : null}
+
+        {tab === "blog" ? (
+          <section
+            role="tabpanel"
+            aria-labelledby="admin-tab-blog"
+            className="space-y-4"
+          >
+            <p className="text-sm text-zinc-400">
+              Generate an SEO blog post from a topic, edit the draft, then
+              publish MDX to{" "}
+              <code className="text-zinc-300">content/blog/</code> on GitHub.
+              The post goes live after the next Vercel deploy (sitemap + RSS
+              pick it up automatically).
+            </p>
+            <form
+              onSubmit={(e) => void onGenerateBlog(e)}
+              className="space-y-3 rounded-lg border border-white/[0.08] bg-white/[0.02] p-4"
+            >
+              <h2 className="text-sm font-semibold text-zinc-200">
+                Generate blog post (AI)
+              </h2>
+              {usingLocalBackend ? (
+                <p className="text-xs text-amber-200/90">
+                  Requires Supabase +{" "}
+                  <code className="text-amber-100">generate-blog</code> Edge
+                  Function, plus{" "}
+                  <code className="text-amber-100">GITHUB_TOKEN</code> /{" "}
+                  <code className="text-amber-100">GITHUB_REPO</code> secrets to
+                  publish.
+                </p>
+              ) : null}
+              <label className="block text-xs text-zinc-400">
+                Topic
+                <input
+                  value={blogTopic}
+                  onChange={(e) => setBlogTopic(e.target.value)}
+                  required
+                  maxLength={300}
+                  placeholder="App Store screenshot sizes for iPhone 6.9 inch"
+                  disabled={usingLocalBackend || blogBusy}
+                  className="mt-1 block w-full rounded border border-white/10 bg-[#0a0a0e] px-2 py-2 text-sm text-white disabled:opacity-50"
+                />
+              </label>
+              <label className="block text-xs text-zinc-400">
+                Notes (optional)
+                <textarea
+                  value={blogNotes}
+                  onChange={(e) => setBlogNotes(e.target.value)}
+                  maxLength={800}
+                  rows={3}
+                  placeholder="Emphasize ZIP export; link Duo post if relevant"
+                  disabled={usingLocalBackend || blogBusy}
+                  className="mt-1 block w-full rounded border border-white/10 bg-[#0a0a0e] px-2 py-2 text-sm text-white disabled:opacity-50"
+                />
+              </label>
+              <button
+                type="submit"
+                disabled={usingLocalBackend || blogBusy || !blogTopic.trim()}
+                className="rounded-md bg-[#e8ff47] px-3 py-2 text-xs font-semibold text-[#0a0a0c] hover:bg-[#f0ff7a] disabled:opacity-50"
+              >
+                {blogBusy ? "Generating…" : "Generate"}
+              </button>
+            </form>
+
+            {blogDraft ? (
+              <div className="space-y-3 rounded-lg border border-white/[0.08] bg-white/[0.02] p-4">
+                <h2 className="text-sm font-semibold text-zinc-200">
+                  Preview &amp; edit
+                </h2>
+                <label className="block text-xs text-zinc-400">
+                  Title
+                  <input
+                    value={blogDraft.title}
+                    onChange={(e) =>
+                      setBlogDraft({ ...blogDraft, title: e.target.value })
+                    }
+                    className="mt-1 block w-full rounded border border-white/10 bg-[#0a0a0e] px-2 py-1.5 text-sm text-white"
+                  />
+                </label>
+                <label className="block text-xs text-zinc-400">
+                  Description
+                  <textarea
+                    value={blogDraft.description}
+                    onChange={(e) =>
+                      setBlogDraft({
+                        ...blogDraft,
+                        description: e.target.value,
+                      })
+                    }
+                    rows={2}
+                    maxLength={200}
+                    className="mt-1 block w-full rounded border border-white/10 bg-[#0a0a0e] px-2 py-1.5 text-sm text-white"
+                  />
+                </label>
+                <div className="flex flex-wrap gap-3">
+                  <label className="text-xs text-zinc-400">
+                    Slug
+                    <input
+                      value={blogDraft.slug}
+                      onChange={(e) =>
+                        setBlogDraft({ ...blogDraft, slug: e.target.value })
+                      }
+                      className="mt-1 block min-w-[16rem] rounded border border-white/10 bg-[#0a0a0e] px-2 py-1.5 text-sm text-white"
+                    />
+                  </label>
+                  <label className="text-xs text-zinc-400">
+                    Date
+                    <input
+                      type="date"
+                      value={blogDraft.date}
+                      onChange={(e) =>
+                        setBlogDraft({ ...blogDraft, date: e.target.value })
+                      }
+                      className="mt-1 block rounded border border-white/10 bg-[#0a0a0e] px-2 py-1.5 text-sm text-white"
+                    />
+                  </label>
+                </div>
+                <label className="block text-xs text-zinc-400">
+                  Body (Markdown)
+                  <textarea
+                    value={blogDraft.body}
+                    onChange={(e) =>
+                      setBlogDraft({ ...blogDraft, body: e.target.value })
+                    }
+                    rows={16}
+                    className="mt-1 block w-full rounded border border-white/10 bg-[#0a0a0e] px-2 py-2 font-mono text-xs leading-relaxed text-zinc-200"
+                  />
+                </label>
+                <label className="flex cursor-pointer items-center gap-2 text-xs text-zinc-400">
+                  <input
+                    type="checkbox"
+                    checked={blogOverwrite}
+                    onChange={(e) => setBlogOverwrite(e.target.checked)}
+                    className="rounded border-white/20"
+                  />
+                  Overwrite if{" "}
+                  <code className="text-zinc-300">
+                    content/blog/{blogDraft.slug || "slug"}.mdx
+                  </code>{" "}
+                  already exists
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={
+                      busy ||
+                      blogBusy ||
+                      !blogDraft.title.trim() ||
+                      !blogDraft.slug.trim() ||
+                      !blogDraft.body.trim()
+                    }
+                    onClick={() => void onPublishBlog()}
+                    className="rounded-md border border-white/15 px-3 py-2 text-xs font-semibold text-zinc-100 hover:bg-white/[0.06] disabled:opacity-50"
+                  >
+                    {busy ? "Publishing…" : "Publish to GitHub"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={blogBusy || busy}
+                    onClick={() => {
+                      setBlogDraft(null)
+                      setBlogOverwrite(false)
+                    }}
+                    className="rounded-md px-3 py-2 text-xs text-zinc-400 hover:text-white"
+                  >
+                    Discard
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </section>
         ) : null}
       </main>

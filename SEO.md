@@ -11,8 +11,9 @@ Improve search visibility mainly by **publishing content** and **tightening meta
 - **Optional:** `image` (absolute or site path) for OG / BlogPosting.
 - **Structure:** short intro → concrete sizes/steps → how Screenshot Studio helps → CTA to `/templates` or `/login`.
 - New files are picked up automatically by [`src/app/sitemap.ts`](src/app/sitemap.ts) and `/blog/rss.xml`.
+- **Admin AI:** `/admin` → Blog tab can generate a draft and commit MDX to GitHub. **Keep slugs stable** after first publish (overwrite only when intentionally replacing). After Vercel deploys, use Search Console URL Inspection on the new `/blog/{slug}`.
 
-**Topic ideas (rotate):** App Store sizes updates · iPhone 6.9 vs 6.5 · Play feature graphic vs screenshots · screenshots without Figma · multi-size ZIP export · portrait vs landscape sets.
+**Topic ideas (rotate):** App Store sizes updates · iPhone 6.9 vs 6.5 · Play feature graphic vs screenshots · screenshots without Figma · multi-size ZIP export · portrait vs landscape sets · **iPhone Duo + ASO** (`iphone-duo-aso-screenshots`).
 
 ### Templates (Admin publish)
 
@@ -34,6 +35,7 @@ One-time (also mirrored in `GO_LIVE.md` §G):
 **Monthly:**
 
 - Coverage / indexing issues → fix broken redirects or noindex mistakes (never index `/app`, `/login`, `/admin`).
+- **"Page with redirect"** in Search Console is usually intentional: Google lists the *source* URL (e.g. `http://…`, trailing slash, or `www` → apex) and indexes the destination instead. Only fix if an important URL redirects when it should be a 200.
 - Top queries → rewrite 2–3 underperforming titles/descriptions in MDX frontmatter or template metadata only.
 - Track 2–3 target queries manually until product analytics is added.
 

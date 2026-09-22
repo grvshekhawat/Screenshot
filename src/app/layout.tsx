@@ -1,9 +1,14 @@
-import type { Metadata } from "next"
+import type { Metadata, Viewport } from "next"
 import { Providers } from "@/components/Providers"
 import { siteOrigin } from "@/config"
 import "./globals.css"
 
 const origin = siteOrigin()
+
+export const viewport: Viewport = {
+  colorScheme: "dark",
+  themeColor: "#07070a",
+}
 
 export const metadata: Metadata = {
   metadataBase: new URL(origin),
@@ -45,7 +50,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" className="dark">
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link

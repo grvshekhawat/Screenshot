@@ -408,7 +408,7 @@ export function Editor({ promptUploadFirst = false }: { promptUploadFirst?: bool
           onChange={(event) =>
             setTarget(event.target.value as typeof project.targetId)
           }
-          className="max-w-[240px] rounded-md border border-white/10 bg-[#0a0a0e] px-2 py-1.5 text-xs text-zinc-200"
+          className="max-w-[240px] rounded-md border border-white/10 bg-[#0a0a0e] px-2 py-1.5 text-xs text-zinc-200 [color-scheme:dark]"
         >
           {storeTargetsForOrientation(
             projectOrientation(project),

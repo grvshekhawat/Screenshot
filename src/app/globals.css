@@ -6,10 +6,33 @@ body {
   margin: 0;
 }
 
+html {
+  color-scheme: dark;
+}
+
 body {
   background: #07070a;
   color: #fafafa;
   font-family: Inter, system-ui, sans-serif;
+}
+
+button {
+  appearance: none;
+}
+
+select,
+input[type="number"],
+input[type="text"],
+input[type="email"],
+input[type="password"],
+textarea {
+  color-scheme: dark;
+}
+
+select option,
+select optgroup {
+  background-color: #0a0a0e;
+  color: #fafafa;
 }
 
 input[type="color"] {
